@@ -4,6 +4,13 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('pocketAgent', {
   // Chat
   send: (message: string) => ipcRenderer.invoke('agent:send', message),
+  onStatus: (callback: (status: { type: string; toolName?: string; toolInput?: string; message?: string }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, status: any) => callback(status);
+    ipcRenderer.on('agent:status', listener);
+    // Return cleanup function
+    return () => ipcRenderer.removeListener('agent:status', listener);
+  },
+  saveAttachment: (name: string, dataUrl: string) => ipcRenderer.invoke('attachment:save', name, dataUrl),
   getHistory: (limit?: number) => ipcRenderer.invoke('agent:history', limit),
   getStats: () => ipcRenderer.invoke('agent:stats'),
   clearConversation: () => ipcRenderer.invoke('agent:clear'),
@@ -34,6 +41,7 @@ contextBridge.exposeInMainWorld('pocketAgent', {
   validateTelegramToken: (token: string) => ipcRenderer.invoke('settings:validateTelegram', token),
   restartAgent: () => ipcRenderer.invoke('agent:restart'),
   openSettings: () => ipcRenderer.invoke('app:openSettings'),
+  openChat: () => ipcRenderer.invoke('app:openChat'),
   startOAuth: () => ipcRenderer.invoke('auth:startOAuth'),
   completeOAuth: (code: string) => ipcRenderer.invoke('auth:completeOAuth', code),
   cancelOAuth: () => ipcRenderer.invoke('auth:cancelOAuth'),
@@ -45,6 +53,8 @@ declare global {
   interface Window {
     pocketAgent: {
       send: (message: string) => Promise<{ success: boolean; response?: string; error?: string; tokensUsed?: number }>;
+      onStatus: (callback: (status: { type: string; toolName?: string; toolInput?: string; message?: string }) => void) => () => void;
+      saveAttachment: (name: string, dataUrl: string) => Promise<string>;
       getHistory: (limit?: number) => Promise<Array<{ role: string; content: string; timestamp: string }>>;
       getStats: () => Promise<{ messageCount: number; factCount: number; estimatedTokens: number } | null>;
       clearConversation: () => Promise<{ success: boolean }>;
@@ -69,6 +79,7 @@ declare global {
       validateTelegramToken: (token: string) => Promise<{ valid: boolean; error?: string; botInfo?: any }>;
       restartAgent: () => Promise<{ success: boolean }>;
       openSettings: () => Promise<void>;
+      openChat: () => Promise<void>;
       startOAuth: () => Promise<{ success: boolean; error?: string }>;
       completeOAuth: (code: string) => Promise<{ success: boolean; error?: string }>;
       cancelOAuth: () => Promise<{ success: boolean }>;

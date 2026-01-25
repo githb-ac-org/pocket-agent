@@ -21,6 +21,7 @@ const OAUTH_CONFIG = {
 interface PKCEPair {
   verifier: string;
   challenge: string;
+  state: string;
 }
 
 interface OAuthTokens {
@@ -49,7 +50,8 @@ class ClaudeOAuthManager {
   private generatePKCE(): PKCEPair {
     const verifier = crypto.randomBytes(32).toString('base64url');
     const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
-    return { verifier, challenge };
+    const state = crypto.randomBytes(16).toString('hex');
+    return { verifier, challenge, state };
   }
 
   /**
@@ -65,6 +67,7 @@ class ClaudeOAuthManager {
       scope: OAUTH_CONFIG.scopes,
       code_challenge: this.currentPKCE.challenge,
       code_challenge_method: 'S256',
+      state: this.currentPKCE.state,
     });
 
     return `${OAUTH_CONFIG.authorizeUrl}?${params.toString()}`;
@@ -107,7 +110,7 @@ class ClaudeOAuthManager {
     }
 
     try {
-      const tokens = await this.exchangeCodeForTokens(code, this.currentPKCE.verifier);
+      const tokens = await this.exchangeCodeForTokens(code, this.currentPKCE);
 
       // Save tokens securely
       SettingsManager.set('auth.method', 'oauth');
@@ -132,10 +135,17 @@ class ClaudeOAuthManager {
   /**
    * Exchange authorization code for tokens
    */
-  private async exchangeCodeForTokens(code: string, verifier: string): Promise<OAuthTokens> {
-    // Handle both legacy format (code#state) and new format (pure code)
-    const authCode = code.includes('#') ? code.split('#')[0] : code;
-    const state = code.includes('#') ? code.split('#')[1] : verifier;
+  private async exchangeCodeForTokens(code: string, pkce: PKCEPair): Promise<OAuthTokens> {
+    // Handle code#state format (user pastes the full callback code)
+    const parts = code.trim().split('#');
+    const authCode = parts[0];
+    const state = parts.length > 1 ? parts[1] : pkce.state;
+
+    console.log('[OAuth] Exchanging code:', {
+      codeLength: authCode.length,
+      hasState: parts.length > 1,
+      stateMatch: state === pkce.state
+    });
 
     const response = await net.fetch(OAUTH_CONFIG.tokenUrl, {
       method: 'POST',
@@ -143,7 +153,7 @@ class ClaudeOAuthManager {
       body: JSON.stringify({
         code: authCode,
         state: state,
-        code_verifier: verifier,
+        code_verifier: pkce.verifier,
         client_id: OAUTH_CONFIG.clientId,
         redirect_uri: OAUTH_CONFIG.redirectUri,
         grant_type: 'authorization_code',

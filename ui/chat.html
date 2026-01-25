@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
   <title>Pocket Agent</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
     :root {
       --bg-primary: #0a0a0b;
@@ -147,7 +149,6 @@
       line-height: 1.5;
       font-size: 14px;
       word-wrap: break-word;
-      white-space: pre-wrap;
       animation: messageIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
       transform-origin: bottom;
     }
@@ -214,7 +215,160 @@
       padding: 0;
     }
 
-    /* Typing Indicator */
+    /* Markdown elements - tight spacing for chat */
+    .message h1, .message h2, .message h3, .message h4 {
+      margin: 1em 0 0.4em 0;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+
+    .message h1:first-child, .message h2:first-child,
+    .message h3:first-child, .message h4:first-child {
+      margin-top: 0;
+    }
+
+    .message h1 { font-size: 1.2em; }
+    .message h2 { font-size: 1.1em; }
+    .message h3 { font-size: 1.05em; }
+    .message h4 { font-size: 1em; }
+
+    .message p {
+      margin: 0;
+    }
+
+    .message p + p {
+      margin-top: 0.5em;
+    }
+
+    .message > *:last-child {
+      margin-bottom: 0 !important;
+    }
+
+    .message > *:first-child {
+      margin-top: 0 !important;
+    }
+
+    .message ul, .message ol {
+      margin: 0.3em 0;
+      padding-left: 1.4em;
+    }
+
+    .message ul:first-child, .message ol:first-child { margin-top: 0; }
+    .message ul:last-child, .message ol:last-child { margin-bottom: 0; }
+
+    .message li {
+      margin: 0;
+      padding: 0;
+      line-height: 1.5;
+    }
+
+    .message li + li {
+      margin-top: 0.1em;
+    }
+
+    .message li p,
+    .message li > p,
+    .message li p:first-child,
+    .message li p:last-child {
+      margin: 0;
+      padding: 0;
+      display: inline;
+    }
+
+    .message a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .message a:hover {
+      text-decoration: underline;
+    }
+
+    .message hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 0.6em 0;
+    }
+
+    .message blockquote {
+      border-left: 3px solid var(--accent);
+      padding-left: 0.8em;
+      margin: 0.4em 0;
+      color: var(--text-secondary);
+    }
+
+    .message table {
+      border-collapse: collapse;
+      margin: 0.5em 0;
+      width: 100%;
+      font-size: 0.95em;
+    }
+
+    .message th, .message td {
+      border: 1px solid var(--border);
+      padding: 0.4em 0.6em;
+      text-align: left;
+    }
+
+    .message th {
+      background: var(--bg-tertiary);
+    }
+
+    .message strong { font-weight: 600; }
+    .message em { font-style: italic; }
+
+    /* Status Indicator */
+    .status-indicator {
+      align-self: flex-start;
+      padding: 10px 14px;
+      background: var(--assistant-bubble);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      border-bottom-left-radius: 4px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      animation: messageIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      max-width: 80%;
+    }
+
+    .status-spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .status-content {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .status-action {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+
+    .status-detail {
+      font-size: 12px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    }
+
+    /* Simple typing dots fallback */
     .typing {
       align-self: flex-start;
       padding: 12px 16px;
@@ -252,7 +406,7 @@
 
     /* Input Area */
     #input-area {
-      padding: 16px 20px;
+      padding: 16px 20px 20px 20px;
       background: var(--bg-secondary);
       border-top: 1px solid var(--border);
       display: flex;
@@ -397,6 +551,116 @@
     #file-input {
       display: none;
     }
+
+    /* Attachments */
+    .attachments-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 8px 12px;
+      background: var(--bg-tertiary);
+      border-top: 1px solid var(--border);
+      max-height: 120px;
+      overflow-y: auto;
+    }
+
+    .attachment-preview {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      color: var(--text-secondary);
+      max-width: 200px;
+    }
+
+    .attachment-preview img {
+      width: 32px;
+      height: 32px;
+      object-fit: cover;
+      border-radius: 4px;
+    }
+
+    .attachment-icon {
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-tertiary);
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+
+    .attachment-info {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .attachment-name {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--text-primary);
+    }
+
+    .attachment-size {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .attachment-remove {
+      width: 18px;
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      color: var(--text-muted);
+      font-size: 14px;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+
+    .attachment-remove:hover {
+      background: var(--border);
+      color: var(--error);
+    }
+
+    /* Attachment in messages */
+    .message-attachments {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .message-attachment {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 6px;
+      font-size: 12px;
+    }
+
+    .message-attachment img {
+      max-width: 200px;
+      max-height: 150px;
+      border-radius: 6px;
+    }
   </style>
 </head>
 <body>
@@ -442,7 +706,8 @@
     </button>
   </div>
 
-  <input type="file" id="file-input" onchange="handleFileSelect(event)" multiple>
+  <input type="file" id="file-input" onchange="handleFileSelect(event)" multiple
+    accept=".txt,.md,.json,.csv,.xml,.html,.htm,.css,.js,.ts,.jsx,.tsx,.py,.rb,.go,.rs,.java,.c,.cpp,.h,.hpp,.sh,.yaml,.yml,.toml,.ini,.cfg,.conf,.log,.sql,.graphql,.pdf,.png,.jpg,.jpeg,.gif,.webp,.svg,.bmp,.ico">
 
   <script>
     const messagesDiv = document.getElementById('messages');
@@ -452,7 +717,24 @@
     const fileInput = document.getElementById('file-input');
 
     let isLoading = false;
-    let pendingFiles = [];
+    let pendingAttachments = []; // { file, name, type, size, dataUrl, content }
+    let statusCleanup = null;
+    let currentStatusEl = null;
+
+    // Allowed file types
+    const ALLOWED_EXTENSIONS = new Set([
+      // Text/Code
+      'txt', 'md', 'json', 'csv', 'xml', 'html', 'htm', 'css', 'js', 'ts', 'jsx', 'tsx',
+      'py', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'hpp', 'sh', 'yaml', 'yml',
+      'toml', 'ini', 'cfg', 'conf', 'log', 'sql', 'graphql',
+      // Images
+      'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico',
+      // Documents
+      'pdf'
+    ]);
+
+    const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico']);
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
     // Initialize
     window.addEventListener('DOMContentLoaded', () => {
@@ -504,7 +786,9 @@
 
     async function sendMessage() {
       const message = input.value.trim();
-      if (!message || isLoading) return;
+      const attachments = [...pendingAttachments];
+
+      if ((!message && attachments.length === 0) || isLoading) return;
 
       // Clear empty state if present
       const emptyState = messagesDiv.querySelector('.empty-state');
@@ -515,14 +799,36 @@
       input.value = '';
       input.style.height = 'auto';
 
-      addMessage('user', message);
-      const typingEl = addTyping();
+      // Clear attachments
+      clearAttachments();
+
+      // Show user message with attachments
+      addMessage('user', message, true, attachments);
+      currentStatusEl = addStatusIndicator('Thinking...');
       scrollToBottom();
 
-      try {
-        const result = await window.pocketAgent.send(message);
+      // Build the full message with attachments
+      const fullMessage = await buildMessageWithAttachments(message, attachments);
 
-        typingEl.remove();
+      // Set up status listener
+      statusCleanup = window.pocketAgent.onStatus((status) => {
+        updateStatusIndicator(status);
+      });
+
+      try {
+        const result = await window.pocketAgent.send(fullMessage);
+
+        // Clean up status listener
+        if (statusCleanup) {
+          statusCleanup();
+          statusCleanup = null;
+        }
+
+        // Remove status indicator
+        if (currentStatusEl) {
+          currentStatusEl.remove();
+          currentStatusEl = null;
+        }
 
         if (result.success) {
           addMessage('assistant', result.response);
@@ -532,7 +838,17 @@
 
         updateStats();
       } catch (err) {
-        typingEl.remove();
+        // Clean up status listener
+        if (statusCleanup) {
+          statusCleanup();
+          statusCleanup = null;
+        }
+
+        if (currentStatusEl) {
+          currentStatusEl.remove();
+          currentStatusEl = null;
+        }
+
         addMessage('error', err.message || 'Something went wrong');
       }
 
@@ -540,6 +856,46 @@
       sendBtn.disabled = false;
       scrollToBottom();
       input.focus();
+    }
+
+    async function buildMessageWithAttachments(message, attachments) {
+      if (attachments.length === 0) return message;
+
+      const parts = [];
+
+      // Add text message if present
+      if (message) {
+        parts.push(message);
+      }
+
+      // Add attachments
+      for (const att of attachments) {
+        if (att.isImage && att.dataUrl) {
+          // Save image to temp file and reference path
+          try {
+            const filePath = await window.pocketAgent.saveAttachment(att.name, att.dataUrl);
+            parts.push(`\n\n[Attached image: ${att.name}]\nFile saved at: ${filePath}\nUse the Read tool to view this image.`);
+          } catch (err) {
+            parts.push(`\n\n[Image: ${att.name}] (failed to save: ${err.message})`);
+          }
+        } else if (att.ext === 'pdf' && att.dataUrl) {
+          // Save PDF to temp file and reference path
+          try {
+            const filePath = await window.pocketAgent.saveAttachment(att.name, att.dataUrl);
+            parts.push(`\n\n[Attached PDF: ${att.name}]\nFile saved at: ${filePath}\nUse the Read tool to view this PDF.`);
+          } catch (err) {
+            parts.push(`\n\n[PDF: ${att.name}] (failed to save: ${err.message})`);
+          }
+        } else if (att.content) {
+          // For text files, include content directly (truncate if very large)
+          const content = att.content.length > 50000
+            ? att.content.slice(0, 50000) + '\n... (truncated)'
+            : att.content;
+          parts.push(`\n\n[File: ${att.name}]\n\`\`\`${att.ext}\n${content}\n\`\`\``);
+        }
+      }
+
+      return parts.join('');
     }
 
     async function clearChat() {
@@ -583,35 +939,60 @@
       }
     }
 
-    function addMessage(role, content, animate = true) {
+    function addMessage(role, content, animate = true, attachments = []) {
       const div = document.createElement('div');
       div.className = `message ${role}`;
       if (!animate) div.style.animation = 'none';
 
-      // Basic markdown-like formatting
-      div.innerHTML = formatContent(content);
+      // Add attachments display for user messages
+      if (attachments && attachments.length > 0) {
+        const attDiv = document.createElement('div');
+        attDiv.className = 'message-attachments';
+
+        for (const att of attachments) {
+          const attItem = document.createElement('div');
+          attItem.className = 'message-attachment';
+
+          if (att.isImage && att.dataUrl) {
+            const img = document.createElement('img');
+            img.src = att.dataUrl;
+            img.alt = att.name;
+            attItem.appendChild(img);
+          } else {
+            attItem.innerHTML = `<span class="attachment-icon">${escapeHtml(att.ext)}</span> ${escapeHtml(att.name)}`;
+          }
+
+          attDiv.appendChild(attItem);
+        }
+
+        div.appendChild(attDiv);
+      }
+
+      // Add text content
+      if (content) {
+        const contentDiv = document.createElement('div');
+        contentDiv.innerHTML = formatContent(content);
+        // Append children directly to avoid nesting issues
+        while (contentDiv.firstChild) {
+          div.appendChild(contentDiv.firstChild);
+        }
+      }
 
       messagesDiv.appendChild(div);
       return div;
     }
 
     function formatContent(text) {
-      // Escape HTML
-      text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-      // Code blocks
-      text = text.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
-
-      // Inline code
-      text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
-
-      // Bold
-      text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-
-      // Italic
-      text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-
-      return text;
+      // Use marked for full markdown rendering
+      if (typeof marked !== 'undefined') {
+        marked.setOptions({
+          breaks: true, // Convert \n to <br>
+          gfm: true, // GitHub flavored markdown
+        });
+        return marked.parse(text);
+      }
+      // Fallback if marked isn't loaded
+      return text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
     function addTimestamp(date) {
@@ -627,6 +1008,59 @@
       div.innerHTML = '<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>';
       messagesDiv.appendChild(div);
       return div;
+    }
+
+    function addStatusIndicator(initialMessage) {
+      const div = document.createElement('div');
+      div.className = 'status-indicator';
+      div.innerHTML = `
+        <div class="status-spinner"></div>
+        <div class="status-content">
+          <div class="status-action">${escapeHtml(initialMessage)}</div>
+          <div class="status-detail"></div>
+        </div>
+      `;
+      messagesDiv.appendChild(div);
+      return div;
+    }
+
+    function updateStatusIndicator(status) {
+      if (!currentStatusEl) return;
+
+      const actionEl = currentStatusEl.querySelector('.status-action');
+      const detailEl = currentStatusEl.querySelector('.status-detail');
+
+      if (status.type === 'thinking') {
+        actionEl.textContent = status.message || 'Thinking...';
+        detailEl.textContent = '';
+        detailEl.style.display = 'none';
+      } else if (status.type === 'tool_start') {
+        actionEl.textContent = status.toolName || 'Using tool...';
+        if (status.toolInput) {
+          detailEl.textContent = status.toolInput;
+          detailEl.title = status.toolInput;
+          detailEl.style.display = 'block';
+        } else {
+          detailEl.textContent = '';
+          detailEl.style.display = 'none';
+        }
+      } else if (status.type === 'tool_end') {
+        actionEl.textContent = 'Processing result...';
+        detailEl.textContent = '';
+        detailEl.style.display = 'none';
+      } else if (status.type === 'responding') {
+        actionEl.textContent = 'Composing response...';
+        detailEl.textContent = '';
+        detailEl.style.display = 'none';
+      }
+
+      scrollToBottom();
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
     }
 
     function showEmptyState() {
@@ -660,21 +1094,135 @@
       fileInput.click();
     }
 
-    function handleFileSelect(e) {
+    async function handleFileSelect(e) {
       const files = Array.from(e.target.files);
       if (files.length === 0) return;
 
-      // For now, show file names in input
-      const names = files.map(f => f.name).join(', ');
-      const current = input.value.trim();
-      input.value = current ? `${current}\n\n[Attached: ${names}]` : `[Attached: ${names}]`;
-      input.focus();
+      for (const file of files) {
+        const ext = file.name.split('.').pop()?.toLowerCase() || '';
 
-      // Reset file input
+        // Validate extension
+        if (!ALLOWED_EXTENSIONS.has(ext)) {
+          addMessage('system', `Unsupported file type: ${file.name}`);
+          continue;
+        }
+
+        // Validate size
+        if (file.size > MAX_FILE_SIZE) {
+          addMessage('system', `File too large (max 10MB): ${file.name}`);
+          continue;
+        }
+
+        try {
+          const attachment = await readFile(file, ext);
+          pendingAttachments.push(attachment);
+        } catch (err) {
+          addMessage('system', `Failed to read file: ${file.name}`);
+        }
+      }
+
+      // Reset file input and update UI
       fileInput.value = '';
+      renderAttachmentPreviews();
+      input.focus();
+    }
 
-      // TODO: Implement actual file handling
-      addMessage('system', `File attachment is coming soon. Selected: ${names}`);
+    async function readFile(file, ext) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+
+        reader.onload = (e) => {
+          const attachment = {
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            ext: ext,
+            isImage: IMAGE_EXTENSIONS.has(ext),
+          };
+
+          if (attachment.isImage || ext === 'pdf') {
+            // Store as data URL for images and PDFs
+            attachment.dataUrl = e.target.result;
+            attachment.content = null;
+          } else {
+            // Store as text for text files
+            attachment.dataUrl = null;
+            attachment.content = e.target.result;
+          }
+
+          resolve(attachment);
+        };
+
+        reader.onerror = () => reject(reader.error);
+
+        if (IMAGE_EXTENSIONS.has(ext) || ext === 'pdf') {
+          reader.readAsDataURL(file);
+        } else {
+          reader.readAsText(file);
+        }
+      });
+    }
+
+    function renderAttachmentPreviews() {
+      // Remove existing container
+      const existing = document.querySelector('.attachments-container');
+      if (existing) existing.remove();
+
+      if (pendingAttachments.length === 0) return;
+
+      // Create container
+      const container = document.createElement('div');
+      container.className = 'attachments-container';
+
+      pendingAttachments.forEach((att, index) => {
+        const preview = document.createElement('div');
+        preview.className = 'attachment-preview';
+
+        if (att.isImage && att.dataUrl) {
+          const img = document.createElement('img');
+          img.src = att.dataUrl;
+          img.alt = att.name;
+          preview.innerHTML = `
+            <div class="attachment-info">
+              <div class="attachment-name">${escapeHtml(att.name)}</div>
+              <div class="attachment-size">${formatFileSize(att.size)}</div>
+            </div>
+            <button class="attachment-remove" onclick="removeAttachment(${index})">×</button>
+          `;
+          preview.insertBefore(img, preview.firstChild);
+        } else {
+          preview.innerHTML = `
+            <div class="attachment-icon">${att.ext}</div>
+            <div class="attachment-info">
+              <div class="attachment-name">${escapeHtml(att.name)}</div>
+              <div class="attachment-size">${formatFileSize(att.size)}</div>
+            </div>
+            <button class="attachment-remove" onclick="removeAttachment(${index})">×</button>
+          `;
+        }
+
+        container.appendChild(preview);
+      });
+
+      // Insert before input area
+      const inputArea = document.getElementById('input-area');
+      inputArea.parentNode.insertBefore(container, inputArea);
+    }
+
+    function removeAttachment(index) {
+      pendingAttachments.splice(index, 1);
+      renderAttachmentPreviews();
+    }
+
+    function formatFileSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    function clearAttachments() {
+      pendingAttachments = [];
+      renderAttachmentPreviews();
     }
 
     // Auto-resize textarea

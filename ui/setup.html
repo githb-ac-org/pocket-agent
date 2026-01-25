@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';">
   <title>Welcome to Pocket Agent</title>
   <style>
     :root {
@@ -45,7 +46,8 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      padding: 40px;
+      padding: 40px 40px 60px 40px;
+      overflow-y: auto;
     }
 
     .logo {
@@ -278,6 +280,7 @@
       display: flex;
       gap: 12px;
       margin-top: 24px;
+      margin-bottom: 20px;
     }
 
     button {
@@ -410,6 +413,7 @@
     /* Optional section */
     .optional-section {
       margin-top: 24px;
+      margin-bottom: 16px;
       padding-top: 24px;
       border-top: 1px solid var(--border);
     }
@@ -522,7 +526,7 @@
         <button class="secondary" onclick="showStep('step-auth')">Back</button>
         <button class="oauth" id="oauth-btn" onclick="startOAuth()">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-          Open Claude Sign In
+          Sign in
         </button>
       </div>
     </div>
@@ -686,7 +690,7 @@
       btn.disabled = false;
       btn.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-        Open Claude Sign In
+        Sign in
       `;
     }
 
@@ -813,11 +817,12 @@
     }
 
     async function finishSetup() {
-      // Restart agent with new settings
+      // Restart agent with new settings and open chat
       try {
         await window.pocketAgent.restartAgent();
+        await window.pocketAgent.openChat();
       } catch (err) {
-        console.error('Failed to restart agent:', err);
+        console.error('Failed to finish setup:', err);
       }
       window.close();
     }

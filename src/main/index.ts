@@ -1,5 +1,6 @@
 import { app, Tray, Menu, nativeImage, BrowserWindow, ipcMain, Notification } from 'electron';
 import path from 'path';
+import fs from 'fs';
 import { AgentManager } from '../agent';
 import { MemoryManager } from '../memory';
 import { createScheduler, getScheduler, CronScheduler } from '../scheduler';
@@ -25,6 +26,8 @@ async function createTray(): Promise<void> {
     icon = nativeImage.createFromPath(iconPath);
     if (icon.isEmpty()) {
       icon = createDefaultIcon();
+    } else {
+      icon.setTemplateImage(true); // For macOS menu bar
     }
   } catch {
     icon = createDefaultIcon();
@@ -42,8 +45,36 @@ async function createTray(): Promise<void> {
 }
 
 function createDefaultIcon(): Electron.NativeImage {
-  // Create a simple 16x16 icon
-  return nativeImage.createFromBuffer(Buffer.alloc(16 * 16 * 4, 0x80));
+  // Create a simple 16x16 white circle icon for macOS menu bar
+  const size = 16;
+  const canvas = Buffer.alloc(size * size * 4);
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = x - size / 2;
+      const dy = y - size / 2;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const i = (y * size + x) * 4;
+
+      if (dist < size / 2 - 1) {
+        // White circle
+        canvas[i] = 255;     // R
+        canvas[i + 1] = 255; // G
+        canvas[i + 2] = 255; // B
+        canvas[i + 3] = 255; // A
+      } else {
+        // Transparent
+        canvas[i] = 0;
+        canvas[i + 1] = 0;
+        canvas[i + 2] = 0;
+        canvas[i + 3] = 0;
+      }
+    }
+  }
+
+  const icon = nativeImage.createFromBuffer(canvas, { width: size, height: size });
+  icon.setTemplateImage(true); // For macOS menu bar
+  return icon;
 }
 
 function updateTrayMenu(): void {
@@ -177,7 +208,9 @@ function buildCronSubmenu(): Electron.MenuItemConstructorOptions[] {
 // ============ Windows ============
 
 function openChatWindow(): void {
+  console.log('[Main] Opening chat window...');
   if (chatWindow && !chatWindow.isDestroyed()) {
+    console.log('[Main] Chat window already exists, focusing');
     chatWindow.focus();
     return;
   }
@@ -308,8 +341,19 @@ function showNotification(title: string, body: string): void {
 // ============ IPC Handlers ============
 
 function setupIPC(): void {
-  // Chat messages
-  ipcMain.handle('agent:send', async (_, message: string) => {
+  // Chat messages with status streaming
+  ipcMain.handle('agent:send', async (event, message: string) => {
+    // Set up status listener to forward to renderer
+    const statusHandler = (status: { type: string; toolName?: string; toolInput?: string; message?: string }) => {
+      // Send status update to the chat window that initiated the request
+      const webContents = event.sender;
+      if (!webContents.isDestroyed()) {
+        webContents.send('agent:status', status);
+      }
+    };
+
+    AgentManager.on('status', statusHandler);
+
     try {
       const result = await AgentManager.processMessage(message, 'desktop');
       updateTrayMenu();
@@ -317,6 +361,8 @@ function setupIPC(): void {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       return { success: false, error: errorMsg };
+    } finally {
+      AgentManager.off('status', statusHandler);
     }
   });
 
@@ -435,6 +481,10 @@ function setupIPC(): void {
     openSettingsWindow();
   });
 
+  ipcMain.handle('app:openChat', async () => {
+    openChatWindow();
+  });
+
   // OAuth flow for Claude subscription
   ipcMain.handle('auth:startOAuth', async () => {
     const { ClaudeOAuth } = await import('../auth/oauth');
@@ -455,6 +505,38 @@ function setupIPC(): void {
   ipcMain.handle('auth:isOAuthPending', async () => {
     const { ClaudeOAuth } = await import('../auth/oauth');
     return ClaudeOAuth.isPending();
+  });
+
+  // File attachments
+  ipcMain.handle('attachment:save', async (_, name: string, dataUrl: string) => {
+    try {
+      // Create attachments directory
+      const attachmentsDir = path.join(app.getPath('userData'), 'attachments');
+      if (!fs.existsSync(attachmentsDir)) {
+        fs.mkdirSync(attachmentsDir, { recursive: true });
+      }
+
+      // Generate unique filename
+      const timestamp = Date.now();
+      const safeName = name.replace(/[^a-zA-Z0-9.-]/g, '_');
+      const filePath = path.join(attachmentsDir, `${timestamp}-${safeName}`);
+
+      // Extract base64 data and save
+      const matches = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+      if (!matches) {
+        throw new Error('Invalid data URL format');
+      }
+
+      const buffer = Buffer.from(matches[2], 'base64');
+      fs.writeFileSync(filePath, buffer);
+
+      console.log(`[Attachment] Saved: ${filePath}`);
+      return filePath;
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      console.error('[Attachment] Save failed:', errorMsg);
+      throw error;
+    }
   });
 }
 

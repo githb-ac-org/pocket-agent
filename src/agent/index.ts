@@ -2,10 +2,19 @@ import { MemoryManager, Message } from '../memory';
 import { buildMCPServers, setMemoryManager, ToolsConfig, validateToolsConfig } from '../tools';
 import { closeBrowserManager } from '../browser';
 import { loadIdentity } from '../config/identity';
+import { EventEmitter } from 'events';
 
 // Token limits
 const MAX_CONTEXT_TOKENS = 150000;
 const COMPACTION_THRESHOLD = 120000; // Start compacting at 80% capacity
+
+// Status event types
+export type AgentStatus = {
+  type: 'thinking' | 'tool_start' | 'tool_end' | 'responding' | 'done';
+  toolName?: string;
+  toolInput?: string;
+  message?: string;
+};
 
 // SDK types (loaded dynamically)
 type SDKQuery = AsyncGenerator<any, void>;
@@ -24,9 +33,12 @@ type SDKOptions = {
 // Dynamic SDK loader
 let sdkQuery: ((params: { prompt: string; options?: SDKOptions }) => SDKQuery) | null = null;
 
+// Use Function to preserve native import() - TypeScript converts import() to require() in CommonJS
+const dynamicImport = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<any>;
+
 async function loadSDK(): Promise<typeof sdkQuery> {
   if (!sdkQuery) {
-    const sdk = await import('@anthropic-ai/claude-agent-sdk');
+    const sdk = await dynamicImport('@anthropic-ai/claude-agent-sdk');
     sdkQuery = sdk.query;
   }
   return sdkQuery;
@@ -48,16 +60,18 @@ export interface ProcessResult {
 /**
  * AgentManager - Singleton wrapper around Claude Agent SDK
  */
-class AgentManagerClass {
+class AgentManagerClass extends EventEmitter {
   private static instance: AgentManagerClass | null = null;
   private memory: MemoryManager | null = null;
   private projectRoot: string = process.cwd();
-  private model: string = 'claude-sonnet-4-20250514';
+  private model: string = 'claude-opus-4-5-20251101';
   private toolsConfig: ToolsConfig | null = null;
   private initialized: boolean = false;
   private identity: string = '';
 
-  private constructor() {}
+  private constructor() {
+    super();
+  }
 
   static getInstance(): AgentManagerClass {
     if (!AgentManagerClass.instance) {
@@ -69,7 +83,7 @@ class AgentManagerClass {
   initialize(config: AgentConfig): void {
     this.memory = config.memory;
     this.projectRoot = config.projectRoot || process.cwd();
-    this.model = config.model || 'claude-sonnet-4-20250514';
+    this.model = config.model || 'claude-opus-4-5-20251101';
     this.toolsConfig = config.tools || null;
     this.initialized = true;
 
@@ -140,13 +154,17 @@ class AgentManagerClass {
       const options = this.buildOptions(factsContext);
 
       console.log('[AgentManager] Calling query()...');
+      this.emitStatus({ type: 'thinking', message: 'Processing...' });
 
       const queryResult = query({ prompt: fullPrompt, options });
       let response = '';
 
       for await (const message of queryResult) {
+        this.processStatusFromMessage(message);
         response = this.extractFromMessage(message, response);
       }
+
+      this.emitStatus({ type: 'done' });
 
       if (!response) {
         response = 'I processed your request but have no text response.';
@@ -236,6 +254,130 @@ class AgentManagerClass {
     return current;
   }
 
+  private emitStatus(status: AgentStatus): void {
+    this.emit('status', status);
+  }
+
+  private processStatusFromMessage(message: any): void {
+    // Handle tool use from assistant messages
+    if (message.type === 'assistant') {
+      const content = message.message?.content;
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          if (block?.type === 'tool_use') {
+            const toolName = this.formatToolName(block.name);
+            const toolInput = this.formatToolInput(block.input);
+            this.emitStatus({
+              type: 'tool_start',
+              toolName,
+              toolInput,
+              message: `Using ${toolName}...`,
+            });
+          }
+        }
+      }
+    }
+
+    // Handle tool results
+    if (message.type === 'user' && message.message?.content) {
+      const content = message.message.content;
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          if (block?.type === 'tool_result') {
+            this.emitStatus({
+              type: 'tool_end',
+              message: 'Processing result...',
+            });
+          }
+        }
+      }
+    }
+
+    // Handle system messages
+    if (message.type === 'system') {
+      if (message.subtype === 'init') {
+        this.emitStatus({ type: 'thinking', message: 'Initializing...' });
+      }
+    }
+  }
+
+  private formatToolName(name: string): string {
+    // Make tool names more user-friendly
+    const friendlyNames: Record<string, string> = {
+      // SDK built-in tools
+      Read: 'Reading file',
+      Write: 'Writing file',
+      Edit: 'Editing file',
+      Bash: 'Running command',
+      Glob: 'Searching files',
+      Grep: 'Searching code',
+      WebSearch: 'Searching web',
+      WebFetch: 'Fetching page',
+      Task: 'Spawning agent',
+      NotebookEdit: 'Editing notebook',
+
+      // Memory tools
+      remember: 'Saving to memory',
+      forget: 'Removing from memory',
+      list_facts: 'Listing facts',
+      memory_search: 'Searching memory',
+
+      // Browser tool
+      browser: 'Browser automation',
+
+      // Computer use tool
+      computer: 'Desktop automation',
+    };
+    return friendlyNames[name] || name;
+  }
+
+  private formatToolInput(input: any): string {
+    if (!input) return '';
+    // Extract meaningful info from tool input
+    if (typeof input === 'string') return input.slice(0, 100);
+
+    // File operations
+    if (input.file_path) return input.file_path;
+    if (input.notebook_path) return input.notebook_path;
+
+    // Search/patterns
+    if (input.pattern) return input.pattern;
+    if (input.query) return input.query;
+
+    // Commands
+    if (input.command) return input.command.slice(0, 80);
+
+    // Web
+    if (input.url) return input.url;
+
+    // Agent/Task
+    if (input.prompt) return input.prompt.slice(0, 80);
+    if (input.description) return input.description.slice(0, 80);
+
+    // Memory tools
+    if (input.category && input.subject) return `${input.category}/${input.subject}`;
+    if (input.content) return input.content.slice(0, 80);
+
+    // Browser tool
+    if (input.action) {
+      const browserActions: Record<string, string> = {
+        navigate: input.url ? `→ ${input.url}` : 'navigating',
+        screenshot: 'capturing screen',
+        click: input.selector ? `clicking ${input.selector}` : 'clicking',
+        type: input.text ? `typing "${input.text.slice(0, 30)}"` : 'typing',
+        evaluate: 'running script',
+        extract: input.extract_type || 'extracting data',
+      };
+      return browserActions[input.action] || input.action;
+    }
+
+    // Computer use
+    if (input.coordinate) return `at (${input.coordinate[0]}, ${input.coordinate[1]})`;
+    if (input.text) return `"${input.text.slice(0, 40)}"`;
+
+    return '';
+  }
+
   private async runCompaction(): Promise<void> {
     if (!this.memory) return;
 
@@ -293,7 +435,7 @@ Conversation:
 ${conversationText}`;
 
       const options: SDKOptions = {
-        model: 'claude-3-haiku-20240307',
+        model: 'claude-haiku-4-5-20251001',
         maxTurns: 1,
         abortController: new AbortController(),
         tools: [],
@@ -354,7 +496,7 @@ ${conversationText}`;
       const summaryPrompt = `Summarize this conversation concisely, preserving key facts about the user (name, preferences, work), important decisions, ongoing tasks, and context needed to continue the conversation:\n\n${conversationText}`;
 
       const options: SDKOptions = {
-        model: 'claude-3-haiku-20240307',
+        model: 'claude-haiku-4-5-20251001',
         maxTurns: 1,
         abortController: new AbortController(),
         tools: [],

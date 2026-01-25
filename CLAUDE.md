@@ -178,18 +178,55 @@ google-chrome --remote-debugging-port=9222
 ```
 pocket-agent/
 ├── src/
-│   ├── main/          # Electron main process
-│   ├── agent/         # Claude Agent SDK wrapper
-│   ├── memory/        # SQLite persistence
-│   ├── channels/      # Telegram integration
+│   ├── main/          # Electron main process (index.ts, preload.ts)
+│   ├── agent/         # Claude Agent SDK wrapper and orchestration
+│   ├── memory/        # SQLite persistence (messages, facts, embeddings)
+│   ├── channels/      # Telegram integration and message routing
 │   ├── scheduler/     # Cron job manager
 │   ├── browser/       # 2-tier browser automation
-│   │   ├── electron-tier.ts # hidden BrowserWindow
-│   │   └── cdp-tier.ts     # puppeteer-core CDP
-│   ├── tools/         # Tool configurations
-│   └── config/        # Configuration manager
-├── ui/                # Chat and cron HTML interfaces
-├── assets/            # Tray icon
+│   │   ├── electron-tier.ts  # Hidden BrowserWindow for JS rendering
+│   │   └── cdp-tier.ts       # puppeteer-core CDP for auth sessions
+│   ├── tools/         # Tool implementations (memory, computer-use)
+│   ├── config/        # Configuration and identity loading
+│   ├── settings/      # User preferences management
+│   └── auth/          # OAuth flows for service integrations
+├── ui/                # HTML interfaces (chat, settings, cron, setup)
+├── assets/            # Tray icons and static assets
+├── .claude/commands/  # Claude Code slash commands (/fix, /commit, /update-app)
 ├── CLAUDE.md          # This file (loaded by agent)
 └── config.json        # User configuration
 ```
+
+## Code Quality - Zero Tolerance
+
+After editing ANY file, run:
+
+```bash
+npm run typecheck && npm run lint
+```
+
+Fix ALL errors/warnings before continuing.
+
+**Available scripts:**
+- `npm run lint` - ESLint check
+- `npm run lint:fix` - Auto-fix lint issues
+- `npm run typecheck` - TypeScript type checking
+- `npm run format` - Prettier auto-format
+- `npm run format:check` - Check formatting
+
+## Organization Rules
+
+**Keep code organized and modularized:**
+- Main process code → `src/main/`
+- Agent logic → `src/agent/`
+- Persistence → `src/memory/`
+- External channels → `src/channels/`
+- Tool implementations → `src/tools/`
+- Configuration → `src/config/` and `src/settings/`
+- Browser automation → `src/browser/`
+
+**Modularity principles:**
+- Single responsibility per file
+- Clear, descriptive file names
+- Group related functionality together
+- Avoid monolithic files
