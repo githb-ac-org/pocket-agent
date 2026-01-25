@@ -24,6 +24,8 @@ contextBridge.exposeInMainWorld('pocketAgent', {
   listFacts: () => ipcRenderer.invoke('facts:list'),
   searchFacts: (query: string) => ipcRenderer.invoke('facts:search', query),
   getFactCategories: () => ipcRenderer.invoke('facts:categories'),
+  getGraphData: () => ipcRenderer.invoke('facts:graph-data'),
+  openFactsGraph: () => ipcRenderer.invoke('app:openFactsGraph'),
 
   // Cron
   getCronJobs: () => ipcRenderer.invoke('cron:list'),
@@ -67,6 +69,11 @@ declare global {
       listFacts: () => Promise<Array<{ id: number; category: string; subject: string; content: string }>>;
       searchFacts: (query: string) => Promise<Array<{ category: string; subject: string; content: string }>>;
       getFactCategories: () => Promise<string[]>;
+      getGraphData: () => Promise<{
+        nodes: Array<{ id: number; subject: string; category: string; content: string; group: number }>;
+        links: Array<{ source: number; target: number; type: 'category' | 'semantic' | 'keyword'; strength: number }>;
+      }>;
+      openFactsGraph: () => Promise<void>;
       getCronJobs: () => Promise<Array<{ id: number; name: string; schedule: string; prompt: string; channel: string; enabled: boolean }>>;
       createCronJob: (name: string, schedule: string, prompt: string, channel: string) => Promise<{ success: boolean }>;
       deleteCronJob: (name: string) => Promise<{ success: boolean }>;

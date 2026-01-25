@@ -704,6 +704,17 @@
     <button onclick="clearChat()">Clear</button>
     <button onclick="loadHistory()">Refresh</button>
     <button onclick="showFacts()">Facts</button>
+    <button onclick="openFactsGraph()" title="Open Knowledge Graph">
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
+        <circle cx="6" cy="6" r="3"/>
+        <circle cx="18" cy="6" r="3"/>
+        <circle cx="6" cy="18" r="3"/>
+        <circle cx="18" cy="18" r="3"/>
+        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"/>
+        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"/>
+      </svg>
+      Graph
+    </button>
     <div style="flex: 1;"></div>
     <button onclick="openSettings()" title="Settings">
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle;"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -782,26 +793,8 @@
       const emptyState = messagesDiv.querySelector('.empty-state');
       if (emptyState) emptyState.remove();
 
-      // Create reminder message with icon
-      const reminderDiv = document.createElement('div');
-      reminderDiv.className = 'message reminder';
-
-      const promptPreview = data.prompt.length > 100
-        ? data.prompt.slice(0, 100) + '...'
-        : data.prompt;
-
-      // Clock icon SVG
-      const clockIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
-
-      reminderDiv.innerHTML = `
-        <div class="reminder-header">
-          ${clockIcon}
-          <span>Scheduled Reminder</span>
-        </div>
-        <div class="reminder-content">${promptPreview}</div>
-      `;
-
-      messagesDiv.appendChild(reminderDiv);
+      // Use the shared reminder rendering function
+      addReminderFromHistory(data.jobName, data.prompt, true);
 
       // Add the agent's response
       addMessage('assistant', data.response);
@@ -814,6 +807,31 @@
       window.focus();
     }
 
+    function addReminderFromHistory(jobName, prompt, animate = true) {
+      // Create reminder message with icon
+      const reminderDiv = document.createElement('div');
+      reminderDiv.className = 'message reminder';
+      if (!animate) reminderDiv.style.animation = 'none';
+
+      const promptPreview = prompt.length > 100
+        ? prompt.slice(0, 100) + '...'
+        : prompt;
+
+      // Clock icon SVG
+      const clockIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
+
+      reminderDiv.innerHTML = `
+        <div class="reminder-header">
+          ${clockIcon}
+          <span>Scheduled: ${escapeHtml(jobName)}</span>
+        </div>
+        <div class="reminder-content">${escapeHtml(promptPreview)}</div>
+      `;
+
+      messagesDiv.appendChild(reminderDiv);
+      return reminderDiv;
+    }
+
     async function loadHistory() {
       try {
         const history = await window.pocketAgent.getHistory(100);
@@ -823,13 +841,35 @@
           showEmptyState();
         } else {
           let lastDate = null;
-          for (const msg of history) {
+          for (let i = 0; i < history.length; i++) {
+            const msg = history[i];
             // Add date separator if needed
             const msgDate = new Date(msg.timestamp).toLocaleDateString();
             if (msgDate !== lastDate) {
               addTimestamp(msgDate);
               lastDate = msgDate;
             }
+
+            // Check if this is a scheduled reminder (user message starts with [Scheduled: ...])
+            if (msg.role === 'user' && msg.content.startsWith('[Scheduled:')) {
+              // Extract job name and prompt from [Scheduled: jobname] prompt
+              const match = msg.content.match(/^\[Scheduled:\s*([^\]]+)\]\s*(.*)/s);
+              if (match) {
+                const jobName = match[1];
+                const prompt = match[2];
+
+                // Render as reminder
+                addReminderFromHistory(jobName, prompt, false);
+
+                // The next message should be the assistant's response
+                if (i + 1 < history.length && history[i + 1].role === 'assistant') {
+                  addMessage('assistant', history[i + 1].content, false);
+                  i++; // Skip the next message since we've handled it
+                }
+                continue;
+              }
+            }
+
             addMessage(msg.role, msg.content, false);
           }
         }
@@ -1321,6 +1361,14 @@
         await window.pocketAgent.openSettings();
       } catch (err) {
         console.error('Failed to open settings:', err);
+      }
+    }
+
+    async function openFactsGraph() {
+      try {
+        await window.pocketAgent.openFactsGraph();
+      } catch (err) {
+        console.error('Failed to open facts graph:', err);
       }
     }
   </script>

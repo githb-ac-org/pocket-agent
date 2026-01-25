@@ -15,6 +15,7 @@ let chatWindow: BrowserWindow | null = null;
 let cronWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
 let setupWindow: BrowserWindow | null = null;
+let factsGraphWindow: BrowserWindow | null = null;
 
 // ============ Tray Setup ============
 
@@ -332,6 +333,35 @@ function openSetupWindow(): void {
   });
 }
 
+function openFactsGraphWindow(): void {
+  if (factsGraphWindow && !factsGraphWindow.isDestroyed()) {
+    factsGraphWindow.focus();
+    return;
+  }
+
+  factsGraphWindow = new BrowserWindow({
+    width: 900,
+    height: 700,
+    title: 'Knowledge Graph - Pocket Agent',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+    show: false,
+  });
+
+  factsGraphWindow.loadFile(path.join(__dirname, '../../ui/facts-graph.html'));
+
+  factsGraphWindow.once('ready-to-show', () => {
+    factsGraphWindow?.show();
+  });
+
+  factsGraphWindow.on('closed', () => {
+    factsGraphWindow = null;
+  });
+}
+
 function showNotification(title: string, body: string): void {
   if (Notification.isSupported()) {
     new Notification({ title, body }).show();
@@ -391,6 +421,15 @@ function setupIPC(): void {
 
   ipcMain.handle('facts:categories', async () => {
     return memory?.getFactCategories() || [];
+  });
+
+  ipcMain.handle('facts:graph-data', async () => {
+    if (!memory) return { nodes: [], links: [] };
+    return memory.getFactsGraphData();
+  });
+
+  ipcMain.handle('app:openFactsGraph', async () => {
+    openFactsGraphWindow();
   });
 
   // Cron jobs
@@ -596,7 +635,7 @@ async function initializeAgent(): Promise<void> {
   // Initialize scheduler
   if (SettingsManager.getBoolean('scheduler.enabled')) {
     scheduler = createScheduler();
-    await scheduler.initialize(memory);
+    await scheduler.initialize(memory, dbPath);
 
     // Set notification handler for scheduler
     scheduler.setNotificationHandler((title: string, body: string) => {

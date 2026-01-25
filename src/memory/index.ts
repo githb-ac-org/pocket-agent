@@ -30,10 +30,16 @@ export interface Fact {
 export interface CronJob {
   id: number;
   name: string;
-  schedule: string;
+  schedule_type?: string;
+  schedule: string | null;
+  run_at?: string | null;
+  interval_ms?: number | null;
   prompt: string;
   channel: string;
   enabled: boolean;
+  delete_after_run?: boolean;
+  context_messages?: number;
+  next_run_at?: string | null;
 }
 
 export interface ConversationContext {
@@ -48,6 +54,26 @@ export interface SearchResult {
   score: number;
   vectorScore: number;
   keywordScore: number;
+}
+
+export interface GraphNode {
+  id: number;
+  subject: string;
+  category: string;
+  content: string;
+  group: number;
+}
+
+export interface GraphLink {
+  source: number;
+  target: number;
+  type: 'category' | 'semantic' | 'keyword';
+  strength: number;
+}
+
+export interface GraphData {
+  nodes: GraphNode[];
+  links: GraphLink[];
 }
 
 // Summarizer function type - injected to avoid circular dependency with agent
@@ -108,14 +134,26 @@ export class MemoryManager {
         FOREIGN KEY (fact_id) REFERENCES facts(id) ON DELETE CASCADE
       );
 
-      -- Scheduled cron jobs
+      -- Scheduled cron jobs (supports cron/at/every schedule types)
       CREATE TABLE IF NOT EXISTS cron_jobs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE,
-        schedule TEXT NOT NULL,
+        schedule_type TEXT NOT NULL DEFAULT 'cron' CHECK(schedule_type IN ('cron', 'at', 'every')),
+        schedule TEXT,
+        run_at TEXT,
+        interval_ms INTEGER,
         prompt TEXT NOT NULL,
-        channel TEXT NOT NULL DEFAULT 'default',
-        enabled INTEGER DEFAULT 1
+        channel TEXT NOT NULL DEFAULT 'desktop',
+        enabled INTEGER DEFAULT 1,
+        delete_after_run INTEGER DEFAULT 0,
+        context_messages INTEGER DEFAULT 0,
+        next_run_at TEXT,
+        last_run_at TEXT,
+        last_status TEXT CHECK(last_status IN ('ok', 'error', 'skipped')),
+        last_error TEXT,
+        last_duration_ms INTEGER,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
       );
 
       -- Summaries of older conversation chunks
@@ -128,12 +166,46 @@ export class MemoryManager {
         created_at TEXT DEFAULT (datetime('now'))
       );
 
+      -- Calendar events
+      CREATE TABLE IF NOT EXISTS calendar_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        description TEXT,
+        start_time TEXT NOT NULL,
+        end_time TEXT,
+        all_day INTEGER DEFAULT 0,
+        location TEXT,
+        reminder_minutes INTEGER DEFAULT 15,
+        reminded INTEGER DEFAULT 0,
+        channel TEXT DEFAULT 'desktop',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      );
+
+      -- Tasks / Todos
+      CREATE TABLE IF NOT EXISTS tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        description TEXT,
+        due_date TEXT,
+        priority TEXT DEFAULT 'medium' CHECK(priority IN ('low', 'medium', 'high')),
+        status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'in_progress', 'completed')),
+        reminder_minutes INTEGER,
+        reminded INTEGER DEFAULT 0,
+        channel TEXT DEFAULT 'desktop',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      );
+
       -- Indexes for performance
       CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
       CREATE INDEX IF NOT EXISTS idx_facts_category ON facts(category);
       CREATE INDEX IF NOT EXISTS idx_facts_subject ON facts(subject);
       CREATE INDEX IF NOT EXISTS idx_chunks_fact_id ON chunks(fact_id);
       CREATE INDEX IF NOT EXISTS idx_summaries_range ON summaries(start_message_id, end_message_id);
+      CREATE INDEX IF NOT EXISTS idx_calendar_start ON calendar_events(start_time);
+      CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date);
+      CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
     `);
 
     // Create FTS5 virtual table for keyword search
@@ -768,6 +840,147 @@ export class MemoryManager {
   clearConversation(): void {
     this.db.exec('DELETE FROM messages');
     this.db.exec('DELETE FROM summaries');
+  }
+
+  /**
+   * Get facts as graph data for visualization
+   * Returns nodes (facts) and links (connections between facts)
+   */
+  async getFactsGraphData(): Promise<GraphData> {
+    const facts = this.getAllFacts();
+    if (facts.length === 0) {
+      return { nodes: [], links: [] };
+    }
+
+    // Category to group index mapping
+    const categoryGroups: Record<string, number> = {
+      user_info: 0,
+      preferences: 1,
+      projects: 2,
+      people: 3,
+      work: 4,
+      notes: 5,
+      decisions: 6,
+    };
+
+    // Create nodes
+    const nodes: GraphNode[] = facts.map(fact => ({
+      id: fact.id,
+      subject: fact.subject || fact.content.slice(0, 30),
+      category: fact.category,
+      content: fact.content,
+      group: categoryGroups[fact.category] ?? 7, // 7 = other
+    }));
+
+    const links: GraphLink[] = [];
+    const linkSet = new Set<string>(); // Track unique links
+
+    const addLink = (source: number, target: number, type: GraphLink['type'], strength: number) => {
+      const key = `${Math.min(source, target)}-${Math.max(source, target)}-${type}`;
+      if (!linkSet.has(key) && source !== target) {
+        linkSet.add(key);
+        links.push({ source, target, type, strength });
+      }
+    };
+
+    // 1. Category connections - facts in same category
+    const factsByCategory = new Map<string, Fact[]>();
+    for (const fact of facts) {
+      const list = factsByCategory.get(fact.category) || [];
+      list.push(fact);
+      factsByCategory.set(fact.category, list);
+    }
+
+    for (const categoryFacts of factsByCategory.values()) {
+      // Connect each fact to up to 3 others in the same category
+      for (let i = 0; i < categoryFacts.length; i++) {
+        for (let j = i + 1; j < Math.min(i + 4, categoryFacts.length); j++) {
+          addLink(categoryFacts[i].id, categoryFacts[j].id, 'category', 0.3);
+        }
+      }
+    }
+
+    // 2. Semantic connections (if embeddings available)
+    if (hasEmbeddings()) {
+      try {
+        // Get all chunks with embeddings
+        const chunks = this.db.prepare(`
+          SELECT c.fact_id, c.embedding
+          FROM chunks c
+          WHERE c.embedding IS NOT NULL
+        `).all() as Array<{ fact_id: number; embedding: Buffer }>;
+
+        // Build fact ID to embedding map
+        const factEmbeddings = new Map<number, number[]>();
+        for (const chunk of chunks) {
+          factEmbeddings.set(chunk.fact_id, deserializeEmbedding(chunk.embedding));
+        }
+
+        // Compare each pair of facts with embeddings
+        const factIds = Array.from(factEmbeddings.keys());
+        for (let i = 0; i < factIds.length; i++) {
+          const embA = factEmbeddings.get(factIds[i])!;
+          for (let j = i + 1; j < factIds.length; j++) {
+            const embB = factEmbeddings.get(factIds[j])!;
+            const similarity = cosineSimilarity(embA, embB);
+
+            // Only link if similarity is strong enough (above 0.5)
+            if (similarity >= 0.5) {
+              addLink(factIds[i], factIds[j], 'semantic', similarity);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[Memory] Failed to compute semantic links:', err);
+      }
+    }
+
+    // 3. Keyword connections
+    // Extract significant words from each fact
+    const COMMON_WORDS = new Set([
+      'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'her', 'was', 'one',
+      'our', 'out', 'has', 'have', 'been', 'this', 'that', 'they', 'from', 'with', 'will',
+      'what', 'when', 'where', 'which', 'their', 'about', 'would', 'there', 'could', 'other',
+      'into', 'than', 'then', 'them', 'these', 'some', 'like', 'just', 'only', 'over', 'such',
+      'make', 'made', 'also', 'most', 'very', 'does', 'being', 'those', 'after', 'before',
+    ]);
+
+    const extractKeywords = (text: string): Set<string> => {
+      const words = text.toLowerCase().match(/\b[a-z]{4,}\b/g) || [];
+      return new Set(words.filter(w => !COMMON_WORDS.has(w)));
+    };
+
+    const factKeywords = new Map<number, Set<string>>();
+    for (const fact of facts) {
+      const keywords = extractKeywords(`${fact.subject} ${fact.content}`);
+      factKeywords.set(fact.id, keywords);
+    }
+
+    // Find keyword overlaps between facts
+    const factIds = Array.from(factKeywords.keys());
+    for (let i = 0; i < factIds.length; i++) {
+      const kwA = factKeywords.get(factIds[i])!;
+      if (kwA.size === 0) continue;
+
+      for (let j = i + 1; j < factIds.length; j++) {
+        const kwB = factKeywords.get(factIds[j])!;
+        if (kwB.size === 0) continue;
+
+        // Count shared keywords
+        let shared = 0;
+        for (const kw of kwA) {
+          if (kwB.has(kw)) shared++;
+        }
+
+        // Link if at least 2 shared keywords
+        if (shared >= 2) {
+          const strength = Math.min(1, shared / 5); // Max strength at 5 shared words
+          addLink(factIds[i], factIds[j], 'keyword', strength);
+        }
+      }
+    }
+
+    return { nodes, links };
   }
 
   close(): void {
