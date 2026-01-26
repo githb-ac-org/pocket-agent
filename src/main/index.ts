@@ -529,6 +529,7 @@ function openChatWindow(): void {
     width: 600,
     height: 800,
     title: 'Pocket Agent',
+    backgroundColor: '#0a0a0b',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -558,6 +559,7 @@ function openCronWindow(): void {
     width: 700,
     height: 500,
     title: 'My Routines - Pocket Agent',
+    backgroundColor: '#0a0a0b',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -587,6 +589,7 @@ function openSettingsWindow(): void {
     width: 700,
     height: 600,
     title: 'Tweaks - Pocket Agent',
+    backgroundColor: '#0a0a0b',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -616,6 +619,7 @@ function openSetupWindow(): void {
     width: 520,
     height: 580,
     title: 'Welcome!',
+    backgroundColor: '#0a0a0b',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -652,6 +656,7 @@ function openFactsGraphWindow(): void {
     width: 900,
     height: 700,
     title: 'Mind Map - Pocket Agent',
+    backgroundColor: '#0a0a0b',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -681,6 +686,7 @@ function openCustomizeWindow(): void {
     width: 800,
     height: 650,
     title: 'Make It Yours - Pocket Agent',
+    backgroundColor: '#0a0a0b',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -710,6 +716,7 @@ function openFactsWindow(): void {
     width: 700,
     height: 550,
     title: 'My Brain - Pocket Agent',
+    backgroundColor: '#0a0a0b',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -739,6 +746,7 @@ function createSkillsSetupWindow(): void {
     width: 900,
     height: 700,
     title: 'Superpowers - Pocket Agent',
+    backgroundColor: '#0a0a0b',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
