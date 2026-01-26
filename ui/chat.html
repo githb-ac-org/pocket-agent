@@ -1009,7 +1009,7 @@
           }
         }
 
-        scrollToBottom();
+        scrollToBottom(true); // Instant scroll on initial load
       } catch (err) {
         console.error('Failed to load history:', err);
         showEmptyState();
@@ -1362,11 +1362,11 @@
       `;
     }
 
-    function scrollToBottom() {
+    function scrollToBottom(instant = false) {
       requestAnimationFrame(() => {
         messagesDiv.scrollTo({
           top: messagesDiv.scrollHeight,
-          behavior: 'smooth'
+          behavior: instant ? 'instant' : 'smooth'
         });
       });
     }
