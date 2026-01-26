@@ -577,9 +577,9 @@
 </head>
 <body>
   <header>
-    <h1>Settings</h1>
+    <h1>Tweaks ⚙️</h1>
     <div class="header-actions">
-      <button class="secondary" onclick="restartAgent()">Restart Agent</button>
+      <button class="secondary" onclick="restartAgent()">Reboot</button>
     </div>
   </header>
 
@@ -587,15 +587,15 @@
     <nav class="sidebar">
       <div class="nav-item active" data-section="auth">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-        Authentication
+        Sign In
       </div>
       <div class="nav-item" data-section="api_keys">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
-        API Keys
+        Keys
       </div>
       <div class="nav-item" data-section="agent">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        Agent
+        Brain Power
       </div>
       <div class="nav-item" data-section="telegram">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
@@ -611,24 +611,24 @@
       </div>
       <div class="nav-item" data-section="skills">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-        Skills
+        Superpowers
       </div>
     </nav>
 
     <main class="content">
       <!-- Authentication Section -->
       <section id="auth" class="section active">
-        <h2 class="section-title">Authentication</h2>
-        <p class="section-desc">Choose how to authenticate with Claude. You can use either OAuth (Claude Pro/Max subscription) or an API key.</p>
+        <h2 class="section-title">Sign In</h2>
+        <p class="section-desc">Choose how to connect with Claude. You can use OAuth (Claude Pro/Max) or an API key.</p>
 
         <div class="card">
           <div class="card-title">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-            Current Method
+            How You're Connected
           </div>
           <div class="form-group">
             <div id="auth-status" class="auth-status">
-              <span class="auth-badge loading">Checking...</span>
+              <span class="auth-badge loading">checking...</span>
             </div>
           </div>
         </div>
@@ -661,7 +661,7 @@
         <div class="card">
           <div class="card-title" style="color: var(--success);">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
-            API Key Authentication
+            Use Your Own Key
           </div>
           <p class="description" style="margin-bottom: 16px;">Use an Anthropic API key. Best for development or pay-as-you-go usage.</p>
           <div class="form-group">
@@ -679,7 +679,7 @@
       <!-- API Keys Section -->
       <section id="api_keys" class="section">
         <h2 class="section-title">API Keys</h2>
-        <p class="section-desc">Configure your AI provider API keys. Keys are encrypted before storage.</p>
+        <p class="section-desc">Your secret keys are safely encrypted. Pinky promise! 🤞</p>
 
         <div class="card">
           <div class="card-title">
@@ -716,8 +716,8 @@
 
       <!-- Agent Section -->
       <section id="agent" class="section">
-        <h2 class="section-title">Agent Settings</h2>
-        <p class="section-desc">Configure Claude agent behavior and performance.</p>
+        <h2 class="section-title">Brain Power</h2>
+        <p class="section-desc">Tune my thinking power and memory. More tokens = bigger brain!</p>
 
         <div class="card">
           <div class="form-group">
@@ -757,14 +757,14 @@
 
       <!-- Telegram Section -->
       <section id="telegram" class="section">
-        <h2 class="section-title">Telegram Integration</h2>
-        <p class="section-desc">Connect your Telegram bot to chat from anywhere.</p>
+        <h2 class="section-title">Telegram</h2>
+        <p class="section-desc">Chat with me from anywhere via Telegram!</p>
 
         <div class="card">
           <div class="toggle-group">
             <div class="toggle-info">
-              <div class="toggle-label">Enable Telegram Bot</div>
-              <div class="toggle-desc">Allow chatting with Pocket Agent via Telegram</div>
+              <div class="toggle-label">Telegram Mode</div>
+              <div class="toggle-desc">Let me chat with you on Telegram</div>
             </div>
             <div class="toggle" id="telegram.enabled-toggle" onclick="toggleSetting('telegram.enabled')"></div>
           </div>
@@ -798,7 +798,7 @@
       <!-- Memory Section -->
       <section id="memory" class="section">
         <h2 class="section-title">Memory & Search</h2>
-        <p class="section-desc">Configure how Pocket Agent remembers and searches information.</p>
+        <p class="section-desc">Fine-tune how I remember and find things. Nerd stuff!</p>
 
         <div class="info-box">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
@@ -843,14 +843,14 @@
 
       <!-- Browser Section -->
       <section id="browser" class="section">
-        <h2 class="section-title">Browser Automation</h2>
-        <p class="section-desc">Configure browser tools and CDP connection.</p>
+        <h2 class="section-title">Browser Magic</h2>
+        <p class="section-desc">Let me browse the web and do things in Chrome for you!</p>
 
         <div class="card">
           <div class="toggle-group">
             <div class="toggle-info">
-              <div class="toggle-label">Enable Browser Tools</div>
-              <div class="toggle-desc">Allow agent to browse the web and automate browsers</div>
+              <div class="toggle-label">Browser Mode</div>
+              <div class="toggle-desc">Let me surf the web and click around for you</div>
             </div>
             <div class="toggle" id="browser.enabled-toggle" onclick="toggleSetting('browser.enabled')"></div>
           </div>
@@ -867,18 +867,18 @@
 
       <!-- Skills Section -->
       <section id="skills" class="section">
-        <h2 class="section-title">Skills</h2>
-        <p class="section-desc">Extend Pocket Agent with skills for email, messaging, notes, and more.</p>
+        <h2 class="section-title">Superpowers</h2>
+        <p class="section-desc">Unlock abilities like email, messaging, notes, and more!</p>
 
         <div class="card">
           <div class="form-group">
             <label>Status</label>
-            <div id="skills-status-line" class="status info">Loading...</div>
+            <div id="skills-status-line" class="status info">checking powers...</div>
           </div>
           <div class="form-group">
-            <label>Manage Skills</label>
-            <p class="description">Install dependencies and configure skills for email (himalaya), messaging (iMessage, Slack, Discord), notes (Apple Notes, Obsidian, Notion), and more.</p>
-            <button onclick="openSkillsSetup()" class="skills-setup-btn">Open Skills Setup</button>
+            <label>Power Up</label>
+            <p class="description">Install dependencies and configure skills for email, messaging (iMessage, Slack, Discord), notes (Apple Notes, Obsidian, Notion), and more.</p>
+            <button onclick="openSkillsSetup()" class="skills-setup-btn">Open Skills Lab</button>
           </div>
         </div>
       </section>
@@ -967,7 +967,7 @@
           try {
             await window.pocketAgent.setSetting(key, value);
             settings[key] = value;
-            showToast('Setting saved', 'success');
+            showToast('Saved! ✨', 'success');
           } catch (err) {
             console.error('Failed to save setting:', err);
             showToast('Failed to save setting', 'error');
@@ -984,7 +984,7 @@
         await window.pocketAgent.setSetting(key, newValue);
         settings[key] = newValue;
         updateToggles();
-        showToast('Setting saved', 'success');
+        showToast('Saved! ✨', 'success');
       } catch (err) {
         console.error('Failed to toggle setting:', err);
         showToast('Failed to save setting', 'error');
@@ -1051,9 +1051,9 @@
 
     async function restartAgent() {
       try {
-        showToast('Restarting agent...', 'success');
+        showToast('Rebooting... 🔄', 'success');
         await window.pocketAgent.restartAgent();
-        showToast('Agent restarted successfully', 'success');
+        showToast('Back online! ✨', 'success');
       } catch (err) {
         showToast('Failed to restart: ' + err.message, 'error');
       }
@@ -1217,10 +1217,10 @@
         const { total, available, unavailable } = result.summary;
         if (unavailable === 0) {
           statusEl.className = 'status success';
-          statusEl.textContent = `${available} skills ready`;
+          statusEl.textContent = `${available} powers ready!`;
         } else {
           statusEl.className = 'status warning';
-          statusEl.textContent = `${available} ready, ${unavailable} need install`;
+          statusEl.textContent = `${available} ready, ${unavailable} need setup`;
         }
       } catch (err) {
         console.error('Failed to load skills summary:', err);

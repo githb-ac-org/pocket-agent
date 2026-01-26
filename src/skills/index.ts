@@ -70,13 +70,128 @@ export function loadSkillsManifest(skillsDir: string): SkillsManifest | null {
   }
 }
 
+// Cache for dynamic paths (computed once)
+let cachedPaths: string[] | null = null;
+
 /**
- * Check if a binary is available in PATH
+ * Get all possible binary installation paths
+ * Based on: npm, homebrew, go, uv, cargo, and system paths
+ */
+function getAllBinPaths(): string[] {
+  if (cachedPaths) return cachedPaths;
+
+  const home = os.homedir();
+  const paths: string[] = [];
+
+  // === System paths ===
+  paths.push('/usr/local/bin');
+  paths.push('/usr/bin');
+  paths.push('/bin');
+  paths.push('/usr/sbin');
+  paths.push('/sbin');
+
+  // === Homebrew ===
+  // Apple Silicon Mac
+  paths.push('/opt/homebrew/bin');
+  paths.push('/opt/homebrew/sbin');
+  // Intel Mac
+  paths.push('/usr/local/bin');
+  paths.push('/usr/local/sbin');
+  // Linux Homebrew
+  paths.push('/home/linuxbrew/.linuxbrew/bin');
+  paths.push(`${home}/.linuxbrew/bin`);
+
+  // === npm global ===
+  // Default locations
+  paths.push('/usr/local/bin');
+  paths.push(`${home}/.npm-global/bin`);
+  paths.push(`${home}/.npm/bin`);
+  // nvm locations (check common node versions)
+  const nvmBase = `${home}/.nvm/versions/node`;
+  if (fs.existsSync(nvmBase)) {
+    try {
+      const versions = fs.readdirSync(nvmBase);
+      for (const v of versions) {
+        paths.push(`${nvmBase}/${v}/bin`);
+      }
+    } catch { /* ignore */ }
+  }
+  // Try to get actual npm prefix
+  try {
+    const npmPrefix = execSync('npm prefix -g', { stdio: 'pipe', encoding: 'utf-8' }).trim();
+    if (npmPrefix) paths.push(`${npmPrefix}/bin`);
+  } catch { /* ignore */ }
+
+  // === Go ===
+  // Default GOPATH/bin
+  paths.push(`${home}/go/bin`);
+  // Check GOPATH env
+  const gopath = process.env.GOPATH;
+  if (gopath) paths.push(`${gopath}/bin`);
+  // Check GOBIN env
+  const gobin = process.env.GOBIN;
+  if (gobin) paths.push(gobin);
+
+  // === Python / uv / pipx ===
+  paths.push(`${home}/.local/bin`);
+  paths.push(`${home}/.local/share/uv/tools`);
+  // pipx
+  paths.push(`${home}/.local/pipx/venvs`);
+
+  // === Cargo (Rust) ===
+  paths.push(`${home}/.cargo/bin`);
+
+  // === Volta (Node version manager) ===
+  paths.push(`${home}/.volta/bin`);
+
+  // === asdf version manager ===
+  paths.push(`${home}/.asdf/shims`);
+
+  // === mise (formerly rtx) version manager ===
+  paths.push(`${home}/.local/share/mise/shims`);
+
+  // Deduplicate and cache
+  cachedPaths = [...new Set(paths)];
+  return cachedPaths;
+}
+
+/**
+ * Check if a binary is available
+ * Checks all known installation paths for package managers
  */
 export function isBinAvailable(bin: string): boolean {
+  if (PLATFORM === 'win32') {
+    try {
+      execSync(`where ${bin}`, { stdio: 'pipe' });
+      return true;
+    } catch {
+      // Also check common Windows paths
+      const appData = process.env.APPDATA || '';
+      const localAppData = process.env.LOCALAPPDATA || '';
+      const winPaths = [
+        `${appData}\\npm\\${bin}.cmd`,
+        `${appData}\\npm\\${bin}`,
+        `${localAppData}\\Programs\\Python\\Python*\\Scripts\\${bin}.exe`,
+      ];
+      for (const p of winPaths) {
+        if (fs.existsSync(p)) return true;
+      }
+      return false;
+    }
+  }
+
+  // Check all known paths
+  const allPaths = getAllBinPaths();
+  for (const dir of allPaths) {
+    const fullPath = path.join(dir, bin);
+    if (fs.existsSync(fullPath)) {
+      return true;
+    }
+  }
+
+  // Last resort: try which (may work if PATH is set correctly in shell)
   try {
-    const cmd = PLATFORM === 'win32' ? `where ${bin}` : `which ${bin}`;
-    execSync(cmd, { stdio: 'pipe' });
+    execSync(`which ${bin}`, { stdio: 'pipe' });
     return true;
   } catch {
     return false;

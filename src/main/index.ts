@@ -360,7 +360,7 @@ function updateTrayMenu(): void {
     },
     { type: 'separator' },
     {
-      label: 'Open Chat',
+      label: 'Chat',
       click: () => openChatWindow(),
       accelerator: 'CmdOrCtrl+Shift+P',
     },
@@ -374,42 +374,42 @@ function updateTrayMenu(): void {
       enabled: false,
     },
     {
-      label: `Cron Jobs: ${cronStatus}`,
+      label: `Routines: ${cronStatus}`,
       enabled: false,
     },
     { type: 'separator' },
     {
-      label: 'Cron Jobs',
+      label: 'Routines',
       submenu: buildCronSubmenu(),
     },
     {
-      label: 'Settings...',
+      label: 'Tweaks...',
       click: () => openSettingsWindow(),
       accelerator: 'CmdOrCtrl+,',
     },
     {
-      label: 'Skills Setup...',
+      label: 'Superpowers...',
       click: () => createSkillsSetupWindow(),
     },
     { type: 'separator' },
     {
-      label: 'Clear Conversation',
+      label: 'Fresh Start',
       click: () => {
         AgentManager.clearConversation();
         updateTrayMenu();
-        showNotification('Pocket Agent', 'Conversation cleared');
+        showNotification('Pocket Agent', 'Fresh start! 🌟');
       },
     },
     {
-      label: 'Restart Agent',
+      label: 'Reboot',
       click: async () => {
         await restartAgent();
-        showNotification('Pocket Agent', 'Agent restarted');
+        showNotification('Pocket Agent', 'Back online! ✨');
       },
     },
     { type: 'separator' },
     {
-      label: 'Quit',
+      label: 'Bye!',
       click: () => app.quit(),
       accelerator: 'CmdOrCtrl+Q',
     },
@@ -423,9 +423,9 @@ function buildCronSubmenu(): Electron.MenuItemConstructorOptions[] {
 
   if (jobs.length === 0) {
     return [
-      { label: 'No jobs configured', enabled: false },
+      { label: 'No routines yet', enabled: false },
       { type: 'separator' },
-      { label: 'Manage Jobs...', click: () => openCronWindow() },
+      { label: 'Manage Routines...', click: () => openCronWindow() },
     ];
   }
 
@@ -434,23 +434,23 @@ function buildCronSubmenu(): Electron.MenuItemConstructorOptions[] {
     sublabel: job.schedule ?? undefined,
     submenu: [
       {
-        label: job.enabled ? 'Disable' : 'Enable',
+        label: job.enabled ? 'Pause' : 'Activate',
         click: () => {
           scheduler?.setJobEnabled(job.name, !job.enabled);
           updateTrayMenu();
         },
       },
       {
-        label: 'Run Now',
+        label: 'Run Now!',
         click: async () => {
           const result = await scheduler?.runJobNow(job.name);
           if (result) {
-            showNotification(`Job: ${job.name}`, result.success ? 'Completed' : `Failed: ${result.error}`);
+            showNotification(`${job.name}`, result.success ? 'Done! ✅' : `Oops: ${result.error}`);
           }
         },
       },
       {
-        label: 'Delete',
+        label: 'Remove',
         click: () => {
           scheduler?.deleteJob(job.name);
           updateTrayMenu();
@@ -460,7 +460,7 @@ function buildCronSubmenu(): Electron.MenuItemConstructorOptions[] {
   }));
 
   items.push({ type: 'separator' });
-  items.push({ label: 'Manage Jobs...', click: () => openCronWindow() });
+  items.push({ label: 'Manage Routines...', click: () => openCronWindow() });
 
   return items;
 }
@@ -507,7 +507,7 @@ function openCronWindow(): void {
   cronWindow = new BrowserWindow({
     width: 700,
     height: 500,
-    title: 'Cron Jobs - Pocket Agent',
+    title: 'My Routines - Pocket Agent',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -536,7 +536,7 @@ function openSettingsWindow(): void {
   settingsWindow = new BrowserWindow({
     width: 700,
     height: 600,
-    title: 'Settings - Pocket Agent',
+    title: 'Tweaks - Pocket Agent',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -565,7 +565,7 @@ function openSetupWindow(): void {
   setupWindow = new BrowserWindow({
     width: 520,
     height: 580,
-    title: 'Welcome to Pocket Agent',
+    title: 'Welcome!',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -601,7 +601,7 @@ function openFactsGraphWindow(): void {
   factsGraphWindow = new BrowserWindow({
     width: 900,
     height: 700,
-    title: 'Knowledge Graph - Pocket Agent',
+    title: 'Mind Map - Pocket Agent',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -630,7 +630,7 @@ function openCustomizeWindow(): void {
   customizeWindow = new BrowserWindow({
     width: 800,
     height: 650,
-    title: 'Customize Agent - Pocket Agent',
+    title: 'Make It Yours - Pocket Agent',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -659,7 +659,7 @@ function openFactsWindow(): void {
   factsWindow = new BrowserWindow({
     width: 700,
     height: 550,
-    title: 'Stored Facts - Pocket Agent',
+    title: 'My Brain - Pocket Agent',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -688,7 +688,7 @@ function createSkillsSetupWindow(): void {
   skillsSetupWindow = new BrowserWindow({
     width: 900,
     height: 700,
-    title: 'Skills Setup - Pocket Agent',
+    title: 'Superpowers - Pocket Agent',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

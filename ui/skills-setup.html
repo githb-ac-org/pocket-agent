@@ -189,12 +189,13 @@
     .status.needs { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
     .status.na { background: rgba(99, 99, 102, 0.1); color: var(--text-muted); }
 
-    .actions { width: 100px; text-align: right; }
+    .actions { width: 110px; text-align: right; }
 
     .actions button {
       padding: 4px 10px;
       font-size: 12px;
-      min-width: 70px;
+      min-width: 90px;
+      white-space: nowrap;
     }
 
     .actions .installing {
@@ -247,23 +248,23 @@
 <body>
   <header>
     <div style="display: flex; align-items: center;">
-      <h1>Skills</h1>
+      <h1>Superpowers 🦸</h1>
       <div class="stats" id="stats"></div>
     </div>
     <div class="header-actions">
       <button onclick="load()">Refresh</button>
-      <button class="primary" id="install-btn" onclick="installAll()" disabled>Install All</button>
+      <button class="primary" id="install-btn" onclick="installAll()" disabled>Power Up All</button>
     </div>
   </header>
 
   <div class="filters">
     <button class="filter active" data-f="all" onclick="filter('all')">All</button>
-    <button class="filter" data-f="ready" onclick="filter('ready')">Ready</button>
-    <button class="filter" data-f="missing" onclick="filter('missing')">Need Install</button>
+    <button class="filter" data-f="ready" onclick="filter('ready')">Unlocked</button>
+    <button class="filter" data-f="missing" onclick="filter('missing')">Locked</button>
   </div>
 
   <div class="content" id="content">
-    <div class="empty">Loading...</div>
+    <div class="empty">scanning powers...</div>
   </div>
 
   <div class="toast" id="toast"></div>
@@ -275,7 +276,7 @@
 
     const emojis = {
       '1password':'🔐','apple-notes':'📝','apple-reminders':'⏰','bear-notes':'🐻','bird':'🐦',
-      'blogwatcher':'📰','camsnap':'📷','clawdhub':'🦞','coding-agent':'💻','discord':'🎮',
+      'blogwatcher':'📰','camsnap':'📷','coding-agent':'💻','discord':'🎮',
       'food-order':'🍕','gemini':'♊','gifgrep':'🎬','github':'🐙','himalaya':'📧','imsg':'💬',
       'notion':'📔','obsidian':'💎','openhue':'💡','peekaboo':'👀','slack':'💼','sonoscli':'🔊',
       'spotify-player':'🎧','summarize':'📝','things-mac':'✅','tmux':'🖥️','trello':'📋',
@@ -287,7 +288,7 @@
         const r = await window.pocketAgent.getSkillsStatus();
         data = r.skills;
         document.getElementById('stats').innerHTML =
-          `<span class="ready">${r.summary.available} ready</span><span class="missing">${r.summary.unavailable} missing</span>`;
+          `<span class="ready">${r.summary.available} unlocked</span><span class="missing">${r.summary.unavailable} locked</span>`;
         document.getElementById('install-btn').disabled = r.summary.unavailable === 0 || installing;
         render();
       } catch (e) {
@@ -305,21 +306,21 @@
       });
 
       if (!list.length) {
-        c.innerHTML = '<div class="empty">No skills match</div>';
+        c.innerHTML = '<div class="empty">no powers here yet!</div>';
         return;
       }
 
       c.innerHTML = `<table>
-        <thead><tr><th>Skill</th><th>Dependencies</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Power</th><th>Requirements</th><th>Status</th><th></th></tr></thead>
         <tbody>${list.map(s => {
           const e = emojis[s.name] || '🔧';
           const st = s.available ? 'ready' : (s.osCompatible ? 'needs' : 'na');
-          const stTxt = s.available ? 'Ready' : (s.osCompatible ? 'Install' : 'N/A');
+          const stTxt = s.available ? 'Unlocked' : (s.osCompatible ? 'Locked' : 'N/A');
           const deps = s.missingBins.length ? s.missingBins.join(', ') : (s.available ? '—' : 'none');
           const depsClass = s.missingBins.length ? 'missing' : '';
           const canInstall = !s.available && s.osCompatible && s.installOptions.length;
           const btn = canInstall
-            ? `<button id="btn-${s.name}" onclick="install('${s.name}')">Install</button>` : '';
+            ? `<button id="btn-${s.name}" onclick="install('${s.name}')">Unlock</button>` : '';
           return `<tr id="row-${s.name}">
             <td class="name"><span>${e}</span>${esc(s.name)}</td>
             <td class="deps ${depsClass}">${esc(deps)}</td>
@@ -346,10 +347,10 @@
 
       switch(state) {
         case 'installing':
-          btn.textContent = 'Installing...';
+          btn.textContent = 'Unlocking...';
           break;
         case 'done':
-          btn.textContent = '✓ Done';
+          btn.textContent = '✓ Unlocked';
           break;
         case 'failed':
           btn.textContent = '✗ Failed';
@@ -358,11 +359,29 @@
     }
 
     function updateRowStatus(name, available) {
+      // Update the local data object
+      const skill = data.find(s => s.name === name);
+      if (skill) {
+        skill.available = available;
+        skill.missingBins = [];
+      }
+
+      // Update the status cell
       const statusCell = document.getElementById(`status-${name}`);
       if (statusCell) {
         statusCell.innerHTML = available
-          ? '<span class="status ready">Ready</span>'
-          : '<span class="status needs">Install</span>';
+          ? '<span class="status ready">Unlocked</span>'
+          : '<span class="status needs">Locked</span>';
+      }
+
+      // Update the deps cell to show no missing deps
+      const row = document.getElementById(`row-${name}`);
+      if (row && available) {
+        const depsCell = row.querySelector('.deps');
+        if (depsCell) {
+          depsCell.textContent = '—';
+          depsCell.classList.remove('missing');
+        }
       }
     }
 
@@ -378,11 +397,12 @@
         if (r.success) {
           setButtonState(name, 'done');
           updateRowStatus(name, true);
-          updateStats();
-          toast('Installed ' + name, 'success');
+          // Update stats count manually
+          updateStatsCount();
+          toast('Unlocked ' + name + '! 🎉', 'success');
         } else {
           setButtonState(name, 'failed');
-          toast('Failed: ' + r.failed.join(', '), 'error');
+          toast('Oops: ' + r.failed.join(', '), 'error');
         }
       } catch (e) {
         setButtonState(name, 'failed');
@@ -427,23 +447,33 @@
       }
 
       installing = false;
-      updateStats();
 
       if (failCount === 0) {
-        toast(`Installed ${successCount} skills`, 'success');
+        toast(`Unlocked ${successCount} powers! 🎉`, 'success');
       } else {
-        toast(`${successCount} installed, ${failCount} failed`, 'error');
+        toast(`${successCount} unlocked, ${failCount} failed`, 'error');
       }
 
-      document.getElementById('install-btn').disabled = true;
+      // Update stats from local data
+      updateStatsCount();
     }
 
+    // Update stats from local data (doesn't fetch from backend)
+    function updateStatsCount() {
+      const available = data.filter(s => s.available).length;
+      const unavailable = data.filter(s => !s.available && s.osCompatible).length;
+      document.getElementById('stats').innerHTML =
+        `<span class="ready">${available} unlocked</span><span class="missing">${unavailable} locked</span>`;
+      document.getElementById('install-btn').disabled = unavailable === 0 || installing;
+    }
+
+    // Fetch fresh stats from backend
     async function updateStats() {
       try {
         const r = await window.pocketAgent.getSkillsStatus();
         data = r.skills;
         document.getElementById('stats').innerHTML =
-          `<span class="ready">${r.summary.available} ready</span><span class="missing">${r.summary.unavailable} missing</span>`;
+          `<span class="ready">${r.summary.available} unlocked</span><span class="missing">${r.summary.unavailable} locked</span>`;
         document.getElementById('install-btn').disabled = r.summary.unavailable === 0 || installing;
       } catch (e) {
         // ignore

@@ -422,16 +422,16 @@
         <polyline points="12 6 12 12 16 14"/>
       </svg>
     </div>
-    <h1>Scheduled Jobs</h1>
+    <h1>My Routines ⏰</h1>
   </div>
 
   <div class="section">
-    <div class="section-title">Create New Job</div>
+    <div class="section-title">Schedule Something New</div>
     <div class="form-card">
       <div class="form-row">
         <div class="form-group">
           <label for="job-name">Job Name</label>
-          <input type="text" id="job-name" placeholder="morning-briefing" />
+          <input type="text" id="job-name" placeholder="morning-vibes" />
         </div>
         <div class="form-group small">
           <label for="job-schedule">Schedule (cron)</label>
@@ -448,7 +448,7 @@
       <div class="form-row">
         <div class="form-group">
           <label for="job-prompt">Prompt</label>
-          <textarea id="job-prompt" placeholder="What should the agent do when this job runs?"></textarea>
+          <textarea id="job-prompt" placeholder="what should i do when this kicks off? ✨"></textarea>
         </div>
       </div>
       <div class="form-row">
@@ -457,7 +457,7 @@
             <line x1="12" y1="5" x2="12" y2="19"/>
             <line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
-          Create Job
+          Let's Go!
         </button>
       </div>
       <div class="cron-help">
@@ -471,14 +471,14 @@
   </div>
 
   <div class="section">
-    <div class="section-title">Active Jobs</div>
+    <div class="section-title">Running on Autopilot</div>
     <div id="jobs-list" class="jobs-list">
       <div class="empty-state">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="10"/>
           <polyline points="12 6 12 12 16 14"/>
         </svg>
-        <p>Loading...</p>
+        <p>waking up...</p>
       </div>
     </div>
   </div>
@@ -499,7 +499,7 @@
                 <circle cx="12" cy="12" r="10"/>
                 <polyline points="12 6 12 12 16 14"/>
               </svg>
-              <p>No scheduled jobs yet</p>
+              <p>nothing scheduled yet!</p>
             </div>
           `;
           return;
@@ -517,18 +517,18 @@
             </div>
             <span class="job-channel">${escapeHtml(job.channel)}</span>
             <div class="job-actions">
-              <button class="secondary icon-btn" onclick="toggleJob('${escapeAttr(job.name)}', ${!job.enabled})" title="${job.enabled ? 'Disable' : 'Enable'}">
+              <button class="secondary icon-btn" onclick="toggleJob('${escapeAttr(job.name)}', ${!job.enabled})" title="${job.enabled ? 'Pause' : 'Activate'}">
                 ${job.enabled
                   ? '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>'
                   : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>'
                 }
               </button>
-              <button class="secondary icon-btn" onclick="runJob('${escapeAttr(job.name)}')" title="Run Now">
+              <button class="secondary icon-btn" onclick="runJob('${escapeAttr(job.name)}')" title="Run it now!">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polygon points="5 3 19 12 5 21 5 3"/>
                 </svg>
               </button>
-              <button class="danger icon-btn" onclick="deleteJob('${escapeAttr(job.name)}')" title="Delete">
+              <button class="danger icon-btn" onclick="deleteJob('${escapeAttr(job.name)}')" title="Remove">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
                 </svg>
@@ -548,7 +548,7 @@
       const channel = document.getElementById('job-channel').value;
 
       if (!name || !schedule || !prompt) {
-        showToast('Please fill in all fields', 'error');
+        showToast('Oops! Fill in all the fields first', 'error');
         return;
       }
 
@@ -558,10 +558,10 @@
           document.getElementById('job-name').value = '';
           document.getElementById('job-schedule').value = '';
           document.getElementById('job-prompt').value = '';
-          showToast('Job created successfully', 'success');
+          showToast('Routine created! 🎉', 'success');
           loadJobs();
         } else {
-          showToast('Invalid cron expression', 'error');
+          showToast('Hmm, that schedule doesn\'t look right', 'error');
         }
       } catch (err) {
         showToast(err.message, 'error');
@@ -571,7 +571,7 @@
     async function toggleJob(name, enabled) {
       try {
         await window.pocketAgent.toggleCronJob(name, enabled);
-        showToast(enabled ? 'Job enabled' : 'Job disabled', 'success');
+        showToast(enabled ? 'Activated! ✨' : 'Paused for now', 'success');
         loadJobs();
       } catch (err) {
         showToast(err.message, 'error');
@@ -579,12 +579,12 @@
     }
 
     async function runJob(name) {
-      showToast('Running job...', 'success');
+      showToast('On it! 🚀', 'success');
       try {
         const result = await window.pocketAgent.runCronJob(name);
         if (result) {
           if (result.success) {
-            showToast('Job completed', 'success');
+            showToast('Done! ✅', 'success');
           } else {
             showToast(`Job failed: ${result.error}`, 'error');
           }
@@ -595,11 +595,11 @@
     }
 
     async function deleteJob(name) {
-      if (!confirm(`Delete job "${name}"?`)) return;
+      if (!confirm(`Remove "${name}" from your routines?`)) return;
 
       try {
         await window.pocketAgent.deleteCronJob(name);
-        showToast('Job deleted', 'success');
+        showToast('Poof! Gone.', 'success');
         loadJobs();
       } catch (err) {
         showToast(err.message, 'error');

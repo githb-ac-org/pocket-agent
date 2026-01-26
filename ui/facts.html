@@ -263,11 +263,11 @@
 <body>
   <header>
     <div style="display: flex; align-items: center;">
-      <h1>Stored Facts</h1>
+      <h1>My Brain 🧠</h1>
       <span class="fact-count" id="fact-count"></span>
     </div>
     <div class="header-actions">
-      <button onclick="loadFacts()">Refresh</button>
+      <button onclick="loadFacts()">Refresh Memory</button>
     </div>
   </header>
 
@@ -295,8 +295,8 @@
                 <line x1="16" y1="13" x2="8" y2="13"/>
                 <line x1="16" y1="17" x2="8" y2="17"/>
               </svg>
-              <p>No facts stored yet</p>
-              <p class="hint">I learn facts when you tell me things about yourself.</p>
+              <p>my brain is empty!</p>
+              <p class="hint">tell me things about yourself and i'll remember them ✨</p>
             </div>
           `;
           return;
@@ -322,7 +322,7 @@
                   <td class="subject">${escapeHtml(f.subject)}</td>
                   <td class="content-cell">${escapeHtml(f.content)}</td>
                   <td class="actions">
-                    <button class="delete-btn" onclick="deleteFact(${f.id})" title="Delete fact">
+                    <button class="delete-btn" onclick="deleteFact(${f.id})" title="Forget this">
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="3 6 5 6 21 6"/>
                         <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
@@ -341,7 +341,7 @@
     }
 
     async function deleteFact(id) {
-      if (!confirm('Delete this fact?')) return;
+      if (!confirm('Forget this? 🤔')) return;
 
       try {
         const result = await window.pocketAgent.deleteFact(id);
@@ -367,7 +367,7 @@
               }
             }, 200);
           }
-          showToast('Fact deleted', 'success');
+          showToast('Poof! Forgotten.', 'success');
         } else {
           showToast('Failed to delete fact', 'error');
         }
