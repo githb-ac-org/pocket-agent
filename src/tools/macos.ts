@@ -191,10 +191,11 @@ export async function execWithPty(input: PtyExecInput): Promise<PtyExecResult> {
       let timeoutId: TimeoutHandle | null = null;
 
       const shell = os.platform() === 'win32' ? 'powershell.exe' : process.env.SHELL || '/bin/bash';
-      // Escape args to prevent command injection
+      // Escape individual args to prevent injection, but NOT the command itself
+      // (command is meant to be a shell command string like "npm install")
       const escapedArgs = args.map(escapeShellArg).join(' ');
       const shellArgs =
-        os.platform() === 'win32' ? ['-Command', command] : ['-c', `${escapeShellArg(command)}${args.length > 0 ? ' ' + escapedArgs : ''}`];
+        os.platform() === 'win32' ? ['-Command', command] : ['-c', `${command}${args.length > 0 ? ' ' + escapedArgs : ''}`];
 
       const ptyProcess = pty.spawn(shell, shellArgs, {
         name: 'xterm-256color',
@@ -262,10 +263,10 @@ async function execWithSpawn(input: PtyExecInput): Promise<PtyExecResult> {
     let timeoutId: TimeoutHandle | null = null;
 
     const shell = os.platform() === 'win32' ? 'cmd.exe' : '/bin/bash';
-    // Escape args to prevent command injection
+    // Escape individual args to prevent injection, but NOT the command itself
     const escapedArgs = args.map(escapeShellArg).join(' ');
     const shellArgs =
-      os.platform() === 'win32' ? ['/c', command, ...args] : ['-c', `${escapeShellArg(command)}${args.length > 0 ? ' ' + escapedArgs : ''}`];
+      os.platform() === 'win32' ? ['/c', command, ...args] : ['-c', `${command}${args.length > 0 ? ' ' + escapedArgs : ''}`];
 
     const child = spawn(shell, shellArgs, {
       cwd: cwd || process.cwd(),

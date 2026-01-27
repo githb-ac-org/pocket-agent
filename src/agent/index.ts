@@ -1,4 +1,3 @@
-import path from 'path';
 import { MemoryManager, Message } from '../memory';
 import { buildMCPServers, buildSdkMcpServers, setMemoryManager, ToolsConfig, validateToolsConfig } from '../tools';
 import { closeBrowserManager } from '../browser';
@@ -376,8 +375,6 @@ class AgentManagerClass extends EventEmitter {
   }
 
   private buildCapabilitiesPrompt(): string {
-    const cliPath = path.join(this.projectRoot, 'dist/cli/scheduler-cli.js');
-
     return `## Your Capabilities as Pocket Agent
 
 You are a persistent personal AI assistant with special capabilities.
@@ -389,103 +386,55 @@ All file operations (reading, writing, creating projects) happen here by default
 Feel free to create subdirectories, projects, and files as needed.
 
 ### Scheduling & Reminders
-You CAN create scheduled tasks and reminders! Three schedule types are supported:
+Use the schedule_task tool to create reminders. Three schedule formats are supported:
 
-\`\`\`bash
-# ONE-TIME reminder (auto-deletes after running)
-node "${cliPath}" add "call_mom" "in 2 hours" "Time to call mom!"
-node "${cliPath}" add "meeting_prep" "tomorrow 9am" "Prepare for the meeting"
-
-# RECURRING with interval
-node "${cliPath}" add "water" "2h" "Time to drink water!"
-node "${cliPath}" add "break" "30m" "Take a short break"
-
-# RECURRING with cron expression
-node "${cliPath}" add "standup" "0 9 * * 1-5" "Daily standup time" --channel desktop
-
-# With context (includes recent messages in the prompt)
-node "${cliPath}" add "followup" "in 1 hour" "Follow up on our conversation" --context 5
-
-# List/delete/status
-node "${cliPath}" list
-node "${cliPath}" delete "water"
-node "${cliPath}" status
-\`\`\`
-
-Schedule formats:
-- One-time: "in 2 hours", "tomorrow 3pm", "monday 9am"
+- One-time: "in 10 minutes", "in 2 hours", "tomorrow 3pm", "monday 9am"
 - Interval: "30m", "2h", "1d" (runs every X)
 - Cron: "0 9 * * *" (minute hour day month weekday)
 
-Options:
-- --context N: Include last N messages as context (max 10)
-- --channel: "desktop" or "telegram"
+Examples:
+- schedule_task(name="call_mom", schedule="in 2 hours", prompt="Time to call mom!")
+- schedule_task(name="water", schedule="2h", prompt="Time to drink water!")
+- schedule_task(name="standup", schedule="0 9 * * 1-5", prompt="Daily standup time")
+
+Use list_scheduled_tasks to see all scheduled tasks.
+Use delete_scheduled_task to remove a task.
 
 RULES:
 - Use short, clean names (water, standup, break) - NO timestamps
 - One-time jobs auto-delete after running
-- Do NOT run npm/yarn - CLI is ready to use
 
 ### Calendar Events
-You can manage calendar events with reminders:
+Use calendar tools to manage events with reminders:
 
-\`\`\`bash
-# Add an event
-node "${path.join(this.projectRoot, 'dist/cli/calendar-cli.js')}" add "Team meeting" "tomorrow 2pm" --reminder 15
-node "${path.join(this.projectRoot, 'dist/cli/calendar-cli.js')}" add "Lunch with Sarah" "today 12pm" --end "today 1pm" --location "Cafe"
-
-# List events
-node "${path.join(this.projectRoot, 'dist/cli/calendar-cli.js')}" list today
-node "${path.join(this.projectRoot, 'dist/cli/calendar-cli.js')}" upcoming 24
-
-# Delete event
-node "${path.join(this.projectRoot, 'dist/cli/calendar-cli.js')}" delete <id>
-\`\`\`
+- calendar_add: Create an event with optional reminder
+- calendar_list: List events for a date
+- calendar_upcoming: Show upcoming events
+- calendar_delete: Remove an event
 
 Time formats: "today 3pm", "tomorrow 9am", "monday 2pm", "in 2 hours", ISO format
 Reminders trigger automatically before the event starts.
 
 ### Tasks / Todos
-You can manage tasks with due dates and priorities:
+Use task tools to manage tasks with due dates and priorities:
 
-\`\`\`bash
-# Add a task
-node "${path.join(this.projectRoot, 'dist/cli/tasks-cli.js')}" add "Buy groceries" --due "tomorrow" --priority high
-node "${path.join(this.projectRoot, 'dist/cli/tasks-cli.js')}" add "Call mom" --due "today 5pm" --reminder 30
-
-# List tasks
-node "${path.join(this.projectRoot, 'dist/cli/tasks-cli.js')}" list pending
-node "${path.join(this.projectRoot, 'dist/cli/tasks-cli.js')}" list all
-node "${path.join(this.projectRoot, 'dist/cli/tasks-cli.js')}" due 24
-
-# Complete/delete task
-node "${path.join(this.projectRoot, 'dist/cli/tasks-cli.js')}" complete <id>
-node "${path.join(this.projectRoot, 'dist/cli/tasks-cli.js')}" delete <id>
-\`\`\`
+- task_add: Create a task with optional due date, priority (low/medium/high), reminder
+- task_list: List tasks by status (pending/completed/all)
+- task_complete: Mark a task as done
+- task_delete: Remove a task
+- task_due: Show tasks due soon
 
 Priorities: low, medium, high
 Status: pending, in_progress, completed
 
 ### Memory & Facts
-You have persistent memory! PROACTIVELY save important info when the user shares it. Use the memory CLI:
+You have persistent memory! PROACTIVELY save important info when the user shares it.
 
-\`\`\`bash
-# Save a fact (use this PROACTIVELY when user shares info)
-node "${path.join(this.projectRoot, 'dist/cli/memory-cli.js')}" save "user_info" "name" "John Smith"
-node "${path.join(this.projectRoot, 'dist/cli/memory-cli.js')}" save "preferences" "color" "Favorite color is blue"
-
-# List all facts
-node "${path.join(this.projectRoot, 'dist/cli/memory-cli.js')}" list
-
-# List by category
-node "${path.join(this.projectRoot, 'dist/cli/memory-cli.js')}" list preferences
-
-# Search facts (fast keyword search)
-node "${path.join(this.projectRoot, 'dist/cli/memory-cli.js')}" search "coffee"
-
-# Delete a fact
-node "${path.join(this.projectRoot, 'dist/cli/memory-cli.js')}" delete "preferences" "color"
-\`\`\`
+Use memory tools:
+- remember: Save a fact (category, key, value)
+- forget: Delete a fact
+- list_facts: List all facts or by category
+- memory_search: Search facts by keyword
 
 Categories: user_info, preferences, projects, people, work, notes, decisions
 

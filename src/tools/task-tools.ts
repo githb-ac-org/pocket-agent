@@ -108,13 +108,22 @@ function parseDateTime(input: string): string | null {
     return targetDate.toISOString();
   }
 
-  // "in X days/hours/weeks"
-  const inMatch = input.match(/^in\s+(\d+)\s+(day|hour|week)s?$/i);
+  // "in X minutes/hours/days/weeks"
+  const inMatch = input.match(/^in\s+(\d+)\s+(minute|min|hour|hr|day|week)s?$/i);
   if (inMatch) {
     const [, amount, unit] = inMatch;
-    const ms =
-      parseInt(amount, 10) *
-      (unit.toLowerCase() === 'hour' ? 3600000 : unit.toLowerCase() === 'week' ? 604800000 : 86400000);
+    const num = parseInt(amount, 10);
+    const unitLower = unit.toLowerCase();
+    let ms: number;
+    if (unitLower === 'minute' || unitLower === 'min') {
+      ms = num * 60000;
+    } else if (unitLower === 'hour' || unitLower === 'hr') {
+      ms = num * 3600000;
+    } else if (unitLower === 'week') {
+      ms = num * 604800000;
+    } else {
+      ms = num * 86400000; // day
+    }
     return new Date(now.getTime() + ms).toISOString();
   }
 

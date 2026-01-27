@@ -230,7 +230,7 @@ async function main() {
           params.push(statusFilter);
         }
 
-        query += ' ORDER BY CASE priority WHEN "high" THEN 1 WHEN "medium" THEN 2 ELSE 3 END, due_date ASC NULLS LAST';
+        query += " ORDER BY CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, due_date ASC NULLS LAST";
 
         const tasks = db.prepare(query).all(...params) as Array<{
           id: number;
