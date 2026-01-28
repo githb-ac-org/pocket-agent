@@ -52,7 +52,7 @@ export interface CronJob {
 }
 
 export interface ConversationContext {
-  messages: Array<{ role: string; content: string }>;
+  messages: Array<{ role: string; content: string; timestamp?: string }>;
   totalTokens: number;
   summarizedCount: number;
   summary?: string;
@@ -884,7 +884,7 @@ export class MemoryManager {
 
     if (olderMessageCount <= 0) {
       return {
-        messages: recentMessages.map(m => ({ role: m.role, content: m.content })),
+        messages: recentMessages.map(m => ({ role: m.role, content: m.content, timestamp: m.timestamp })),
         totalTokens: tokenCount,
         summarizedCount: 0,
       };
@@ -905,7 +905,7 @@ export class MemoryManager {
     }
 
     contextMessages.push(
-      ...recentMessages.map(m => ({ role: m.role, content: m.content }))
+      ...recentMessages.map(m => ({ role: m.role, content: m.content, timestamp: m.timestamp }))
     );
 
     return {

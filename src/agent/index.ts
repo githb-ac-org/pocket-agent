@@ -265,7 +265,11 @@ class AgentManagerClass extends EventEmitter {
 
       if (context.messages.length > 0) {
         const historyText = context.messages
-          .map(m => `${m.role.toUpperCase()}: ${m.content}`)
+          .map(m => {
+            const timeStr = m.timestamp ? this.formatMessageTimestamp(m.timestamp) : '';
+            const prefix = timeStr ? `${m.role.toUpperCase()} [${timeStr}]` : m.role.toUpperCase();
+            return `${prefix}: ${m.content}`;
+          })
           .join('\n\n');
         contextParts.push(`Previous conversation:\n${historyText}`);
       }
@@ -277,7 +281,13 @@ class AgentManagerClass extends EventEmitter {
       const query = await loadSDK();
       if (!query) throw new Error('Failed to load SDK');
 
-      const options = await this.buildOptions(factsContext, abortController);
+      // Get last user message timestamp for temporal context
+      const userMessages = context.messages.filter(m => m.role === 'user');
+      const lastUserMessageTimestamp = userMessages.length > 0
+        ? userMessages[userMessages.length - 1].timestamp
+        : undefined;
+
+      const options = await this.buildOptions(factsContext, abortController, lastUserMessageTimestamp);
 
       console.log('[AgentManager] Calling query() with model:', options.model, 'thinking:', options.maxThinkingTokens || 'default');
       this.emitStatus({ type: 'thinking', message: 'hmm let me think 🤔' });
@@ -434,8 +444,12 @@ class AgentManagerClass extends EventEmitter {
     return false;
   }
 
-  private async buildOptions(factsContext: string, abortController: AbortController): Promise<SDKOptions> {
+  private async buildOptions(factsContext: string, abortController: AbortController, lastMessageTimestamp?: string): Promise<SDKOptions> {
     const appendParts: string[] = [];
+
+    // Add temporal context first (current time awareness)
+    const temporalContext = this.buildTemporalContext(lastMessageTimestamp);
+    appendParts.push(temporalContext);
 
     if (this.instructions) {
       appendParts.push(this.instructions);
@@ -1105,6 +1119,83 @@ ${conversationText}`;
 
       return `Previous conversation (${messages.length} messages). Topics discussed: ${snippets}`;
     }
+  }
+
+  /**
+   * Format a message timestamp for display in conversation context
+   * Shows relative time for recent messages, date for older ones
+   */
+  private formatMessageTimestamp(timestamp: string): string {
+    try {
+      const date = new Date(timestamp);
+      const now = new Date();
+      const diffMs = now.getTime() - date.getTime();
+      const diffMins = Math.floor(diffMs / 60000);
+      const diffHours = Math.floor(diffMs / 3600000);
+      const diffDays = Math.floor(diffMs / 86400000);
+
+      // Very recent: show relative time
+      if (diffMins < 1) return 'just now';
+      if (diffMins < 60) return `${diffMins}m ago`;
+      if (diffHours < 24) return `${diffHours}h ago`;
+      if (diffDays < 7) return `${diffDays}d ago`;
+
+      // Older: show date
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    } catch {
+      return '';
+    }
+  }
+
+  /**
+   * Build temporal context for the system prompt
+   * Gives the agent awareness of current time and conversation timing
+   */
+  private buildTemporalContext(lastMessageTimestamp?: string): string {
+    const now = new Date();
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const dayName = dayNames[now.getDay()];
+
+    const timeStr = now.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+
+    const dateStr = now.toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    });
+
+    const lines = [
+      '## Current Time',
+      `It is ${dayName}, ${dateStr} at ${timeStr}.`,
+    ];
+
+    // Add time since last message if available
+    if (lastMessageTimestamp) {
+      try {
+        const lastDate = new Date(lastMessageTimestamp);
+        const diffMs = now.getTime() - lastDate.getTime();
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMs / 3600000);
+        const diffDays = Math.floor(diffMs / 86400000);
+
+        let timeSince = '';
+        if (diffMins < 1) timeSince = 'just now';
+        else if (diffMins < 60) timeSince = `${diffMins} minute${diffMins !== 1 ? 's' : ''} ago`;
+        else if (diffHours < 24) timeSince = `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+        else if (diffDays < 7) timeSince = `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+        else timeSince = lastDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+        lines.push(`Last message from user was ${timeSince}.`);
+      } catch {
+        // Ignore timestamp parsing errors
+      }
+    }
+
+    return lines.join('\n');
   }
 
   private extractAndStoreFacts(userMessage: string): void {
