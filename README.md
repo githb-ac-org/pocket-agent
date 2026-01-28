@@ -2,128 +2,147 @@
 
 **Your AI that actually knows you.**
 
-A desktop AI assistant that runs 24/7, remembers everything, and works across your entire digital life. Desktop. Telegram. Browser. All synced. All remembered.
+A desktop assistant that runs 24/7 in your menu bar. It remembers your conversations, learns about you over time, and you can talk to it from your desktop or Telegram.
 
 ---
 
-## Here's the thing
+## Why this exists
 
-Every AI conversation starts from scratch. You explain your job again. Your projects again. Your preferences again. By the time you get anything useful, you've burned half the conversation just catching it up.
+Every time you open ChatGPT, you start from zero. Explain your job. Explain your project. Explain what you like. Again. And again.
 
-That's dumb.
+That gets old fast.
 
-**Pocket Agent remembers.** It learns who you are, what you're working on, how you like things done. The more you use it, the smarter it gets about *you*.
-
-Three months from now, you can reference a conversation you had today. It'll know exactly what you're talking about.
+Pocket Agent keeps everything. Every conversation. Every fact it learns about you. So when you come back tomorrow—or three months from now—it actually knows what you're talking about.
 
 ---
 
-## What you actually get
+## What it actually does
 
-### It remembers everything
-Not just conversations—it extracts facts about you, your projects, your preferences. Recalls relevant context automatically. You'll forget things before it does.
+### Remembers everything
+Stores every message locally. Extracts facts about you (your projects, preferences, people you mention). When you bring something up later, it has context.
 
-### It runs 24/7
-Lives in your menu bar. Set reminders. Schedule daily briefings. Automate the boring stuff. Wake up to a summary of your day already waiting.
+### Runs in the background
+Lives in your menu bar. Always there when you need it. Set up scheduled tasks and it'll ping you—daily standup reminders, weekly recaps, whatever you want.
 
-### Separate conversations for separate lives
-Work session. Personal session. Client session. Therapy session. Each one isolated with its own memory. Keep your contexts clean.
+### Multiple conversation tabs
+Create up to 5 separate sessions. One for work stuff. One for personal things. One for a specific project. Each session has its own isolated memory—they don't bleed into each other.
 
-### Desktop + Telegram, same brain
-Deep work at your desk. Quick questions from your phone. Link Telegram groups to specific sessions. Your assistant travels with you.
+### Works on Telegram too
+Set up a Telegram bot and talk to the same assistant from your phone. Same memory, same context. You can even add the bot to group chats and link each group to a different session—so your work group stays separate from your personal one.
 
-### Browser automation that actually works
-"Check my email and tell me what's important."
-"Grab all the prices from this page."
-"Fill this form with my usual details."
+### Browser automation
+Two modes depending on what you need:
 
-Uses your logged-in Chrome sessions. No annoying re-authentication.
+**Basic mode (default):** Runs in a hidden window. Good for:
+- Taking screenshots of websites
+- Clicking buttons and filling forms
+- Extracting text, links, or table data
+- Running JavaScript on pages
 
-### Natural language scheduling
-- "Remind me every morning about today's priorities"
-- "Ping me every 30 minutes to drink water"
-- "Weekly project recap every Friday at 5"
+**Chrome mode:** Connects to your actual Chrome browser (you launch it with a debug flag). This one can:
+- Access your logged-in sessions (Gmail, GitHub, whatever)
+- Work with multiple tabs
+- Do authenticated workflows without re-logging in
 
-Just tell it what you want. It figures out the timing.
+Not magic—you're not going to automate complex multi-step workflows out of the box. But for grabbing data from pages or doing simple interactions, it works.
 
-### Calendar + tasks, built in
-"Add a call with Sarah tomorrow 2pm" — done. Reminders included. No separate app needed.
+### Scheduling
+Tell it things like:
+- "remind me every morning at 9am to check my calendar"
+- "every friday at 5pm, ask me what I accomplished this week"
+- "in 2 hours, ping me about the meeting"
 
-### Make it sound like you want
-Give it a name. Define its personality. Tell it to be formal, casual, sarcastic, whatever. It's your assistant.
+Uses natural language or cron expressions if you're into that.
 
----
+### Calendar and tasks
+Basic built-in calendar and todo list. Create events, set reminders, track tasks. Nothing fancy, but it's there and it remembers everything.
 
-## What can you actually use this for?
-
-**Daily driver** — Calendar, reminders, planning, research. The basics, but actually good.
-
-**Thinking partner** — Process your thoughts with something that remembers your journey. Some people use it like a therapist.
-
-**Research assistant** — Build on previous deep dives instead of starting over every time.
-
-**Work mode** — Project context that persists. Meeting prep. Status updates. Documentation that doesn't suck.
-
-**Smart home hub** — Hue lights. Sonos. Eight Sleep. Voice commands through your assistant.
-
-**Dev tools** — GitHub, terminal, browser automation, scheduled scripts. Power user stuff.
+### Customizable personality
+Edit the identity file to change how it talks. Make it formal, casual, sarcastic—whatever works for you.
 
 ---
 
-## Get started in 2 minutes
+## Getting started
 
-### 1. Download
+### Download
 
 | Mac | Link |
 |-----|------|
-| Apple Silicon (M1/M2/M3/M4) | [Download .dmg](https://github.com/KenKaiii/pocket-agent/releases/latest) |
-| Intel | [Download .dmg](https://github.com/KenKaiii/pocket-agent/releases/latest) |
+| Apple Silicon (M1/M2/M3/M4) | [Download](https://github.com/KenKaiii/pocket-agent/releases/latest) |
+| Intel | [Download](https://github.com/KenKaiii/pocket-agent/releases/latest) |
 
-### 2. Install
-Drag to Applications. Launch. Shows up in your menu bar.
+### Setup
 
-### 3. API Key
-Grab one from [console.anthropic.com](https://console.anthropic.com). Paste it in. Stored in your system keychain, not some random config file.
+1. Drag to Applications, launch it
+2. It shows up in your menu bar
+3. Click it, paste your Anthropic API key (get one at [console.anthropic.com](https://console.anthropic.com))
+4. Start chatting
 
-### 4. Go
-Click the icon. Start talking. That's literally it.
+That's it.
 
 ---
 
-## Telegram (if you want it)
+## Telegram setup (optional)
 
-Talk to your assistant from anywhere:
+If you want to talk to it from your phone:
 
-1. Make a bot with [@BotFather](https://t.me/botfather)
-2. Paste the token in settings
+1. Create a bot with [@BotFather](https://t.me/botfather) on Telegram
+2. Copy the token into Pocket Agent settings
 3. Message your bot
 
-Same assistant. Same memory. Different device.
+**Group chats:** You can add the bot to groups. Use `/link SessionName` to connect that group to a specific session. Each group can have its own isolated conversation.
 
-**Commands:** `/status` `/facts` `/clear` `/link <session>` `/unlink`
+**Note:** For the bot to see all messages in a group (not just commands), either make it an admin or disable privacy mode in BotFather.
 
----
-
-## Your data stays yours
-
-- **Local storage** — Everything lives on your machine in SQLite
-- **Your API key** — Conversations hit Anthropic's API, that's it
-- **Encrypted secrets** — Keys go in your system keychain
-- **Zero telemetry** — We literally don't track anything
+**Commands:** `/status` `/facts` `/clear` `/link <session>` `/unlink` `/mychatid`
 
 ---
 
-## Goes deeper if you want it to
+## Browser automation details
 
-**70+ integrations** — Notion, Trello, GitHub, Slack, WhatsApp, Apple Notes, Google Workspace, image gen, speech-to-text... it's a lot.
+**Default mode** runs in a hidden Electron window. No setup needed. Works for:
+- Screenshots
+- Clicking elements (by CSS selector)
+- Typing into inputs
+- Extracting page content (text, HTML, links, tables)
+- Running JavaScript
+- Downloading files
 
-**MCP servers** — Extend it with Model Context Protocol if you're into that.
+**Chrome mode** connects to your actual browser. You need to start Chrome with remote debugging:
 
-**Full terminal access** — For when you need to get your hands dirty.
+```bash
+# macOS
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222
+
+# Windows
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222
+
+# Linux
+google-chrome --remote-debugging-port=9222
+```
+
+Then it can access your logged-in sessions and manage multiple tabs.
 
 ---
 
-## For the devs
+## Privacy
+
+- Everything stored locally in SQLite on your machine
+- Conversations go to Anthropic's API (that's how it works)
+- API keys stored in your system keychain
+- No analytics, no telemetry
+
+---
+
+## Extensibility
+
+There's a skill system with 70+ integrations (Notion, GitHub, Slack, Apple Notes, etc.) and support for MCP servers if you want to extend it. Plus full terminal access.
+
+Most people won't need this stuff, but it's there if you do.
+
+---
+
+## For developers
 
 ```bash
 git clone https://github.com/KenKaiii/pocket-agent.git
@@ -132,34 +151,23 @@ npm install
 npm run dev
 ```
 
-**Stack:** Electron + Claude Agent SDK + SQLite + TypeScript
-
-`npm run dev` / `npm run build` / `npm run dist` / `npm run lint && npm run typecheck`
-
----
-
-## Built with
-
-- [Claude Agent SDK](https://docs.anthropic.com/en/docs/build-with-claude/agent-sdk) — Anthropic's agent framework
-- [Electron](https://electronjs.org) — Desktop magic
-- [SQLite](https://sqlite.org) — Local persistence that just works
+Stack: Electron + Claude Agent SDK + SQLite + TypeScript
 
 ---
 
 ## Community
 
-**Learn more & connect:**
-- [YouTube](https://youtube.com/@kenkaidoesai) — Tutorials, demos, and builds
-- [Community](https://skool.com/kenkai) — Join the conversation
+- [YouTube @kenkaidoesai](https://youtube.com/@kenkaidoesai) — tutorials and demos
+- [Skool community](https://skool.com/kenkai) — come hang out
 
 ---
 
 ## License
 
-MIT — Do whatever you want with it.
+MIT
 
 ---
 
-**Stop re-explaining yourself to AI every single time.**
+**An AI that actually remembers you exists now. That's pretty cool.**
 
-[Download Pocket Agent →](https://github.com/KenKaiii/pocket-agent/releases/latest)
+[Download →](https://github.com/KenKaiii/pocket-agent/releases/latest)
