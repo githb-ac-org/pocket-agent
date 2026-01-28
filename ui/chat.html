@@ -1328,6 +1328,29 @@
     const ghostSuggestion = document.getElementById('ghost-suggestion');
     let queuedMessageElements = new Map(); // Track queued message DOM elements by a unique ID
 
+    // Notification sound
+    let notificationSound = null;
+    let soundEnabled = true; // Will be loaded from settings
+
+    // Initialize notification sound
+    async function initNotificationSound() {
+      try {
+        soundEnabled = (await window.pocketAgent.getSetting('notifications.soundEnabled')) !== 'false';
+        notificationSound = new Audio('../assets/pop.mp3');
+        notificationSound.volume = 0.5;
+      } catch (e) {
+        console.warn('Failed to initialize notification sound:', e);
+      }
+    }
+
+    // Play notification sound when response completes
+    function playNotificationSound() {
+      if (soundEnabled && notificationSound) {
+        notificationSound.currentTime = 0;
+        notificationSound.play().catch(() => {});
+      }
+    }
+
     // Session state
     const MAX_TABS = 5;
     let sessions = [];
@@ -1356,6 +1379,9 @@
       await loadHistory();
       updateStats();
       input.focus();
+
+      // Initialize notification sound
+      initNotificationSound();
 
       // Listen for scheduler messages
       window.pocketAgent.onSchedulerMessage((data) => {
@@ -2282,6 +2308,9 @@
         if (queuedMsgs.length > 0) {
           queuedMsgs[0].classList.remove('queued');
         }
+      } else if (status.type === 'done') {
+        // Response complete - play notification sound
+        playNotificationSound();
       }
 
       scrollToBottom();

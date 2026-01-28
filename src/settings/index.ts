@@ -322,6 +322,17 @@ export const SETTINGS_SCHEMA: SettingDefinition[] = [
     type: 'boolean',
   },
 
+  // Notification settings
+  {
+    key: 'notifications.soundEnabled',
+    defaultValue: 'true',
+    encrypted: false,
+    category: 'notifications',
+    label: 'Response Sound',
+    description: 'Play a sound when responses complete',
+    type: 'boolean',
+  },
+
   // Window state settings
   {
     key: 'window.chatBounds',
