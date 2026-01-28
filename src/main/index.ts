@@ -990,11 +990,13 @@ function setupIPC(): void {
       const result = await AgentManager.processMessage(message, 'desktop', sessionId || 'default');
       updateTrayMenu();
 
-      // Sync to Telegram (Desktop -> Telegram)
-      console.log('[Main] Checking telegram sync - bot exists:', !!telegramBot, 'active chats:', telegramBot?.getActiveChatIds().length ?? 0);
-      if (telegramBot && telegramBot.getActiveChatIds().length > 0) {
-        console.log('[Main] Syncing desktop message to Telegram');
-        telegramBot.syncFromDesktop(message, result.response).catch((err) => {
+      // Sync to Telegram (Desktop -> Telegram) - only to the linked chat for this session
+      const effectiveSessionId = sessionId || 'default';
+      const linkedChatId = memory?.getChatForSession(effectiveSessionId);
+      console.log('[Main] Checking telegram sync - bot exists:', !!telegramBot, 'session:', effectiveSessionId, 'linked chat:', linkedChatId);
+      if (telegramBot && linkedChatId) {
+        console.log('[Main] Syncing desktop message to Telegram chat:', linkedChatId);
+        telegramBot.syncToChat(message, result.response, linkedChatId).catch((err) => {
           console.error('[Main] Failed to sync desktop message to Telegram:', err);
         });
       }

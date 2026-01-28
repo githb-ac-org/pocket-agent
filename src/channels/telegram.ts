@@ -768,8 +768,20 @@ multiline</pre>
   }
 
   /**
-   * Sync a desktop conversation to Telegram
+   * Sync a desktop conversation to a specific Telegram chat
    * Shows both the user message and assistant response
+   * @param userMessage The user's message from desktop
+   * @param response The assistant's response
+   * @param chatId Optional specific chat ID to send to. If not provided, does nothing (no broadcast).
+   */
+  async syncToChat(userMessage: string, response: string, chatId: number): Promise<boolean> {
+    const text = `💻 [Desktop]\n\n👤 ${userMessage}\n\n🤖 ${response}`;
+    return this.sendMessage(chatId, text);
+  }
+
+  /**
+   * @deprecated Use syncToChat with explicit chatId instead
+   * Sync a desktop conversation to Telegram (broadcasts to all)
    */
   async syncFromDesktop(userMessage: string, response: string): Promise<number> {
     const text = `💻 [Desktop]\n\n👤 ${userMessage}\n\n🤖 ${response}`;
@@ -807,18 +819,17 @@ multiline</pre>
     }
 
     try {
-      // Start bot and wait for it to be ready
-      // Note: bot.start() returns a Promise that resolves when polling starts
-      await this.bot.start({
+      // Start bot - note: bot.start() is a long-running operation that doesn't resolve
+      // until the bot stops, so we set isRunning in onStart callback
+      this.bot.start({
         onStart: (botInfo) => {
+          this.isRunning = true;
           console.log(`[Telegram] Bot @${botInfo.username} started`);
           console.log(`[Telegram] Allowlist: ${this.allowedUserIds.size > 0
             ? Array.from(this.allowedUserIds).join(', ')
             : 'disabled (all users allowed)'}`);
         },
       });
-      // Only set isRunning after successful start
-      this.isRunning = true;
     } catch (error) {
       console.error('[Telegram] Failed to start bot:', error);
       this.isRunning = false;
