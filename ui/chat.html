@@ -1013,12 +1013,25 @@
       text-align: center;
     }
 
-    /* Timestamp */
+    /* Date separator timestamp */
     .timestamp {
       font-size: 11px;
       color: var(--text-muted);
       text-align: center;
       padding: 8px 0;
+    }
+
+    /* Message timestamp */
+    .message-timestamp {
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-top: 6px;
+      text-align: right;
+      opacity: 0.7;
+    }
+
+    .message.user .message-timestamp {
+      color: rgba(255, 255, 255, 0.6);
     }
 
     /* File Input (hidden) */
@@ -1621,14 +1634,20 @@
       contentDiv.className = 'message-content';
       contentDiv.innerHTML = formatMessage(content);
 
+      // Add timestamp
+      const timestampDiv = document.createElement('div');
+      timestampDiv.className = 'message-timestamp';
+      timestampDiv.textContent = formatTimestamp(new Date());
+
       wrapper.appendChild(header);
       wrapper.appendChild(contentDiv);
+      wrapper.appendChild(timestampDiv);
       messagesDiv.appendChild(wrapper);
 
       return wrapper;
     }
 
-    function addReminderFromHistory(jobName, prompt, animate = true) {
+    function addReminderFromHistory(jobName, prompt, animate = true, timestamp = null) {
       // Create reminder message with icon
       const reminderDiv = document.createElement('div');
       reminderDiv.className = 'message reminder';
@@ -1641,12 +1660,15 @@
       // Clock icon SVG
       const clockIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
 
+      const ts = timestamp ? new Date(timestamp) : new Date();
+
       reminderDiv.innerHTML = `
         <div class="reminder-header">
           ${clockIcon}
           <span>Scheduled: ${escapeHtml(jobName)}</span>
         </div>
         <div class="reminder-content">${escapeHtml(promptPreview)}</div>
+        <div class="message-timestamp">${formatTimestamp(ts)}</div>
       `;
 
       messagesDiv.appendChild(reminderDiv);
@@ -1680,18 +1702,18 @@
                 const prompt = match[2];
 
                 // Render as reminder
-                addReminderFromHistory(jobName, prompt, false);
+                addReminderFromHistory(jobName, prompt, false, msg.timestamp);
 
                 // The next message should be the assistant's response
                 if (i + 1 < history.length && history[i + 1].role === 'assistant') {
-                  addMessage('assistant', history[i + 1].content, false);
+                  addMessage('assistant', history[i + 1].content, false, [], history[i + 1].timestamp);
                   i++; // Skip the next message since we've handled it
                 }
                 continue;
               }
             }
 
-            addMessage(msg.role, msg.content, false);
+            addMessage(msg.role, msg.content, false, [], msg.timestamp);
           }
         }
 
@@ -1935,7 +1957,7 @@
       }
     }
 
-    function addMessage(role, content, animate = true, attachments = []) {
+    function addMessage(role, content, animate = true, attachments = [], timestamp = null) {
       const div = document.createElement('div');
       div.className = `message ${role}`;
       if (!animate) div.style.animation = 'none';
@@ -1974,8 +1996,37 @@
         }
       }
 
+      // Add timestamp
+      const ts = timestamp ? new Date(timestamp) : new Date();
+      const timestampDiv = document.createElement('div');
+      timestampDiv.className = 'message-timestamp';
+      timestampDiv.textContent = formatTimestamp(ts);
+      div.appendChild(timestampDiv);
+
       messagesDiv.appendChild(div);
       return div;
+    }
+
+    function formatTimestamp(date) {
+      const now = new Date();
+      const isToday = date.toDateString() === now.toDateString();
+
+      const timeStr = date.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      });
+
+      if (isToday) {
+        return `Today, ${timeStr}`;
+      }
+
+      const dateStr = date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric'
+      });
+
+      return `${dateStr}, ${timeStr}`;
     }
 
     function formatContent(text) {
