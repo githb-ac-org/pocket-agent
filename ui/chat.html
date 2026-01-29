@@ -1479,19 +1479,10 @@
       }
 
       // Load current model
-      try {
-        const modelId = await window.pocketAgent.getSetting('agent.model');
-        const modelNames = {
-          'claude-opus-4-5-20251101': 'Opus 4.5',
-          'claude-sonnet-4-5-20250929': 'Sonnet 4.5',
-          'claude-haiku-4-5-20251001': 'Haiku 4.5',
-          'kimi-k2.5': 'Kimi K2.5',
-        };
-        const displayName = modelNames[modelId] || modelId;
-        document.getElementById('model-badge').textContent = displayName;
-      } catch (err) {
-        console.error('Failed to load model:', err);
-      }
+      await updateModelBadge();
+
+      // Refresh model badge when window gains focus (in case user changed it in settings)
+      window.addEventListener('focus', updateModelBadge);
 
       // Load sessions first, then load history for active session
       await loadSessions();
@@ -1914,6 +1905,22 @@
       }
     }
 
+    async function updateModelBadge() {
+      try {
+        const modelId = await window.pocketAgent.getSetting('agent.model');
+        const modelNames = {
+          'claude-opus-4-5-20251101': 'Opus 4.5',
+          'claude-sonnet-4-5-20250929': 'Sonnet 4.5',
+          'claude-haiku-4-5-20251001': 'Haiku 4.5',
+          'kimi-k2.5': 'Kimi K2.5',
+        };
+        const displayName = modelNames[modelId] || modelId;
+        document.getElementById('model-badge').textContent = displayName;
+      } catch (err) {
+        console.error('Failed to load model:', err);
+      }
+    }
+
     function handleSendClick() {
       if (isLoadingBySession.get(currentSessionId)) {
         stopQuery();
@@ -2250,7 +2257,7 @@
       return div;
     }
 
-    // Parse SQLite timestamp consistently (SQLite datetime('now') stores UTC without 'Z')
+    // Parse SQLite timestamp consistently (SQLite stores UTC with 'Z' suffix)
     function parseSqliteTimestamp(timestamp) {
       if (!timestamp) return new Date();
 
@@ -2262,8 +2269,7 @@
         return new Date(timestamp);
       }
 
-      // No timezone - all DB timestamps are UTC, so add 'Z'
-      // Handles both SQLite format "2025-01-29 15:30:45" and ISO without TZ "2025-01-29T15:30:45"
+      // Legacy fallback: old timestamps without timezone (assumed UTC)
       const normalized = timestamp.replace(' ', 'T');
       return new Date(normalized + 'Z');
     }
