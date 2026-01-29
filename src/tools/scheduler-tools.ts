@@ -213,42 +213,34 @@ function formatDuration(ms: number): string {
 export function getScheduleTaskToolDefinition() {
   return {
     name: 'schedule_task',
-    description: `Create a scheduled task or reminder.
+    description: `Create a scheduled routine where the agent performs an ACTION.
 
-Supports THREE schedule formats:
-1. Natural language one-time: "in 10 minutes", "tomorrow 3pm", "monday 9am"
-2. Recurring intervals: "30m", "2h", "1d" (every 30 min, 2 hours, 1 day)
-3. Cron expressions: "0 9 * * *" (minute hour day month weekday)
+Use this for tasks where the agent should DO something (check weather, summarize news, etc).
+For simple reminders, use create_reminder instead.
 
-Use this when the user asks to:
-- Set a reminder ("remind me in 10 minutes")
-- Schedule a one-time notification ("tomorrow at 3pm")
-- Create a recurring task ("every 2 hours")
+Schedule formats:
+- Recurring intervals: "30m", "2h", "1d"
+- Cron expressions: "0 9 * * *" (minute hour day month weekday)
+- One-time: "in 10 minutes", "tomorrow 3pm"
 
-Examples:
-- "in 10 minutes" = One-time, 10 minutes from now
-- "tomorrow 3pm" = One-time, tomorrow at 3:00 PM
-- "monday 9am" = One-time, next Monday at 9:00 AM
-- "30m" = Every 30 minutes
-- "2h" = Every 2 hours
-- "0 9 * * *" = Every day at 9:00 AM (cron)
-- "0 9 * * 1-5" = Every weekday at 9:00 AM (cron)
-
-Channels: "desktop" (notification), "telegram" (if configured)`,
+IMPORTANT: The 'prompt' field is an INSTRUCTION that will be sent to a future LLM instance.
+Write it as a command, not as formatted output.
+- GOOD: "Check the weather and tell the user"
+- BAD: "Good morning! Here's your weather: ☀️"`,
     input_schema: {
       type: 'object' as const,
       properties: {
         name: {
           type: 'string',
-          description: 'Unique name for this scheduled task (e.g., "standup_reminder")',
+          description: 'Unique name for this scheduled task (e.g., "morning_weather")',
         },
         schedule: {
           type: 'string',
-          description: 'When to run: "in 10 minutes", "tomorrow 3pm", "30m", "2h", or cron "0 9 * * *"',
+          description: 'When to run: "30m", "2h", "0 9 * * *", "in 10 minutes", "tomorrow 3pm"',
         },
         prompt: {
           type: 'string',
-          description: 'What the agent should do when triggered (e.g., "Remind me to take a break")',
+          description: 'Instruction for the future LLM. Write as a command like "Check the weather" or "Summarize today\'s news". NOT formatted output.',
         },
         channel: {
           type: 'string',
@@ -313,6 +305,9 @@ export async function handleScheduleTaskTool(input: unknown): Promise<string> {
     } catch { /* column exists */ }
     try {
       db.exec(`ALTER TABLE cron_jobs ADD COLUMN session_id TEXT`);
+    } catch { /* column exists */ }
+    try {
+      db.exec(`ALTER TABLE cron_jobs ADD COLUMN job_type TEXT DEFAULT 'routine'`);
     } catch { /* column exists */ }
 
     const sessionId = getCurrentSessionId();
@@ -410,6 +405,203 @@ export async function handleScheduleTaskTool(input: unknown): Promise<string> {
 }
 
 /**
+ * Create reminder tool definition
+ */
+export function getCreateReminderToolDefinition() {
+  return {
+    name: 'create_reminder',
+    description: `Create a simple reminder to notify the user about something.
+
+Use this when the user says "remind me to..." or "don't let me forget to..."
+For action-based tasks (check weather, etc), use schedule_task instead.
+
+Schedule formats:
+- One-time: "in 10 minutes", "tomorrow 3pm", "monday 9am"
+- Recurring: "30m", "2h", or cron "0 9 * * *"
+
+IMPORTANT: The 'reminder' field should be the RAW SUBJECT only.
+- GOOD: "take a shower"
+- GOOD: "call mom"
+- BAD: "Time to take a shower! 🚿"
+- BAD: "Hey! Don't forget to call mom!"
+
+The reminder will be delivered by a future LLM instance that composes a natural message.`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        name: {
+          type: 'string',
+          description: 'Unique name for the reminder (e.g., "shower_reminder")',
+        },
+        schedule: {
+          type: 'string',
+          description: 'When to remind: "in 10 minutes", "tomorrow 3pm", "30m", "2h", or cron "0 9 * * *"',
+        },
+        reminder: {
+          type: 'string',
+          description: 'Raw subject only. Examples: "take a shower", "call mom", "pick up groceries". NO emojis, NO formatting.',
+        },
+        channel: {
+          type: 'string',
+          description: 'Where to send: "desktop" or "telegram" (default: desktop)',
+        },
+      },
+      required: ['name', 'schedule', 'reminder'],
+    },
+  };
+}
+
+/**
+ * Create reminder tool handler
+ */
+export async function handleCreateReminderTool(input: unknown): Promise<string> {
+  const { name, schedule, reminder, channel } = input as {
+    name: string;
+    schedule: string;
+    reminder: string;
+    channel?: string;
+  };
+
+  if (!name || !schedule || !reminder) {
+    return JSON.stringify({ error: 'Missing required fields: name, schedule, reminder' });
+  }
+
+  console.log(`[SchedulerTool] Creating reminder: ${name} (${schedule})`);
+
+  // Parse the schedule string
+  const parsed = parseSchedule(schedule);
+  if (!parsed) {
+    return JSON.stringify({
+      error: `Could not parse schedule: "${schedule}"`,
+      hint: 'Use: "in 10 minutes", "tomorrow 3pm", "30m", "2h", or cron "0 9 * * *"',
+    });
+  }
+
+  try {
+    const dbPath = getDbPath();
+    if (!fs.existsSync(dbPath)) {
+      return JSON.stringify({ error: 'Database not found. Start Pocket Agent first.' });
+    }
+
+    const db = new Database(dbPath);
+
+    // Ensure table has the new columns (including job_type)
+    try {
+      db.exec(`ALTER TABLE cron_jobs ADD COLUMN schedule_type TEXT DEFAULT 'cron'`);
+    } catch { /* column exists */ }
+    try {
+      db.exec(`ALTER TABLE cron_jobs ADD COLUMN run_at TEXT`);
+    } catch { /* column exists */ }
+    try {
+      db.exec(`ALTER TABLE cron_jobs ADD COLUMN interval_ms INTEGER`);
+    } catch { /* column exists */ }
+    try {
+      db.exec(`ALTER TABLE cron_jobs ADD COLUMN delete_after_run INTEGER DEFAULT 0`);
+    } catch { /* column exists */ }
+    try {
+      db.exec(`ALTER TABLE cron_jobs ADD COLUMN next_run_at TEXT`);
+    } catch { /* column exists */ }
+    try {
+      db.exec(`ALTER TABLE cron_jobs ADD COLUMN session_id TEXT`);
+    } catch { /* column exists */ }
+    try {
+      db.exec(`ALTER TABLE cron_jobs ADD COLUMN job_type TEXT DEFAULT 'routine'`);
+    } catch { /* column exists */ }
+
+    const sessionId = getCurrentSessionId();
+
+    // Auto-enable delete-after for one-time "at" jobs
+    const deleteAfterRun = parsed.type === 'at' ? 1 : 0;
+
+    // Determine default channel: use telegram if configured, otherwise desktop
+    let targetChannel = channel;
+    if (!targetChannel) {
+      const telegramSetting = db.prepare(
+        "SELECT value FROM settings WHERE key = 'telegram.activeChatIds'"
+      ).get() as { value: string } | undefined;
+
+      if (telegramSetting?.value) {
+        try {
+          const chatIds = JSON.parse(telegramSetting.value);
+          if (Array.isArray(chatIds) && chatIds.length > 0) {
+            targetChannel = 'telegram';
+          }
+        } catch {
+          // Invalid JSON, fall through to desktop
+        }
+      }
+
+      if (!targetChannel) {
+        targetChannel = 'desktop';
+      }
+    }
+
+    const nextRunAt = calculateNextRun(
+      parsed.type,
+      parsed.schedule || null,
+      parsed.runAt || null,
+      parsed.intervalMs || null
+    );
+
+    // Check if exists - update or insert
+    const existing = db.prepare('SELECT id FROM cron_jobs WHERE name = ?').get(name);
+
+    if (existing) {
+      db.prepare(`
+        UPDATE cron_jobs SET
+          schedule_type = ?, schedule = ?, run_at = ?, interval_ms = ?,
+          prompt = ?, channel = ?, enabled = 1,
+          delete_after_run = ?, next_run_at = ?, session_id = ?, job_type = ?,
+          updated_at = datetime('now')
+        WHERE name = ?
+      `).run(
+        parsed.type, parsed.schedule || null, parsed.runAt || null, parsed.intervalMs || null,
+        reminder, targetChannel, deleteAfterRun, nextRunAt, sessionId, 'reminder', name
+      );
+    } else {
+      db.prepare(`
+        INSERT INTO cron_jobs (
+          name, schedule_type, schedule, run_at, interval_ms,
+          prompt, channel, enabled, delete_after_run, next_run_at, session_id, job_type
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+      `).run(
+        name, parsed.type, parsed.schedule || null, parsed.runAt || null, parsed.intervalMs || null,
+        reminder, targetChannel, deleteAfterRun, nextRunAt, sessionId, 'reminder'
+      );
+    }
+
+    db.close();
+
+    // Build user-friendly schedule description
+    let scheduleDesc: string;
+    if (parsed.type === 'at') {
+      scheduleDesc = `one-time at ${formatDateTime(parsed.runAt!)}`;
+    } else if (parsed.type === 'every') {
+      scheduleDesc = `every ${formatDuration(parsed.intervalMs!)}`;
+    } else {
+      scheduleDesc = `cron: ${parsed.schedule}`;
+    }
+
+    console.log(`[SchedulerTool] Reminder created: ${name} (${parsed.type})`);
+    return JSON.stringify({
+      success: true,
+      message: `Reminder "${name}" created`,
+      name,
+      type: 'reminder',
+      schedule: scheduleDesc,
+      next_run: formatDateTime(nextRunAt),
+      one_time: deleteAfterRun === 1,
+      channel: targetChannel,
+      session_id: sessionId,
+    });
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[SchedulerTool] Failed to create reminder: ${errorMsg}`);
+    return JSON.stringify({ error: errorMsg });
+  }
+}
+
+/**
  * List scheduled tasks tool definition
  */
 export function getListScheduledTasksToolDefinition() {
@@ -449,6 +641,7 @@ export async function handleListScheduledTasksTool(): Promise<string> {
     count: jobs.length,
     tasks: jobs.map(job => ({
       name: job.name,
+      type: job.job_type || 'routine',
       schedule: job.schedule,
       prompt: job.prompt,
       channel: job.channel,
@@ -517,6 +710,10 @@ export function getSchedulerTools() {
     {
       ...getScheduleTaskToolDefinition(),
       handler: handleScheduleTaskTool,
+    },
+    {
+      ...getCreateReminderToolDefinition(),
+      handler: handleCreateReminderTool,
     },
     {
       ...getListScheduledTasksToolDefinition(),

@@ -653,6 +653,7 @@ class AgentManagerClass extends EventEmitter {
         'mcp__pocket-agent__soul_delete',
         // Custom MCP tools - scheduler
         'mcp__pocket-agent__schedule_task',
+        'mcp__pocket-agent__create_reminder',
         'mcp__pocket-agent__list_scheduled_tasks',
         'mcp__pocket-agent__delete_scheduled_task',
         // Custom MCP tools - calendar
@@ -1266,12 +1267,37 @@ ${conversationText}`;
   }
 
   /**
+   * Parse database timestamp
+   * If user has timezone configured, treat DB timestamps as UTC
+   * Otherwise, use system local time (original behavior)
+   */
+  private parseDbTimestamp(timestamp: string): Date {
+    // If already has timezone indicator, parse directly
+    if (/Z$|[+-]\d{2}:?\d{2}$/.test(timestamp)) {
+      return new Date(timestamp);
+    }
+
+    // Check if user has configured a timezone
+    const userTimezone = SettingsManager.get('profile.timezone');
+
+    if (userTimezone) {
+      // User has timezone set - treat DB timestamps as UTC
+      const normalized = timestamp.replace(' ', 'T');
+      return new Date(normalized + 'Z');
+    } else {
+      // No timezone configured - use system local time
+      const normalized = timestamp.replace(' ', 'T');
+      return new Date(normalized);
+    }
+  }
+
+  /**
    * Format a message timestamp for display in conversation context
    * Shows relative time for recent messages, date for older ones
    */
   private formatMessageTimestamp(timestamp: string): string {
     try {
-      const date = new Date(timestamp);
+      const date = this.parseDbTimestamp(timestamp);
       const now = new Date();
       const diffMs = now.getTime() - date.getTime();
       const diffMins = Math.floor(diffMs / 60000);
@@ -1320,7 +1346,7 @@ ${conversationText}`;
     // Add time since last message if available
     if (lastMessageTimestamp) {
       try {
-        const lastDate = new Date(lastMessageTimestamp);
+        const lastDate = this.parseDbTimestamp(lastMessageTimestamp);
         const diffMs = now.getTime() - lastDate.getTime();
         const diffMins = Math.floor(diffMs / 60000);
         const diffHours = Math.floor(diffMs / 3600000);

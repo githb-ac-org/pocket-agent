@@ -51,6 +51,7 @@ export interface CronJob {
   context_messages?: number;
   next_run_at?: string | null;
   session_id?: string | null;
+  job_type?: 'routine' | 'reminder';
 }
 
 export interface ConversationContext {
@@ -170,8 +171,8 @@ export class MemoryManager {
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
-        created_at TEXT DEFAULT (datetime('now')),
-        updated_at TEXT DEFAULT (datetime('now'))
+        created_at TEXT DEFAULT ((strftime('%Y-%m-%dT%H:%M:%fZ'))),
+        updated_at TEXT DEFAULT ((strftime('%Y-%m-%dT%H:%M:%fZ')))
       );
 
       -- Main conversation messages (per-session)
@@ -179,7 +180,7 @@ export class MemoryManager {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         role TEXT NOT NULL CHECK(role IN ('user', 'assistant', 'system')),
         content TEXT NOT NULL,
-        timestamp TEXT DEFAULT (datetime('now')),
+        timestamp TEXT DEFAULT ((strftime('%Y-%m-%dT%H:%M:%fZ'))),
         token_count INTEGER,
         session_id TEXT REFERENCES sessions(id)
       );
@@ -190,8 +191,8 @@ export class MemoryManager {
         category TEXT NOT NULL,
         subject TEXT NOT NULL DEFAULT '',
         content TEXT NOT NULL,
-        created_at TEXT DEFAULT (datetime('now')),
-        updated_at TEXT DEFAULT (datetime('now'))
+        created_at TEXT DEFAULT ((strftime('%Y-%m-%dT%H:%M:%fZ'))),
+        updated_at TEXT DEFAULT ((strftime('%Y-%m-%dT%H:%M:%fZ')))
       );
 
       -- Embedding chunks linked to facts
@@ -200,7 +201,7 @@ export class MemoryManager {
         fact_id INTEGER NOT NULL,
         content TEXT NOT NULL,
         embedding BLOB,
-        created_at TEXT DEFAULT (datetime('now')),
+        created_at TEXT DEFAULT ((strftime('%Y-%m-%dT%H:%M:%fZ'))),
         FOREIGN KEY (fact_id) REFERENCES facts(id) ON DELETE CASCADE
       );
 
@@ -222,8 +223,8 @@ export class MemoryManager {
         last_status TEXT CHECK(last_status IN ('ok', 'error', 'skipped')),
         last_error TEXT,
         last_duration_ms INTEGER,
-        created_at TEXT DEFAULT (datetime('now')),
-        updated_at TEXT DEFAULT (datetime('now'))
+        created_at TEXT DEFAULT ((strftime('%Y-%m-%dT%H:%M:%fZ'))),
+        updated_at TEXT DEFAULT ((strftime('%Y-%m-%dT%H:%M:%fZ')))
       );
 
       -- Summaries of older conversation chunks (per-session)
@@ -234,7 +235,7 @@ export class MemoryManager {
         content TEXT NOT NULL,
         token_count INTEGER,
         session_id TEXT REFERENCES sessions(id),
-        created_at TEXT DEFAULT (datetime('now'))
+        created_at TEXT DEFAULT ((strftime('%Y-%m-%dT%H:%M:%fZ')))
       );
 
       -- Calendar events
@@ -249,8 +250,8 @@ export class MemoryManager {
         reminder_minutes INTEGER DEFAULT 15,
         reminded INTEGER DEFAULT 0,
         channel TEXT DEFAULT 'desktop',
-        created_at TEXT DEFAULT (datetime('now')),
-        updated_at TEXT DEFAULT (datetime('now'))
+        created_at TEXT DEFAULT ((strftime('%Y-%m-%dT%H:%M:%fZ'))),
+        updated_at TEXT DEFAULT ((strftime('%Y-%m-%dT%H:%M:%fZ')))
       );
 
       -- Tasks / Todos
@@ -264,8 +265,8 @@ export class MemoryManager {
         reminder_minutes INTEGER,
         reminded INTEGER DEFAULT 0,
         channel TEXT DEFAULT 'desktop',
-        created_at TEXT DEFAULT (datetime('now')),
-        updated_at TEXT DEFAULT (datetime('now'))
+        created_at TEXT DEFAULT ((strftime('%Y-%m-%dT%H:%M:%fZ'))),
+        updated_at TEXT DEFAULT ((strftime('%Y-%m-%dT%H:%M:%fZ')))
       );
 
       -- Daily logs for memory journaling (global across all sessions)
@@ -273,7 +274,7 @@ export class MemoryManager {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         date TEXT UNIQUE NOT NULL,
         content TEXT NOT NULL,
-        updated_at TEXT DEFAULT (datetime('now'))
+        updated_at TEXT DEFAULT ((strftime('%Y-%m-%dT%H:%M:%fZ')))
       );
 
       -- Soul aspects (agent's evolving identity/personality)
@@ -281,8 +282,8 @@ export class MemoryManager {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         aspect TEXT UNIQUE NOT NULL,
         content TEXT NOT NULL,
-        created_at TEXT DEFAULT (datetime('now')),
-        updated_at TEXT DEFAULT (datetime('now'))
+        created_at TEXT DEFAULT ((strftime('%Y-%m-%dT%H:%M:%fZ'))),
+        updated_at TEXT DEFAULT ((strftime('%Y-%m-%dT%H:%M:%fZ')))
       );
 
       -- Telegram chat to session mapping
@@ -290,7 +291,7 @@ export class MemoryManager {
         chat_id INTEGER PRIMARY KEY,
         session_id TEXT NOT NULL REFERENCES sessions(id),
         group_name TEXT,
-        created_at TEXT DEFAULT (datetime('now'))
+        created_at TEXT DEFAULT ((strftime('%Y-%m-%dT%H:%M:%fZ')))
       );
 
       -- Message embeddings for semantic search of past conversations
@@ -298,7 +299,7 @@ export class MemoryManager {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         message_id INTEGER NOT NULL UNIQUE,
         embedding BLOB NOT NULL,
-        created_at TEXT DEFAULT (datetime('now')),
+        created_at TEXT DEFAULT ((strftime('%Y-%m-%dT%H:%M:%fZ'))),
         FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
       );
 
@@ -310,7 +311,7 @@ export class MemoryManager {
         end_message_id INTEGER NOT NULL,
         content TEXT NOT NULL,
         token_count INTEGER,
-        created_at TEXT DEFAULT (datetime('now'))
+        created_at TEXT DEFAULT ((strftime('%Y-%m-%dT%H:%M:%fZ')))
       );
 
       -- Indexes for performance
@@ -479,7 +480,7 @@ export class MemoryManager {
       // Create default session
       this.db.prepare(`
         INSERT INTO sessions (id, name, created_at, updated_at)
-        VALUES (?, ?, datetime('now'), datetime('now'))
+        VALUES (?, ?, (strftime('%Y-%m-%dT%H:%M:%fZ')), (strftime('%Y-%m-%dT%H:%M:%fZ')))
       `).run(DEFAULT_SESSION_ID, DEFAULT_SESSION_NAME);
       console.log('[Memory] Created default session');
     }
@@ -609,7 +610,7 @@ export class MemoryManager {
     const id = `session-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     this.db.prepare(`
       INSERT INTO sessions (id, name, created_at, updated_at)
-      VALUES (?, ?, datetime('now'), datetime('now'))
+      VALUES (?, ?, (strftime('%Y-%m-%dT%H:%M:%fZ')), (strftime('%Y-%m-%dT%H:%M:%fZ')))
     `).run(id, name);
 
     return this.getSession(id)!;
@@ -688,7 +689,7 @@ export class MemoryManager {
     }
 
     const result = this.db.prepare(`
-      UPDATE sessions SET name = ?, updated_at = datetime('now')
+      UPDATE sessions SET name = ?, updated_at = (strftime('%Y-%m-%dT%H:%M:%fZ'))
       WHERE id = ?
     `).run(name, id);
 
@@ -718,7 +719,7 @@ export class MemoryManager {
    * Touch session (update updated_at timestamp)
    */
   touchSession(id: string): void {
-    this.db.prepare(`UPDATE sessions SET updated_at = datetime('now') WHERE id = ?`).run(id);
+    this.db.prepare(`UPDATE sessions SET updated_at = (strftime('%Y-%m-%dT%H:%M:%fZ')) WHERE id = ?`).run(id);
   }
 
   /**
@@ -828,14 +829,14 @@ export class MemoryManager {
       const newContent = existing.content + '\n' + formattedEntry;
       this.db.prepare(`
         UPDATE daily_logs
-        SET content = ?, updated_at = datetime('now')
+        SET content = ?, updated_at = (strftime('%Y-%m-%dT%H:%M:%fZ'))
         WHERE date = ?
       `).run(newContent, today);
     } else {
       // Create new log for today
       this.db.prepare(`
         INSERT INTO daily_logs (date, content, updated_at)
-        VALUES (?, ?, datetime('now'))
+        VALUES (?, ?, (strftime('%Y-%m-%dT%H:%M:%fZ')))
       `).run(today, formattedEntry);
     }
 
@@ -1411,7 +1412,7 @@ export class MemoryManager {
 
     if (existing) {
       this.db.prepare(`
-        UPDATE facts SET content = ?, updated_at = datetime('now') WHERE id = ?
+        UPDATE facts SET content = ?, updated_at = (strftime('%Y-%m-%dT%H:%M:%fZ')) WHERE id = ?
       `).run(content, existing.id);
       factId = existing.id;
     } else {
@@ -1709,11 +1710,13 @@ export class MemoryManager {
       context_messages: number;
       next_run_at: string | null;
       session_id: string | null;
+      job_type: string | null;
     }>;
     return rows.map(r => ({
       ...r,
       enabled: r.enabled === 1,
       delete_after_run: r.delete_after_run === 1,
+      job_type: (r.job_type || 'routine') as 'routine' | 'reminder',
     }));
   }
 
@@ -1963,7 +1966,7 @@ export class MemoryManager {
 
     if (existing) {
       this.db.prepare(`
-        UPDATE soul SET content = ?, updated_at = datetime('now') WHERE id = ?
+        UPDATE soul SET content = ?, updated_at = (strftime('%Y-%m-%dT%H:%M:%fZ')) WHERE id = ?
       `).run(content, existing.id);
       aspectId = existing.id;
     } else {

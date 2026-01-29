@@ -235,10 +235,11 @@ export class CronScheduler {
       delete_after_run: number;
       context_messages: number;
       session_id: string | null;
+      job_type: string | null;
     }
 
     const dueJobs = db.prepare(`
-      SELECT id, name, schedule_type, schedule, run_at, interval_ms, prompt, channel, delete_after_run, context_messages, session_id
+      SELECT id, name, schedule_type, schedule, run_at, interval_ms, prompt, channel, delete_after_run, context_messages, session_id, job_type
       FROM cron_jobs
       WHERE enabled = 1 AND next_run_at IS NOT NULL AND datetime(next_run_at) <= datetime(?)
     `).all(now.toISOString()) as DueJob[];
@@ -264,7 +265,16 @@ export class CronScheduler {
           }
         }
 
-        const fullPrompt = job.prompt + contextText + '\n\nIf nothing needs attention, reply with only HEARTBEAT_OK.';
+        // Build the full prompt based on job type
+        let fullPrompt: string;
+        if (job.job_type === 'reminder') {
+          // Reminders: deliver the message directly, NO HEARTBEAT_OK (always notify)
+          // Be explicit this is a delivery, not a request to schedule
+          fullPrompt = `[SCHEDULED REMINDER - DELIVER NOW]\nThe user previously asked to be reminded about: "${job.prompt}"\n\nDeliver this reminder to them now in a friendly way. Do NOT create a new reminder - just tell them the message.`;
+        } else {
+          // Routines: existing behavior with HEARTBEAT_OK
+          fullPrompt = job.prompt + contextText + '\n\nIf nothing needs attention, reply with only HEARTBEAT_OK.';
+        }
 
         // Execute through agent (using the job's session)
         if (!AgentManager.isInitialized()) {
