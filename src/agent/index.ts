@@ -142,8 +142,31 @@ const THINKING_BUDGETS: Record<string, number | undefined> = {
   'extended': 32000,
 };
 
-// Dynamic SDK loader
-let sdkQuery: ((params: { prompt: string; options?: SDKOptions }) => SDKQuery) | null = null;
+// Image content for multimodal messages
+export interface ImageContent {
+  type: 'base64';
+  mediaType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+  data: string;  // base64 encoded
+}
+
+// Content block types for SDK
+type TextBlock = { type: 'text'; text: string };
+type ImageBlock = { type: 'image'; source: { type: 'base64'; media_type: string; data: string } };
+type ContentBlock = TextBlock | ImageBlock;
+
+// SDK User Message type for async iterable
+interface SDKUserMessage {
+  type: 'user';
+  message: {
+    role: 'user';
+    content: string | ContentBlock[];
+  };
+  parent_tool_use_id: string | null;
+  session_id: string;
+}
+
+// Dynamic SDK loader - prompt can be string or async iterable of messages
+let sdkQuery: ((params: { prompt: string | AsyncIterable<SDKUserMessage>; options?: SDKOptions }) => SDKQuery) | null = null;
 
 // Use Function to preserve native import() - TypeScript converts import() to require() in CommonJS
 const dynamicImport = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<unknown>;
@@ -187,7 +210,7 @@ class AgentManagerClass extends EventEmitter {
   private abortControllersBySession: Map<string, AbortController> = new Map();
   private processingBySession: Map<string, boolean> = new Map();
   private lastSuggestedPrompt: string | undefined = undefined;
-  private messageQueueBySession: Map<string, Array<{ message: string; channel: string; resolve: (result: ProcessResult) => void; reject: (error: Error) => void }>> = new Map();
+  private messageQueueBySession: Map<string, Array<{ message: string; channel: string; images?: ImageContent[]; resolve: (result: ProcessResult) => void; reject: (error: Error) => void }>> = new Map();
 
   private constructor() {
     super();
@@ -262,7 +285,8 @@ class AgentManagerClass extends EventEmitter {
   async processMessage(
     userMessage: string,
     channel: string = 'default',
-    sessionId: string = 'default'
+    sessionId: string = 'default',
+    images?: ImageContent[]
   ): Promise<ProcessResult> {
     if (!this.memory) {
       throw new Error('AgentManager not initialized - call initialize() first');
@@ -270,10 +294,10 @@ class AgentManagerClass extends EventEmitter {
 
     // If already processing, queue the message
     if (this.processingBySession.get(sessionId)) {
-      return this.queueMessage(userMessage, channel, sessionId);
+      return this.queueMessage(userMessage, channel, sessionId, images);
     }
 
-    return this.executeMessage(userMessage, channel, sessionId);
+    return this.executeMessage(userMessage, channel, sessionId, images);
   }
 
   /**
@@ -282,7 +306,8 @@ class AgentManagerClass extends EventEmitter {
   private queueMessage(
     userMessage: string,
     channel: string,
-    sessionId: string
+    sessionId: string,
+    images?: ImageContent[]
   ): Promise<ProcessResult> {
     return new Promise((resolve, reject) => {
       // Get or create queue for this session
@@ -292,7 +317,7 @@ class AgentManagerClass extends EventEmitter {
       const queue = this.messageQueueBySession.get(sessionId)!;
 
       // Add to queue
-      queue.push({ message: userMessage, channel, resolve, reject });
+      queue.push({ message: userMessage, channel, images, resolve, reject });
 
       const queuePosition = queue.length;
       console.log(`[AgentManager] Message queued at position ${queuePosition} for session ${sessionId}`);
@@ -325,7 +350,7 @@ class AgentManagerClass extends EventEmitter {
     });
 
     try {
-      const result = await this.executeMessage(next.message, next.channel, sessionId);
+      const result = await this.executeMessage(next.message, next.channel, sessionId, next.images);
       next.resolve(result);
     } catch (error) {
       next.reject(error instanceof Error ? error : new Error(String(error)));
@@ -338,7 +363,8 @@ class AgentManagerClass extends EventEmitter {
   private async executeMessage(
     userMessage: string,
     channel: string,
-    sessionId: string
+    sessionId: string,
+    images?: ImageContent[]
   ): Promise<ProcessResult> {
     // Memory should already be checked by processMessage, but guard anyway
     if (!this.memory) {
@@ -396,7 +422,7 @@ class AgentManagerClass extends EventEmitter {
         contextParts.push(`[Recent conversation]\n${historyText}`);
       }
 
-      const fullPrompt = contextParts.length > 0
+      const fullPromptText = contextParts.length > 0
         ? `${contextParts.join('\n\n---\n\n')}\n\n---\n\nUser: ${userMessage}`
         : userMessage;
 
@@ -414,10 +440,42 @@ class AgentManagerClass extends EventEmitter {
       // Configure provider environment based on model (sets ANTHROPIC_BASE_URL, AUTH_TOKEN, etc.)
       configureProviderEnvironment(this.model);
 
+      // Build prompt - use async generator for images, string for text-only
+      let queryResult;
       console.log('[AgentManager] Calling query() with model:', options.model, 'thinking:', options.maxThinkingTokens || 'default');
       this.emitStatus({ type: 'thinking', message: 'hmm let me think 🤔' });
 
-      const queryResult = query({ prompt: fullPrompt, options });
+      if (images && images.length > 0) {
+        // For images, create an async generator that yields SDKUserMessage
+        const contentBlocks: ContentBlock[] = [
+          { type: 'text', text: fullPromptText },
+          ...images.map(img => ({
+            type: 'image' as const,
+            source: {
+              type: 'base64' as const,
+              media_type: img.mediaType,
+              data: img.data,
+            },
+          })),
+        ];
+
+        async function* messageGenerator() {
+          yield {
+            type: 'user' as const,
+            message: {
+              role: 'user' as const,
+              content: contentBlocks,
+            },
+            parent_tool_use_id: null,
+            session_id: 'default',
+          };
+        }
+
+        console.log(`[AgentManager] Calling query() with ${images.length} image(s)`);
+        queryResult = query({ prompt: messageGenerator(), options });
+      } else {
+        queryResult = query({ prompt: fullPromptText, options });
+      }
       let response = '';
 
       for await (const message of queryResult) {
@@ -458,13 +516,18 @@ class AgentManagerClass extends EventEmitter {
           messageToSave = `Reminder: ${reminderMatch[1]}`;
         }
 
-        // Add metadata for scheduled task messages
-        const metadata = channel.startsWith('cron:')
-          ? { source: 'scheduler', jobName: channel.slice(5) }
-          : undefined;
+        // Add metadata for message source and attachments
+        let metadata: Record<string, unknown> | undefined;
+        if (channel.startsWith('cron:')) {
+          metadata = { source: 'scheduler', jobName: channel.slice(5) };
+        } else if (channel === 'telegram') {
+          metadata = { source: 'telegram', hasAttachment: images && images.length > 0 };
+        }
 
         const userMsgId = memory.saveMessage('user', messageToSave, sessionId, metadata);
-        const assistantMsgId = memory.saveMessage('assistant', response, sessionId, metadata);
+        // Assistant response doesn't need hasAttachment but keep source for consistency
+        const assistantMetadata = metadata ? { source: metadata.source } : undefined;
+        const assistantMsgId = memory.saveMessage('assistant', response, sessionId, assistantMetadata);
         console.log('[AgentManager] Saved messages to SQLite (session: ' + sessionId + ')');
 
         // Embed messages asynchronously for future semantic retrieval

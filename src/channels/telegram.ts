@@ -1,6 +1,6 @@
 import { Bot, Context } from 'grammy';
 import { BaseChannel } from './index';
-import { AgentManager } from '../agent';
+import { AgentManager, ImageContent } from '../agent';
 import { SettingsManager } from '../settings';
 
 /**
@@ -218,6 +218,7 @@ export type MessageCallback = (data: {
   channel: 'telegram';
   chatId: number;
   sessionId: string;
+  hasAttachment?: boolean;
 }) => void;
 
 export class TelegramBot extends BaseChannel {
@@ -605,6 +606,88 @@ multiline</pre>
       }
     });
 
+    // Handle photo messages
+    this.bot.on('message:photo', async (ctx: Context) => {
+      const chatId = ctx.chat?.id;
+      const photo = ctx.message?.photo;
+      const caption = ctx.message?.caption || 'What do you see in this image?';
+
+      if (!chatId || !photo || photo.length === 0) return;
+
+      // Show typing indicator
+      await ctx.replyWithChatAction('typing');
+
+      const typingInterval = setInterval(() => {
+        ctx.replyWithChatAction('typing').catch(() => {});
+      }, 4000);
+
+      try {
+        // Get the largest photo (last in array)
+        const largestPhoto = photo[photo.length - 1];
+
+        // Get file info from Telegram
+        const file = await ctx.api.getFile(largestPhoto.file_id);
+        if (!file.file_path) {
+          throw new Error('Could not get file path from Telegram');
+        }
+
+        // Download the photo
+        const botToken = SettingsManager.get('telegram.botToken');
+        const fileUrl = `https://api.telegram.org/file/bot${botToken}/${file.file_path}`;
+
+        const response = await fetch(fileUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to download photo: ${response.statusText}`);
+        }
+
+        const arrayBuffer = await response.arrayBuffer();
+        const base64Data = Buffer.from(arrayBuffer).toString('base64');
+
+        // Determine media type from file path
+        let mediaType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' = 'image/jpeg';
+        if (file.file_path.endsWith('.png')) mediaType = 'image/png';
+        else if (file.file_path.endsWith('.gif')) mediaType = 'image/gif';
+        else if (file.file_path.endsWith('.webp')) mediaType = 'image/webp';
+
+        const imageContent: ImageContent = {
+          type: 'base64',
+          mediaType,
+          data: base64Data,
+        };
+
+        console.log(`[Telegram] Processing photo: ${largestPhoto.width}x${largestPhoto.height}, ${(base64Data.length / 1024).toFixed(1)}KB`);
+
+        // Look up which session this chat is linked to
+        const memory = AgentManager.getMemory();
+        const sessionId = memory?.getSessionForChat(chatId) || 'default';
+
+        const result = await AgentManager.processMessage(caption, 'telegram', sessionId, [imageContent]);
+
+        // Send response
+        await this.sendResponse(ctx, result.response);
+
+        // Notify callback for cross-channel sync
+        if (this.onMessageCallback) {
+          // Use caption or fallback to generic message
+          const displayMessage = ctx.message?.caption || 'Sent a photo';
+          this.onMessageCallback({
+            userMessage: displayMessage,
+            response: result.response,
+            channel: 'telegram',
+            chatId,
+            sessionId,
+            hasAttachment: true,
+          });
+        }
+      } catch (error) {
+        console.error('[Telegram] Photo error:', error);
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+        await ctx.reply(`❌ Error processing photo: ${errorMsg}`);
+      } finally {
+        clearInterval(typingInterval);
+      }
+    });
+
     // Error handler
     this.bot.catch((err) => {
       console.error('[Telegram] Bot error:', err);
@@ -824,10 +907,14 @@ multiline</pre>
       this.bot.start({
         onStart: (botInfo) => {
           this.isRunning = true;
-          console.log(`[Telegram] Bot @${botInfo.username} started`);
-          console.log(`[Telegram] Allowlist: ${this.allowedUserIds.size > 0
-            ? Array.from(this.allowedUserIds).join(', ')
-            : 'disabled (all users allowed)'}`);
+          try {
+            console.log(`[Telegram] Bot @${botInfo.username} started`);
+            console.log(`[Telegram] Allowlist: ${this.allowedUserIds.size > 0
+              ? Array.from(this.allowedUserIds).join(', ')
+              : 'disabled (all users allowed)'}`);
+          } catch {
+            // Ignore EPIPE errors from console.log
+          }
         },
       });
     } catch (error) {

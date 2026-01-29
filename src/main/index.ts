@@ -13,6 +13,19 @@ import { closeTaskDb } from '../tools';
 import { initializeUpdater, setupUpdaterIPC, setSettingsWindow } from './updater';
 import cityTimezones from 'city-timezones';
 
+// Handle EPIPE errors gracefully (happens when stdout pipe is closed)
+process.stdout?.on('error', (err) => {
+  if (err.code === 'EPIPE') return;
+});
+process.stderr?.on('error', (err) => {
+  if (err.code === 'EPIPE') return;
+});
+process.on('uncaughtException', (err) => {
+  if (err.message?.includes('EPIPE')) return;
+  console.error('Uncaught Exception:', err);
+  process.exit(1);
+});
+
 // Fix PATH for packaged apps - node/npm binaries aren't in PATH when launched from Finder
 if (app.isPackaged) {
   const fixedPath = [
@@ -1691,6 +1704,7 @@ async function initializeAgent(): Promise<void> {
               response: data.response,
               chatId: data.chatId,
               sessionId: data.sessionId,
+              hasAttachment: data.hasAttachment,
             });
           }
           // Messages are already saved to SQLite, so they'll appear when user opens chat
