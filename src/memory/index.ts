@@ -25,6 +25,7 @@ export interface Message {
   timestamp: string;
   token_count?: number;
   session_id?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface Fact {
@@ -392,6 +393,14 @@ export class MemoryManager {
     if (!sumHasSessionId) {
       this.db.exec(`ALTER TABLE summaries ADD COLUMN session_id TEXT REFERENCES sessions(id)`);
       console.log('[Memory] Migrated summaries table: added session_id column');
+    }
+
+    // Migration: add metadata column to messages if missing
+    const msgColsForMeta = this.db.pragma('table_info(messages)') as Array<{ name: string }>;
+    const hasMetadata = msgColsForMeta.some(c => c.name === 'metadata');
+    if (!hasMetadata) {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN metadata TEXT`);
+      console.log('[Memory] Migrated messages table: added metadata column');
     }
 
     // Migration: create default session and migrate orphan messages
@@ -866,13 +875,14 @@ export class MemoryManager {
 
   // ============ MESSAGE METHODS ============
 
-  saveMessage(role: 'user' | 'assistant' | 'system', content: string, sessionId: string = 'default'): number {
+  saveMessage(role: 'user' | 'assistant' | 'system', content: string, sessionId: string = 'default', metadata?: Record<string, unknown>): number {
     const tokenCount = estimateTokens(content);
+    const metadataJson = metadata ? JSON.stringify(metadata) : null;
     const stmt = this.db.prepare(`
-      INSERT INTO messages (role, content, token_count, session_id)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO messages (role, content, token_count, session_id, metadata)
+      VALUES (?, ?, ?, ?, ?)
     `);
-    const result = stmt.run(role, content, tokenCount, sessionId);
+    const result = stmt.run(role, content, tokenCount, sessionId, metadataJson);
 
     // Touch session to update activity timestamp
     this.touchSession(sessionId);
@@ -882,14 +892,17 @@ export class MemoryManager {
 
   getRecentMessages(limit: number = 50, sessionId: string = 'default'): Message[] {
     const stmt = this.db.prepare(`
-      SELECT id, role, content, timestamp, token_count, session_id
+      SELECT id, role, content, timestamp, token_count, session_id, metadata
       FROM messages
       WHERE session_id = ?
       ORDER BY id DESC
       LIMIT ?
     `);
-    const rows = stmt.all(sessionId, limit) as Message[];
-    return rows.reverse();
+    const rows = stmt.all(sessionId, limit) as Array<Message & { metadata: string | null }>;
+    return rows.reverse().map(row => ({
+      ...row,
+      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+    }));
   }
 
   getMessageCount(sessionId?: string): number {

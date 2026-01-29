@@ -499,6 +499,7 @@ export class CronScheduler {
         channel: dbJob.channel,
         recipient: this.extractRecipient(dbJob.prompt),
         enabled: dbJob.enabled,
+        sessionId: dbJob.session_id || 'default',
       };
 
       if (this.scheduleJob(job)) {
@@ -566,10 +567,12 @@ export class CronScheduler {
       // Clean prompt (remove recipient prefix if present)
       const cleanPrompt = job.prompt.replace(/^@\S+:\s*/, '');
 
-      // Process through agent
+      // Process through agent (use job's session)
+      const sessionId = job.sessionId || 'default';
       const agentResult = await AgentManager.processMessage(
-        `[Scheduled Task: ${job.name}] ${cleanPrompt}`,
-        `cron:${job.name}`
+        cleanPrompt,
+        `cron:${job.name}`,
+        sessionId
       );
 
       result.response = agentResult.response;
@@ -587,43 +590,32 @@ export class CronScheduler {
   }
 
   /**
-   * Route response to appropriate channel
+   * Route response to appropriate channel(s).
+   * Always sends to desktop, and also to Telegram if configured and session has a linked chat.
    */
   private async routeResponse(job: ScheduledJob, response: string): Promise<void> {
     const sessionId = job.sessionId || 'default';
-    switch (job.channel) {
-      case 'telegram':
-        if (this.telegramBot) {
-          if (job.recipient) {
-            // Send to specific chat (explicitly specified)
-            const chatId = parseInt(job.recipient, 10);
-            if (!isNaN(chatId)) {
-              await this.telegramBot.sendMessage(chatId, `📅 ${job.name}\n\n${response}`);
-            }
-          } else if (this.memory) {
-            // Send to session's linked chat only - no broadcast fallback
-            const linkedChatId = this.memory.getChatForSession(sessionId);
-            if (linkedChatId) {
-              await this.telegramBot.sendMessage(linkedChatId, `📅 ${job.name}\n\n${response}`);
-            }
-            // If no linked chat, skip Telegram (will still go to desktop via other code paths)
-          }
-        } else {
-          console.warn(`[Scheduler] Telegram not available for job: ${job.name}`);
+
+    // Always send to desktop (chat window + notification)
+    this.emitChatMessage(job.name, job.prompt, response, sessionId);
+    const plainResponse = this.stripMarkdown(response);
+    this.emitDesktopNotification('Pocket Agent', plainResponse.slice(0, 200));
+
+    // Also send to Telegram if configured and session has a linked chat
+    if (this.telegramBot && this.memory) {
+      if (job.recipient) {
+        // Send to specific chat (explicitly specified)
+        const chatId = parseInt(job.recipient, 10);
+        if (!isNaN(chatId)) {
+          await this.telegramBot.sendMessage(chatId, `📅 ${job.name}\n\n${response}`);
         }
-        break;
-
-      case 'desktop':
-      case 'default':
-        // Send to chat window AND show notification (to the correct session)
-        this.emitChatMessage(job.name, job.prompt, response, sessionId);
-        // Notification: friendly title, plain text body (strip markdown)
-        const plainResponse = this.stripMarkdown(response);
-        this.emitDesktopNotification('Pocket Agent', plainResponse.slice(0, 200));
-        break;
-
-      default:
-        console.log(`[Scheduler] Response for ${job.name} (${job.channel}): ${response.slice(0, 100)}...`);
+      } else {
+        // Send to session's linked chat if it exists
+        const linkedChatId = this.memory.getChatForSession(sessionId);
+        if (linkedChatId) {
+          await this.telegramBot.sendMessage(linkedChatId, `📅 ${job.name}\n\n${response}`);
+        }
+      }
     }
   }
 
@@ -815,6 +807,7 @@ export class CronScheduler {
             channel: dbJob.channel,
             recipient: this.extractRecipient(dbJob.prompt),
             enabled: true,
+            sessionId: dbJob.session_id || 'default',
           });
         }
       } else {

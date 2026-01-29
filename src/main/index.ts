@@ -144,12 +144,14 @@ function parseBirthday(birthday: string): { month: number; day: number } | null 
 async function setupBirthdayCronJobs(birthday: string): Promise<void> {
   if (!scheduler) return;
 
-  const jobNameMidnight = '_birthday_midnight';
-  const jobNameNoon = '_birthday_noon';
+  const jobNameMidnight = 'birthday_midnight';
+  const jobNameNoon = 'birthday_noon';
 
-  // Always delete existing birthday jobs first
+  // Always delete existing birthday jobs first (including legacy names with underscore prefix)
   scheduler.deleteJob(jobNameMidnight);
   scheduler.deleteJob(jobNameNoon);
+  scheduler.deleteJob('_birthday_midnight');
+  scheduler.deleteJob('_birthday_noon');
 
   const parsed = parseBirthday(birthday);
   if (!parsed) {

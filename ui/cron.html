@@ -945,9 +945,9 @@
                   : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>'
                 }
               </button>
-              <button class="icon-btn" onclick="runJob('${escapeAttr(job.name)}')" title="Run now">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polygon points="5 3 19 12 5 21 5 3"/>
+              <button class="icon-btn" onclick="runJob('${escapeAttr(job.name)}')" title="Test run">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9 3h6v5l3 9H6l3-9V3z"/><path d="M9 3h6"/><path d="M10 12h4"/>
                 </svg>
               </button>
               <button class="icon-btn danger" onclick="deleteJob('${escapeAttr(job.name)}')" title="Delete">

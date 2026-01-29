@@ -534,6 +534,26 @@
       box-shadow: none;
     }
 
+    /* Scheduled task badge */
+    .message.scheduled {
+      position: relative;
+    }
+
+    .message.scheduled::after {
+      content: attr(data-badge);
+      position: absolute;
+      top: -8px;
+      left: 8px;
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      color: var(--accent);
+      background: var(--bg-secondary);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--accent);
+    }
+
     /* Queue indicator in status */
     .queue-indicator {
       display: flex;
@@ -1744,8 +1764,21 @@
       const emptyState = messagesDiv.querySelector('.empty-state');
       if (emptyState) emptyState.remove();
 
-      // Add the agent's response directly
-      addMessage('assistant', data.response);
+      // Add the user prompt with scheduled badge
+      if (data.prompt) {
+        const promptEl = addMessage('user', data.prompt);
+        if (data.jobName) {
+          promptEl.classList.add('scheduled');
+          promptEl.dataset.badge = data.jobName;
+        }
+      }
+
+      // Add the agent's response with scheduled badge
+      const msgEl = addMessage('assistant', data.response);
+      if (data.jobName) {
+        msgEl.classList.add('scheduled');
+        msgEl.dataset.badge = data.jobName;
+      }
 
       // Update stats and scroll
       updateStats();
@@ -1824,7 +1857,12 @@
               lastDate = msgDate;
             }
 
-            addMessage(msg.role, msg.content, false, [], msg.timestamp);
+            const msgEl = addMessage(msg.role, msg.content, false, [], msg.timestamp);
+            // Add scheduled badge if message came from scheduler
+            if (msg.metadata?.source === 'scheduler' && msg.metadata?.jobName) {
+              msgEl.classList.add('scheduled');
+              msgEl.dataset.badge = msg.metadata.jobName;
+            }
           }
         }
 

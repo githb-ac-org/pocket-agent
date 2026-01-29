@@ -376,8 +376,13 @@ class AgentManagerClass extends EventEmitter {
           ? userMessage.slice(0, -heartbeatSuffix.length)
           : userMessage;
 
-        const userMsgId = memory.saveMessage('user', messageToSave, sessionId);
-        const assistantMsgId = memory.saveMessage('assistant', response, sessionId);
+        // Add metadata for scheduled task messages
+        const metadata = channel.startsWith('cron:')
+          ? { source: 'scheduler', jobName: channel.slice(5) }
+          : undefined;
+
+        const userMsgId = memory.saveMessage('user', messageToSave, sessionId, metadata);
+        const assistantMsgId = memory.saveMessage('assistant', response, sessionId, metadata);
         console.log('[AgentManager] Saved messages to SQLite (session: ' + sessionId + ')');
 
         // Embed messages asynchronously for future semantic retrieval
