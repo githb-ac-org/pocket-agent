@@ -29,56 +29,6 @@ if (app.isPackaged) {
   console.log('[Main] Fixed PATH for packaged app');
 }
 
-/**
- * Convert cron expression to human-readable format
- */
-function cronToHuman(cron: string | null): string {
-  if (!cron) return 'Unknown schedule';
-
-  const parts = cron.split(' ');
-  if (parts.length !== 5) return cron;
-
-  const [minute, hour, dom, , dow] = parts;
-
-  // Interval patterns
-  if (minute.startsWith('*/')) {
-    const mins = minute.slice(2);
-    return `Every ${mins} min`;
-  }
-  if (hour.startsWith('*/')) {
-    const hrs = hour.slice(2);
-    return `Every ${hrs} hr${hrs === '1' ? '' : 's'}`;
-  }
-
-  // Time-based patterns
-  const h = parseInt(hour);
-  const m = parseInt(minute);
-  if (isNaN(h) || isNaN(m)) return cron;
-
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const displayHour = h === 0 ? 12 : h > 12 ? h - 12 : h;
-  const displayMinute = m.toString().padStart(2, '0');
-  const timeStr = `${displayHour}:${displayMinute} ${ampm}`;
-
-  // Day patterns
-  if (dow === '*' && dom === '*') {
-    return `${timeStr} daily`;
-  }
-  if (dow === '1-5') {
-    return `${timeStr} weekdays`;
-  }
-  if (dow === '0,6') {
-    return `${timeStr} weekends`;
-  }
-  if (dow !== '*') {
-    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const days = dow.split(',').map(d => dayNames[parseInt(d)] || d).join(', ');
-    return `${timeStr} on ${days}`;
-  }
-
-  return `${timeStr} daily`;
-}
-
 // Month name mapping for birthday parsing
 const MONTHS: Record<string, number> = {
   january: 1, jan: 1,
@@ -427,7 +377,6 @@ function updateTrayMenu(): void {
   if (!tray) return;
 
   const stats = AgentManager.getStats();
-  const schedulerStats = scheduler?.getStats();
   const telegramEnabled = SettingsManager.getBoolean('telegram.enabled');
 
   const statusText = AgentManager.isInitialized()
@@ -437,10 +386,6 @@ function updateTrayMenu(): void {
   const telegramStatus = telegramEnabled
     ? (getTelegramBot()?.isRunning ? '✓ Connected' : '✗ Disconnected')
     : 'Disabled';
-
-  const cronStatus = schedulerStats
-    ? `${schedulerStats.activeJobs} active`
-    : 'Not running';
 
   const contextMenu = Menu.buildFromTemplate([
     {
@@ -463,15 +408,7 @@ function updateTrayMenu(): void {
       label: `Telegram: ${telegramStatus}`,
       enabled: false,
     },
-    {
-      label: `Routines: ${cronStatus}`,
-      enabled: false,
-    },
     { type: 'separator' },
-    {
-      label: 'Routines',
-      submenu: buildCronSubmenu(),
-    },
     {
       label: 'Tweaks...',
       click: () => openSettingsWindow(),
@@ -482,14 +419,6 @@ function updateTrayMenu(): void {
       click: () => createSkillsSetupWindow(),
     },
     { type: 'separator' },
-    {
-      label: 'Fresh Start',
-      click: () => {
-        AgentManager.clearConversation();
-        updateTrayMenu();
-        showNotification('Pocket Agent', 'Fresh start! 🌟');
-      },
-    },
     {
       label: 'Reboot',
       click: async () => {
@@ -506,53 +435,6 @@ function updateTrayMenu(): void {
   ]);
 
   tray.setContextMenu(contextMenu);
-}
-
-function buildCronSubmenu(): Electron.MenuItemConstructorOptions[] {
-  const jobs = scheduler?.getAllJobs() || [];
-
-  if (jobs.length === 0) {
-    return [
-      { label: 'No routines yet', enabled: false },
-      { type: 'separator' },
-      { label: 'Manage Routines...', click: () => openCronWindow() },
-    ];
-  }
-
-  const items: Electron.MenuItemConstructorOptions[] = jobs.map(job => ({
-    label: `${job.enabled ? '✓' : '✗'} ${job.name}`,
-    sublabel: cronToHuman(job.schedule),
-    submenu: [
-      {
-        label: job.enabled ? 'Pause' : 'Activate',
-        click: () => {
-          scheduler?.setJobEnabled(job.name, !job.enabled);
-          updateTrayMenu();
-        },
-      },
-      {
-        label: 'Run Now!',
-        click: async () => {
-          const result = await scheduler?.runJobNow(job.name);
-          if (result) {
-            showNotification(`${job.name}`, result.success ? 'Done! ✅' : `Oops: ${result.error}`);
-          }
-        },
-      },
-      {
-        label: 'Remove',
-        click: () => {
-          scheduler?.deleteJob(job.name);
-          updateTrayMenu();
-        },
-      },
-    ],
-  }));
-
-  items.push({ type: 'separator' });
-  items.push({ label: 'Manage Routines...', click: () => openCronWindow() });
-
-  return items;
 }
 
 // ============ Windows ============

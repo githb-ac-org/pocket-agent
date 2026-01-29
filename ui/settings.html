@@ -575,34 +575,132 @@
       margin-top: 1px;
     }
 
-    /* Toast */
+    /* Toast - Premium glassmorphism design */
     .toast {
       position: fixed;
-      bottom: 20px;
-      right: 20px;
-      background: var(--bg-tertiary);
-      border: 1px solid var(--border);
-      padding: 12px 16px;
-      border-radius: var(--radius-sm);
+      bottom: 24px;
+      right: 24px;
+      min-width: 200px;
+      max-width: 360px;
+      background: rgba(28, 28, 30, 0.85);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 14px 18px;
+      border-radius: 14px;
       font-size: 13px;
+      font-weight: 500;
       display: flex;
       align-items: center;
-      gap: 8px;
-      animation: slideIn 0.3s ease;
+      gap: 12px;
+      animation: toastSlideIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
       z-index: 1000;
+      overflow: hidden;
+      box-shadow:
+        0 8px 32px rgba(0, 0, 0, 0.4),
+        0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+    }
+
+    .toast::before {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      height: 3px;
+      width: 100%;
+      background: linear-gradient(90deg, var(--accent) 0%, var(--accent-secondary) 100%);
+      animation: toastProgress 3s linear forwards;
+      transform-origin: left;
     }
 
     .toast.success {
-      border-color: var(--success);
+      box-shadow:
+        0 8px 32px rgba(34, 197, 94, 0.15),
+        0 0 0 1px rgba(34, 197, 94, 0.2) inset,
+        0 0 20px rgba(34, 197, 94, 0.1);
+    }
+
+    .toast.success::before {
+      background: linear-gradient(90deg, #22c55e 0%, #4ade80 100%);
+    }
+
+    .toast.success .toast-icon {
+      background: linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(74, 222, 128, 0.1) 100%);
+      color: #4ade80;
     }
 
     .toast.error {
-      border-color: var(--error);
+      box-shadow:
+        0 8px 32px rgba(239, 68, 68, 0.15),
+        0 0 0 1px rgba(239, 68, 68, 0.2) inset,
+        0 0 20px rgba(239, 68, 68, 0.1);
     }
 
-    @keyframes slideIn {
-      from { transform: translateY(20px); opacity: 0; }
-      to { transform: translateY(0); opacity: 1; }
+    .toast.error::before {
+      background: linear-gradient(90deg, #ef4444 0%, #f87171 100%);
+    }
+
+    .toast.error .toast-icon {
+      background: linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(248, 113, 113, 0.1) 100%);
+      color: #f87171;
+    }
+
+    .toast-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      background: linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(236, 72, 153, 0.1) 100%);
+    }
+
+    .toast-icon svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .toast-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .toast-message {
+      color: var(--text-primary);
+      line-height: 1.4;
+      white-space: nowrap;
+    }
+
+    .toast.exiting {
+      animation: toastSlideOut 0.3s cubic-bezier(0.4, 0, 1, 1) forwards;
+    }
+
+    @keyframes toastSlideIn {
+      0% {
+        transform: translateX(100%) scale(0.8);
+        opacity: 0;
+      }
+      100% {
+        transform: translateX(0) scale(1);
+        opacity: 1;
+      }
+    }
+
+    @keyframes toastSlideOut {
+      0% {
+        transform: translateX(0) scale(1);
+        opacity: 1;
+      }
+      100% {
+        transform: translateX(100%) scale(0.8);
+        opacity: 0;
+      }
+    }
+
+    @keyframes toastProgress {
+      from { transform: scaleX(1); }
+      to { transform: scaleX(0); }
     }
 
     .skills-setup-btn {
@@ -1182,7 +1280,7 @@
         updateAuthStatus();
       } catch (err) {
         console.error('Failed to load settings:', err);
-        showToast('Failed to load settings', 'error');
+        showToast('Hmm, couldn\'t grab settings', 'error');
       }
     }
 
@@ -1240,6 +1338,7 @@
         }
       });
 
+      // Click handler for nav items
       navItems.forEach(item => {
         item.addEventListener('click', () => {
           const sectionId = item.dataset.section;
@@ -1251,6 +1350,7 @@
           document.getElementById(sectionId).classList.add('active');
         });
       });
+
     }
 
     function setupAutoSave() {
@@ -1273,14 +1373,14 @@
           try {
             await window.pocketAgent.setSetting(key, value);
             settings[key] = value;
-            showToast('Saved', 'success');
+            showToast('Got it!', 'success');
             // Activate reboot for settings that require restart
             if (key === 'agent.model') {
               activateReboot();
             }
           } catch (err) {
             console.error('Failed to save setting:', err);
-            showToast('Failed to save setting', 'error');
+            showToast('Oops, couldn\'t save that', 'error');
           }
         });
       });
@@ -1333,7 +1433,7 @@
       const key = input.value.trim();
 
       if (!key) {
-        showToast('Enter a key first', 'error');
+        showToast('Need a key first!', 'error');
         return;
       }
 
@@ -1347,10 +1447,10 @@
       try {
         await window.pocketAgent.setSetting(inputId, key);
         settings[inputId] = key;
-        showToast('Saved', 'success');
+        showToast('Got it!', 'success');
       } catch (err) {
         console.error('Failed to save key:', err);
-        showToast('Failed to save', 'error');
+        showToast('Save hiccup, try again?', 'error');
       }
     }
 
@@ -1359,7 +1459,7 @@
       const token = document.getElementById('trello.token').value.trim();
 
       if (!apiKey || !token) {
-        showToast('Enter both key and token', 'error');
+        showToast('Need both key & token!', 'error');
         return;
       }
 
@@ -1380,10 +1480,10 @@
         await window.pocketAgent.setSetting('trello.token', token);
         settings['trello.apiKey'] = apiKey;
         settings['trello.token'] = token;
-        showToast('Saved', 'success');
+        showToast('Got it!', 'success');
       } catch (err) {
         console.error('Failed to save Trello keys:', err);
-        showToast('Failed to save', 'error');
+        showToast('Save hiccup, try again?', 'error');
       }
     }
 
@@ -1395,10 +1495,10 @@
         await window.pocketAgent.setSetting(key, newValue);
         settings[key] = newValue;
         updateToggles();
-        showToast('Saved', 'success');
+        showToast('Got it!', 'success');
       } catch (err) {
         console.error('Failed to toggle setting:', err);
-        showToast('Failed to save setting', 'error');
+        showToast('Oops, couldn\'t save that', 'error');
       }
     }
 
@@ -1409,7 +1509,7 @@
       const key = input.value.trim();
 
       if (!key) {
-        showToast('Please enter a key first', 'error');
+        showToast('Key please!', 'error');
         return;
       }
 
@@ -1437,9 +1537,9 @@
           // Auto-save valid key
           await window.pocketAgent.setSetting(inputId, key);
           settings[inputId] = key;
-          showToast(result.botInfo ? `Valid! Bot: @${result.botInfo.username}` : 'Valid and saved', 'success');
+          showToast(result.botInfo ? `Valid! Bot: @${result.botInfo.username}` : 'All good!', 'success');
         } else {
-          showToast(result.error || 'Invalid key', 'error');
+          showToast(result.error || 'That key didn\'t work', 'error');
         }
       } catch (err) {
         showToast('Validation failed: ' + err.message, 'error');
@@ -1472,33 +1572,44 @@
       if (btn && btn.disabled) return;
 
       try {
-        showToast('Rebooting...', 'success');
+        showToast('Waking up...', 'success');
         await window.pocketAgent.restartAgent();
         deactivateReboot();
-        showToast('Back online', 'success');
+        showToast('I\'m back!', 'success');
       } catch (err) {
         showToast('Failed to restart: ' + err.message, 'error');
       }
     }
 
     function showToast(message, type = 'success') {
-      // Remove existing toast
+      // Remove existing toast with exit animation
       const existing = document.querySelector('.toast');
-      if (existing) existing.remove();
+      if (existing) {
+        existing.classList.add('exiting');
+        setTimeout(() => existing.remove(), 300);
+      }
 
       const toast = document.createElement('div');
       toast.className = `toast ${type}`;
       toast.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-          ${type === 'success'
-            ? '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>'
-            : '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>'}
-        </svg>
-        ${message}
+        <div class="toast-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            ${type === 'success'
+              ? '<path d="M20 6L9 17l-5-5"/>'
+              : '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>'}
+          </svg>
+        </div>
+        <div class="toast-content">
+          <div class="toast-message">${message}</div>
+        </div>
       `;
       document.body.appendChild(toast);
 
-      setTimeout(() => toast.remove(), 3000);
+      // Remove with exit animation after 3s
+      setTimeout(() => {
+        toast.classList.add('exiting');
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
     }
 
     // Auth functions
@@ -1599,7 +1710,7 @@
       const submitBtn = document.querySelector('#oauth-code-section button');
 
       if (!code) {
-        showToast('Please paste the authorization code', 'error');
+        showToast('Paste the code!', 'error');
         return;
       }
 
@@ -1609,13 +1720,13 @@
       try {
         const result = await window.pocketAgent.completeOAuth(code);
         if (result.success) {
-          showToast('Successfully signed in with Claude!', 'success');
+          showToast('Connected!', 'success');
           document.getElementById('oauth-code-section').style.display = 'none';
           document.getElementById('oauth-code').value = '';
           await loadSettings();
           updateAuthStatus();
         } else {
-          showToast(result.error || 'Invalid code', 'error');
+          showToast(result.error || 'That code didn\'t work', 'error');
         }
       } catch (err) {
         showToast(err.message || 'Verification failed', 'error');
@@ -1631,7 +1742,7 @@
       const key = input.value.trim();
 
       if (!key) {
-        showToast('Please enter an API key', 'error');
+        showToast('Need your API key!', 'error');
         return;
       }
 
@@ -1650,12 +1761,12 @@
         if (result.valid) {
           await window.pocketAgent.setSetting('anthropic.apiKey', key);
           await window.pocketAgent.setSetting('auth.method', 'api_key');
-          showToast('API key saved', 'success');
+          showToast('Key saved!', 'success');
           activateReboot();
           await loadSettings();
           updateAuthStatus();
         } else {
-          showToast(result.error || 'Invalid API key', 'error');
+          showToast(result.error || 'Invalid key', 'error');
         }
       } catch (err) {
         showToast(err.message || 'Validation failed', 'error');
@@ -1674,7 +1785,7 @@
         await window.pocketAgent.setSetting('auth.refreshToken', '');
         await window.pocketAgent.setSetting('auth.tokenExpiresAt', '');
         await window.pocketAgent.setSetting('anthropic.apiKey', '');
-        showToast('Signed out successfully', 'success');
+        showToast('See ya!', 'success');
         await loadSettings();
         updateAuthStatus();
       } catch (err) {

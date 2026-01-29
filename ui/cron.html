@@ -500,29 +500,133 @@
       font-size: 12px;
     }
 
-    /* Toast */
+    /* Toast - Premium glassmorphism design */
     .toast {
       position: fixed;
-      bottom: 20px;
-      right: 20px;
-      background: var(--bg-tertiary);
-      border: 1px solid var(--border);
-      padding: 10px 14px;
-      border-radius: var(--radius-sm);
-      font-size: 12px;
+      bottom: 24px;
+      right: 24px;
+      min-width: 200px;
+      max-width: 360px;
+      background: rgba(28, 28, 30, 0.85);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 14px 18px;
+      border-radius: 14px;
+      font-size: 13px;
+      font-weight: 500;
       display: flex;
       align-items: center;
-      gap: 8px;
-      animation: slideIn 0.3s ease;
+      gap: 12px;
+      animation: toastSlideIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
       z-index: 1000;
+      overflow: hidden;
+      box-shadow:
+        0 8px 32px rgba(0, 0, 0, 0.4),
+        0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+      color: var(--text-primary);
     }
 
-    .toast.success { border-color: var(--success); color: var(--success); }
-    .toast.error { border-color: var(--error); color: var(--error); }
+    .toast::before {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      height: 3px;
+      width: 100%;
+      background: linear-gradient(90deg, var(--accent) 0%, var(--accent-secondary) 100%);
+      animation: toastProgress 3s linear forwards;
+      transform-origin: left;
+    }
 
-    @keyframes slideIn {
-      from { transform: translateY(20px); opacity: 0; }
-      to { transform: translateY(0); opacity: 1; }
+    .toast.success {
+      box-shadow:
+        0 8px 32px rgba(34, 197, 94, 0.15),
+        0 0 0 1px rgba(34, 197, 94, 0.2) inset,
+        0 0 20px rgba(34, 197, 94, 0.1);
+    }
+
+    .toast.success::before {
+      background: linear-gradient(90deg, #22c55e 0%, #4ade80 100%);
+    }
+
+    .toast.success .toast-icon {
+      background: linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(74, 222, 128, 0.1) 100%);
+      color: #4ade80;
+    }
+
+    .toast.error {
+      box-shadow:
+        0 8px 32px rgba(239, 68, 68, 0.15),
+        0 0 0 1px rgba(239, 68, 68, 0.2) inset,
+        0 0 20px rgba(239, 68, 68, 0.1);
+    }
+
+    .toast.error::before {
+      background: linear-gradient(90deg, #ef4444 0%, #f87171 100%);
+    }
+
+    .toast.error .toast-icon {
+      background: linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(248, 113, 113, 0.1) 100%);
+      color: #f87171;
+    }
+
+    .toast-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      background: linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(236, 72, 153, 0.1) 100%);
+    }
+
+    .toast-icon svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .toast-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .toast-message {
+      color: var(--text-primary);
+      line-height: 1.4;
+      white-space: nowrap;
+    }
+
+    .toast.exiting {
+      animation: toastSlideOut 0.3s cubic-bezier(0.4, 0, 1, 1) forwards;
+    }
+
+    @keyframes toastSlideIn {
+      0% {
+        transform: translateX(100%) scale(0.8);
+        opacity: 0;
+      }
+      100% {
+        transform: translateX(0) scale(1);
+        opacity: 1;
+      }
+    }
+
+    @keyframes toastSlideOut {
+      0% {
+        transform: translateX(0) scale(1);
+        opacity: 1;
+      }
+      100% {
+        transform: translateX(100%) scale(0.8);
+        opacity: 0;
+      }
+    }
+
+    @keyframes toastProgress {
+      from { transform: scaleX(1); }
+      to { transform: scaleX(0); }
     }
 
     /* Full width row for prompt */
@@ -969,7 +1073,7 @@
       const sessionId = document.getElementById('job-session').value;
 
       if (!name || !prompt) {
-        showToast('Please fill in name and prompt', 'error');
+        showToast('Need a name and prompt!', 'error');
         return;
       }
 
@@ -983,7 +1087,7 @@
           showToast('Routine created! 🎉', 'success');
           loadJobs();
         } else {
-          showToast('Failed to create routine', 'error');
+          showToast('Couldn\'t create that', 'error');
         }
       } catch (err) {
         showToast(err.message, 'error');
@@ -993,7 +1097,7 @@
     async function toggleJob(name, enabled) {
       try {
         await window.pocketAgent.toggleCronJob(name, enabled);
-        showToast(enabled ? 'Resumed' : 'Paused', 'success');
+        showToast(enabled ? 'Back at it!' : 'Taking a break', 'success');
         loadJobs();
       } catch (err) {
         showToast(err.message, 'error');
@@ -1001,7 +1105,7 @@
     }
 
     async function runJob(name) {
-      showToast('Running...', 'success');
+      showToast('On it!', 'success');
       try {
         await window.pocketAgent.runCronJob(name);
       } catch (err) {
@@ -1023,14 +1127,31 @@
 
     function showToast(message, type = 'success') {
       const existing = document.querySelector('.toast');
-      if (existing) existing.remove();
+      if (existing) {
+        existing.classList.add('exiting');
+        setTimeout(() => existing.remove(), 300);
+      }
 
       const toast = document.createElement('div');
       toast.className = `toast ${type}`;
-      toast.textContent = message;
+      toast.innerHTML = `
+        <div class="toast-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            ${type === 'success'
+              ? '<path d="M20 6L9 17l-5-5"/>'
+              : '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>'}
+          </svg>
+        </div>
+        <div class="toast-content">
+          <div class="toast-message">${escapeHtml(message)}</div>
+        </div>
+      `;
       document.body.appendChild(toast);
 
-      setTimeout(() => toast.remove(), 3000);
+      setTimeout(() => {
+        toast.classList.add('exiting');
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
     }
 
     function escapeHtml(text) {
