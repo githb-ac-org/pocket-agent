@@ -555,8 +555,11 @@ export class MemoryManager {
 
     console.log(`[Memory] Embedding ${factsWithoutEmbeddings.length} facts...`);
 
-    for (const fact of factsWithoutEmbeddings) {
-      await this.embedFact(fact);
+    // Process in parallel batches of 5 to avoid rate limits
+    const batchSize = 5;
+    for (let i = 0; i < factsWithoutEmbeddings.length; i += batchSize) {
+      const batch = factsWithoutEmbeddings.slice(i, i + batchSize);
+      await Promise.all(batch.map((fact) => this.embedFact(fact)));
     }
 
     console.log('[Memory] Finished embedding facts');
@@ -1287,22 +1290,33 @@ export class MemoryManager {
       LIMIT ?
     `).all(sessionId, limit) as Array<{ id: number; content: string }>;
 
-    let embedded = 0;
-    for (const msg of unembeddedMessages) {
-      try {
-        const embedding = await embed(msg.content);
-        const embeddingBuffer = serializeEmbedding(embedding);
+    // Process in parallel batches of 5 to avoid rate limits
+    const batchSize = 5;
+    const results = await Promise.all(
+      Array.from({ length: Math.ceil(unembeddedMessages.length / batchSize) }, async (_, batchIndex) => {
+        const batch = unembeddedMessages.slice(batchIndex * batchSize, (batchIndex + 1) * batchSize);
+        let batchEmbedded = 0;
+        await Promise.all(
+          batch.map(async (msg) => {
+            try {
+              const embedding = await embed(msg.content);
+              const embeddingBuffer = serializeEmbedding(embedding);
 
-        this.db.prepare(`
-          INSERT OR REPLACE INTO message_embeddings (message_id, embedding)
-          VALUES (?, ?)
-        `).run(msg.id, embeddingBuffer);
+              this.db.prepare(`
+                INSERT OR REPLACE INTO message_embeddings (message_id, embedding)
+                VALUES (?, ?)
+              `).run(msg.id, embeddingBuffer);
 
-        embedded++;
-      } catch (error) {
-        console.error(`[Memory] Failed to embed message ${msg.id}:`, error);
-      }
-    }
+              batchEmbedded++;
+            } catch (error) {
+              console.error(`[Memory] Failed to embed message ${msg.id}:`, error);
+            }
+          })
+        );
+        return batchEmbedded;
+      })
+    );
+    const embedded = results.reduce((sum, count) => sum + count, 0);
 
     if (embedded > 0) {
       console.log(`[Memory] Embedded ${embedded} messages for session ${sessionId}`);

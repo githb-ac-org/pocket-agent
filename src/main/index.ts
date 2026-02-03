@@ -498,8 +498,9 @@ function showSplashScreen(): void {
     alwaysOnTop: true,
     skipTaskbar: true,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'splash-preload.js'),
     },
   });
 
@@ -1792,8 +1793,12 @@ async function initializeAgent(): Promise<void> {
         openChatWindow();
         // Wait a bit for window to load, then send message
         setTimeout(() => {
-          if (chatWindow && !chatWindow.isDestroyed()) {
-            chatWindow.webContents.send('scheduler:message', { jobName, prompt, response, sessionId });
+          try {
+            if (chatWindow && !chatWindow.isDestroyed()) {
+              chatWindow.webContents.send('scheduler:message', { jobName, prompt, response, sessionId });
+            }
+          } catch (err) {
+            console.error('[Main] Failed to send scheduler message to chat window:', err);
           }
         }, 1000);
       }

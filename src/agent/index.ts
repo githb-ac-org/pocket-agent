@@ -7,21 +7,10 @@ import { SettingsManager } from '../settings';
 import { EventEmitter } from 'events';
 import { buildCanUseToolCallback, buildPreToolUseHook, setStatusEmitter } from './safety';
 
-// Token limits - defaults, can be overridden by settings
-const DEFAULT_MAX_CONTEXT_TOKENS = 150000;
-const COMPACTION_RATIO = 0.8; // Start compacting at 80% capacity
-
 // Smart context defaults
 const DEFAULT_RECENT_MESSAGE_LIMIT = 20;
 const DEFAULT_ROLLING_SUMMARY_INTERVAL = 50;
 const DEFAULT_SEMANTIC_RETRIEVAL_COUNT = 5;
-
-// Get token limits from settings
-function getTokenLimits(): { maxContextTokens: number; compactionThreshold: number } {
-  const maxContextTokens = Number(SettingsManager.get('agent.maxContextTokens')) || DEFAULT_MAX_CONTEXT_TOKENS;
-  const compactionThreshold = Math.floor(maxContextTokens * COMPACTION_RATIO);
-  return { maxContextTokens, compactionThreshold };
-}
 
 // Provider configuration for different LLM backends
 type ProviderType = 'anthropic' | 'moonshot' | 'glm';
@@ -643,8 +632,12 @@ class AgentManagerClass extends EventEmitter {
       for (const item of queue) {
         item.reject(new Error('Queue cleared'));
       }
-      queue.length = 0;
+      // Delete the key entirely to prevent memory leak from accumulated empty arrays
+      this.messageQueueBySession.delete(sessionId);
       console.log(`[AgentManager] Queue cleared for session ${sessionId}`);
+    } else if (queue) {
+      // Clean up empty queue entries
+      this.messageQueueBySession.delete(sessionId);
     }
   }
 
@@ -1265,108 +1258,6 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
     return '';
   }
 
-  private async runCompaction(sessionId: string = 'default'): Promise<void> {
-    if (!this.memory) return;
-
-    console.log('[AgentManager] Running compaction for session:', sessionId);
-
-    // Before compaction, extract and save important facts from recent messages
-    await this.extractFactsBeforeCompaction(sessionId);
-
-    const { maxContextTokens } = getTokenLimits();
-    await this.memory.getConversationContext(maxContextTokens, sessionId);
-    const stats = this.memory.getStats(sessionId);
-    console.log(`[AgentManager] Compaction complete. Now at ${stats.estimatedTokens} tokens`);
-  }
-
-  /**
-   * Extract important facts from recent conversation before compaction
-   */
-  private async extractFactsBeforeCompaction(sessionId: string = 'default'): Promise<void> {
-    if (!this.memory) return;
-
-    try {
-      const query = await loadSDK();
-      if (!query) return;
-
-      // Get recent messages that haven't been processed for facts
-      const recentMessages = this.memory.getRecentMessages(30, sessionId);
-      if (recentMessages.length < 5) return;
-
-      const conversationText = recentMessages
-        .map(m => `${m.role.toUpperCase()}: ${m.content}`)
-        .join('\n\n');
-
-      const extractionPrompt = `Analyze this conversation and extract important facts about the user that should be saved to long-term memory. Only extract concrete, specific information - not general conversation topics.
-
-Focus on:
-- Personal info (name, location, job, etc.)
-- Preferences and opinions
-- Projects and goals
-- Important dates or deadlines
-- Relationships and people mentioned
-- Decisions made
-
-For each fact, output in this exact format (one per line):
-FACT|category|subject|content
-
-Categories: user_info, preferences, projects, people, work, notes, decisions
-
-Example:
-FACT|user_info|name|John Smith
-FACT|work|employer|Works at Acme Corp as a software engineer
-FACT|preferences|coffee|Prefers oat milk lattes
-
-If no important facts are found, output: NO_FACTS
-
-Conversation:
-${conversationText}`;
-
-      const options: SDKOptions = {
-        model: 'claude-haiku-4-5-20251001',
-        maxTurns: 1,
-        abortController: new AbortController(),
-        tools: [],
-        persistSession: false,
-      };
-
-      const queryResult = query({ prompt: extractionPrompt, options });
-      let response = '';
-
-      for await (const message of queryResult) {
-        response = this.extractFromMessage(message, response);
-      }
-
-      if (!response || response.includes('NO_FACTS')) {
-        console.log('[AgentManager] No new facts extracted before compaction');
-        return;
-      }
-
-      // Parse and save facts
-      const lines = response.split('\n').filter(line => line.startsWith('FACT|'));
-      let savedCount = 0;
-
-      for (const line of lines) {
-        const parts = line.split('|');
-        if (parts.length >= 4) {
-          const [, category, subject, ...contentParts] = parts;
-          const content = contentParts.join('|').trim();
-
-          if (category && subject && content) {
-            this.memory.saveFact(category.trim(), subject.trim(), content);
-            savedCount++;
-          }
-        }
-      }
-
-      if (savedCount > 0) {
-        console.log(`[AgentManager] Extracted ${savedCount} facts before compaction`);
-      }
-    } catch (error) {
-      console.error('[AgentManager] Fact extraction before compaction failed:', error);
-      // Don't block compaction on fact extraction failure
-    }
-  }
 
   private async createSummary(messages: Message[]): Promise<string> {
     if (messages.length === 0) {
