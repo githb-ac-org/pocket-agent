@@ -1304,40 +1304,53 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
       .map(m => `${m.role.toUpperCase()}: ${m.content}`)
       .join('\n\n---\n\n');
 
-    try {
-      const query = await loadSDK();
-      if (!query) throw new Error('Failed to load SDK');
+    const summaryPrompt = `Summarize this conversation concisely, preserving key facts about the user (name, preferences, work), important decisions, ongoing tasks, and context needed to continue the conversation:\n\n${conversationText}`;
 
-      const summaryPrompt = `Summarize this conversation concisely, preserving key facts about the user (name, preferences, work), important decisions, ongoing tasks, and context needed to continue the conversation:\n\n${conversationText}`;
-
-      const options: SDKOptions = {
-        model: 'claude-haiku-4-5-20251001',
-        maxTurns: 1,
-        abortController: new AbortController(),
-        tools: [],
-        persistSession: false,
-      };
-
-      const queryResult = query({ prompt: summaryPrompt, options });
-      let summary = '';
-
-      for await (const message of queryResult) {
-        summary = this.extractFromMessage(message, summary);
-      }
-
-      console.log(`[AgentManager] Created summary of ${messages.length} messages`);
-      return summary || `Previous conversation (${messages.length} messages) summarized.`;
-    } catch (error) {
-      console.error('[AgentManager] Summarization failed:', error);
-
-      const userMessages = messages.filter(m => m.role === 'user');
-      const snippets = userMessages
-        .slice(-10)
-        .map(m => m.content.slice(0, 100))
-        .join('; ');
-
-      return `Previous conversation (${messages.length} messages). Topics discussed: ${snippets}`;
+    // Try Haiku first (cheap/fast), fall back to user's model if unavailable
+    const modelsToTry = ['claude-haiku-4-5-20251001'];
+    if (this.model !== 'claude-haiku-4-5-20251001') {
+      modelsToTry.push(this.model);
     }
+
+    for (const model of modelsToTry) {
+      try {
+        const query = await loadSDK();
+        if (!query) throw new Error('Failed to load SDK');
+
+        configureProviderEnvironment(model);
+
+        const options: SDKOptions = {
+          model,
+          maxTurns: 1,
+          abortController: new AbortController(),
+          tools: [],
+          persistSession: false,
+        };
+
+        const queryResult = query({ prompt: summaryPrompt, options });
+        let summary = '';
+
+        for await (const message of queryResult) {
+          summary = this.extractFromMessage(message, summary);
+        }
+
+        console.log(`[AgentManager] Created summary of ${messages.length} messages using ${model}`);
+        return summary || `Previous conversation (${messages.length} messages) summarized.`;
+      } catch (error) {
+        console.warn(`[AgentManager] Summarization with ${model} failed:`, error);
+        // Continue to next model
+      }
+    }
+
+    // All models failed - use basic summary
+    console.error('[AgentManager] All summarization attempts failed, using basic summary');
+    const userMessages = messages.filter(m => m.role === 'user');
+    const snippets = userMessages
+      .slice(-10)
+      .map(m => m.content.slice(0, 100))
+      .join('; ');
+
+    return `Previous conversation (${messages.length} messages). Topics discussed: ${snippets}`;
   }
 
   /**
