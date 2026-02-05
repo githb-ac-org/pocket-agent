@@ -171,7 +171,6 @@ export function getCalendarAddToolDefinition() {
         location: { type: 'string', description: 'Optional location' },
         description: { type: 'string', description: 'Optional description' },
         reminder_minutes: { type: 'number', description: 'Minutes before to remind (default: 15)' },
-        channel: { type: 'string', description: 'Where to send reminder: desktop or telegram' },
       },
       required: ['title', 'start_time'],
     },
@@ -186,7 +185,6 @@ export async function handleCalendarAddTool(input: unknown): Promise<string> {
     location?: string;
     description?: string;
     reminder_minutes?: number;
-    channel?: string;
   };
 
   if (!params.title || !params.start_time) {
@@ -200,7 +198,8 @@ export async function handleCalendarAddTool(input: unknown): Promise<string> {
 
   const endTime = params.end_time ? parseDateTime(params.end_time) : null;
   const reminderMinutes = params.reminder_minutes ?? 15;
-  const channel = params.channel || 'desktop';
+  // Channel is always 'desktop' - routing broadcasts to all configured channels
+  const channel = 'desktop';
 
   const db = getDb();
   if (!db) {

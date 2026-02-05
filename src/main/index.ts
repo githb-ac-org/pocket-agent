@@ -159,11 +159,9 @@ async function setupBirthdayCronJobs(birthday: string): Promise<void> {
 
   const promptNoon = `It's ${userName}'s birthday and it's now midday! Send them another wonderful birthday message. Make this one even more special and celebratory than the morning one - wish them an amazing rest of their birthday, mention hoping their day has been great so far, and express how much you appreciate them.`;
 
-  // Create the jobs (channel 'telegram' to send via Telegram if configured)
-  const channel = SettingsManager.get('telegram.defaultChatId') ? 'telegram' : 'desktop';
-
-  await scheduler.createJob(jobNameMidnight, cronMidnight, promptMidnight, channel);
-  await scheduler.createJob(jobNameNoon, cronNoon, promptNoon, channel);
+  // Create the jobs (routing broadcasts to all configured channels)
+  await scheduler.createJob(jobNameMidnight, cronMidnight, promptMidnight, 'desktop');
+  await scheduler.createJob(jobNameNoon, cronNoon, promptNoon, 'desktop');
 
   console.log(`[Birthday] Scheduled birthday reminders for ${month}/${day} (${userName})`);
 }

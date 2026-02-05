@@ -441,12 +441,11 @@ export class CronScheduler {
     }
 
     // Also send to Telegram if configured AND session has a linked chat
-    if (channel === 'telegram' && this.telegramBot && this.memory) {
+    if (this.telegramBot && this.memory) {
       const linkedChatId = this.memory.getChatForSession(sessionId);
       if (linkedChatId) {
         await this.telegramBot.sendMessage(linkedChatId, response);
       }
-      // No broadcast fallback - only send to session's linked chat
     }
   }
 
@@ -466,12 +465,11 @@ export class CronScheduler {
     }
 
     // Also send to Telegram if configured AND session has a linked chat
-    if (channel === 'telegram' && this.telegramBot && this.memory) {
+    if (this.telegramBot && this.memory) {
       const linkedChatId = this.memory.getChatForSession(sessionId);
       if (linkedChatId) {
         await this.telegramBot.sendMessage(linkedChatId, `${type === 'calendar' ? '📅' : '✓'} ${message}`);
       }
-      // No broadcast fallback - only send to session's linked chat
     }
 
     // Log to history

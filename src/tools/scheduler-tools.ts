@@ -230,10 +230,6 @@ export function getCreateRoutineToolDefinition() {
           type: 'string',
           description: 'The prompt sent to the LLM when triggered. Write as an instruction: "Check the weather in KL and tell me", "Summarize today\'s tech news", "Research competitors for X".',
         },
-        channel: {
-          type: 'string',
-          description: 'Where to send result: "desktop" or "telegram" (default: desktop)',
-        },
       },
       required: ['name', 'schedule', 'prompt'],
     },
@@ -245,11 +241,10 @@ export function getCreateRoutineToolDefinition() {
  * Supports natural language scheduling in addition to cron
  */
 export async function handleCreateRoutineTool(input: unknown): Promise<string> {
-  const { name, schedule, prompt, channel } = input as {
+  const { name, schedule, prompt } = input as {
     name: string;
     schedule: string;
     prompt: string;
-    channel?: string;
   };
 
   if (!name || !schedule || !prompt) {
@@ -303,29 +298,8 @@ export async function handleCreateRoutineTool(input: unknown): Promise<string> {
     // Auto-enable delete-after for one-time "at" jobs
     const deleteAfterRun = parsed.type === 'at' ? 1 : 0;
 
-    // Determine default channel: use telegram if configured, otherwise desktop
-    let targetChannel = channel;
-    if (!targetChannel) {
-      // Check if Telegram is configured by looking for activeChatIds in settings
-      const telegramSetting = db.prepare(
-        "SELECT value FROM settings WHERE key = 'telegram.activeChatIds'"
-      ).get() as { value: string } | undefined;
-
-      if (telegramSetting?.value) {
-        try {
-          const chatIds = JSON.parse(telegramSetting.value);
-          if (Array.isArray(chatIds) && chatIds.length > 0) {
-            targetChannel = 'telegram';
-          }
-        } catch {
-          // Invalid JSON, fall through to desktop
-        }
-      }
-
-      if (!targetChannel) {
-        targetChannel = 'desktop';
-      }
-    }
+    // Channel is always 'desktop' - routing broadcasts to all configured channels
+    const targetChannel = 'desktop';
 
     const nextRunAt = calculateNextRun(
       parsed.type,
@@ -415,10 +389,6 @@ export function getCreateReminderToolDefinition() {
           type: 'string',
           description: 'The exact message to display. Examples: "Hey Ken! Time to take a shower 🚿", "Don\'t forget to call mom! 📱". Write a friendly, complete message.',
         },
-        channel: {
-          type: 'string',
-          description: 'Where to send: "desktop" or "telegram" (default: desktop)',
-        },
       },
       required: ['name', 'schedule', 'reminder'],
     },
@@ -429,11 +399,10 @@ export function getCreateReminderToolDefinition() {
  * Create reminder tool handler
  */
 export async function handleCreateReminderTool(input: unknown): Promise<string> {
-  const { name, schedule, reminder, channel } = input as {
+  const { name, schedule, reminder } = input as {
     name: string;
     schedule: string;
     reminder: string;
-    channel?: string;
   };
 
   if (!name || !schedule || !reminder) {
@@ -487,28 +456,8 @@ export async function handleCreateReminderTool(input: unknown): Promise<string> 
     // Auto-enable delete-after for one-time "at" jobs
     const deleteAfterRun = parsed.type === 'at' ? 1 : 0;
 
-    // Determine default channel: use telegram if configured, otherwise desktop
-    let targetChannel = channel;
-    if (!targetChannel) {
-      const telegramSetting = db.prepare(
-        "SELECT value FROM settings WHERE key = 'telegram.activeChatIds'"
-      ).get() as { value: string } | undefined;
-
-      if (telegramSetting?.value) {
-        try {
-          const chatIds = JSON.parse(telegramSetting.value);
-          if (Array.isArray(chatIds) && chatIds.length > 0) {
-            targetChannel = 'telegram';
-          }
-        } catch {
-          // Invalid JSON, fall through to desktop
-        }
-      }
-
-      if (!targetChannel) {
-        targetChannel = 'desktop';
-      }
-    }
+    // Channel is always 'desktop' - routing broadcasts to all configured channels
+    const targetChannel = 'desktop';
 
     const nextRunAt = calculateNextRun(
       parsed.type,

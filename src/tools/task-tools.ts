@@ -202,7 +202,6 @@ export function getTaskAddToolDefinition() {
         due: { type: 'string', description: 'Due date (e.g., "tomorrow", "friday 5pm")' },
         priority: { type: 'string', description: 'Priority: low, medium, high (default: medium)' },
         reminder_minutes: { type: 'number', description: 'Minutes before due date to send a reminder notification' },
-        channel: { type: 'string', description: 'Where to send due-date reminder: desktop or telegram' },
       },
       required: ['title'],
     },
@@ -216,7 +215,6 @@ export async function handleTaskAddTool(input: unknown): Promise<string> {
     due?: string;
     priority?: string;
     reminder_minutes?: number;
-    channel?: string;
   };
 
   if (!params.title) {
@@ -233,7 +231,8 @@ export async function handleTaskAddTool(input: unknown): Promise<string> {
     return JSON.stringify({ error: 'Priority must be: low, medium, or high' });
   }
 
-  const channel = params.channel || 'desktop';
+  // Channel is always 'desktop' - routing broadcasts to all configured channels
+  const channel = 'desktop';
 
   try {
     const db = getDb();
