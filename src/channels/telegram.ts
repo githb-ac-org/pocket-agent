@@ -712,7 +712,7 @@ Your AI assistant with persistent memory. I remember our conversations and learn
 
         // If compaction happened, notify
         if (result.wasCompacted) {
-          await ctx.reply('📦 (Conversation history was compacted to save space)');
+          await ctx.reply('(your chat has been compacted)');
         }
       } catch (error) {
         console.error('[Telegram] Error:', error);

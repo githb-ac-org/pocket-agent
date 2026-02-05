@@ -1087,6 +1087,7 @@ function setupIPC(): void {
         response: result.response,
         tokensUsed: result.tokensUsed,
         suggestedPrompt: result.suggestedPrompt,
+        wasCompacted: result.wasCompacted,
       };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';

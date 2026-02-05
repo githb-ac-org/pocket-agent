@@ -78,6 +78,7 @@ export interface SmartContext {
     summarizedMessages: number;
     recentCount: number;
     relevantCount: number;
+    newSummaryCreated: boolean;  // True if a new rolling summary was created this turn
   };
 }
 
@@ -1046,14 +1047,17 @@ export class MemoryManager {
 
     // 3. Get or create rolling summary for older messages
     let rollingSummary: string | null = null;
+    let newSummaryCreated = false;
     const summarizedMessages = totalMessages - recentMessages.length;
 
     if (summarizedMessages > 0 && oldestRecentId > 1) {
-      rollingSummary = await this.getOrCreateRollingSummary(
+      const summaryResult = await this.getOrCreateRollingSummary(
         oldestRecentId,
         sessionId,
         rollingSummaryInterval
       );
+      rollingSummary = summaryResult.summary;
+      newSummaryCreated = summaryResult.newSummaryCreated;
     }
 
     // 4. Get semantically relevant messages (if embeddings available and query provided)
@@ -1095,6 +1099,7 @@ export class MemoryManager {
         summarizedMessages,
         recentCount: recentMessages.length,
         relevantCount: relevantMessages.length,
+        newSummaryCreated,
       },
     };
   }
@@ -1102,12 +1107,13 @@ export class MemoryManager {
   /**
    * Get or create a rolling summary for messages before the given ID.
    * Creates incremental summaries every N messages.
+   * Returns both the summary and whether a new summary was created this turn.
    */
   private async getOrCreateRollingSummary(
     beforeMessageId: number,
     sessionId: string,
     interval: number
-  ): Promise<string | null> {
+  ): Promise<{ summary: string | null; newSummaryCreated: boolean }> {
     // Check for existing rolling summary that covers up to beforeMessageId-1
     const existingSummary = this.db.prepare(`
       SELECT content FROM rolling_summaries
@@ -1134,8 +1140,22 @@ export class MemoryManager {
       ORDER BY id ASC
     `).all(sessionId, lastSummarizedId, beforeMessageId) as Message[];
 
-    // If we have enough unsummarized messages, create a new rolling summary
-    if (unsummarizedMessages.length >= interval && this.summarizer) {
+    // Calculate token count for unsummarized messages
+    const unsummarizedTokens = unsummarizedMessages.reduce(
+      (sum, m) => sum + estimateTokens(m.content), 0
+    );
+
+    // Token threshold for triggering summarization (prevents token blowup from long messages)
+    const TOKEN_THRESHOLD = 15000;
+
+    // Trigger summarization if either: enough messages OR too many tokens
+    const shouldSummarize = this.summarizer && (
+      unsummarizedMessages.length >= interval ||
+      unsummarizedTokens >= TOKEN_THRESHOLD
+    );
+
+    if (shouldSummarize && unsummarizedMessages.length > 0) {
+      console.log(`[Memory] Triggering summarization: ${unsummarizedMessages.length} messages, ${unsummarizedTokens} tokens (threshold: ${interval} msgs or ${TOKEN_THRESHOLD} tokens)`);
       const newSummary = await this.createRollingSummary(
         unsummarizedMessages,
         sessionId,
@@ -1155,26 +1175,26 @@ export class MemoryManager {
 
       // Combine with existing summary
       if (existingSummary?.content) {
-        return `${existingSummary.content}\n\n${newSummary}`;
+        return { summary: `${existingSummary.content}\n\n${newSummary}`, newSummaryCreated: true };
       }
-      return newSummary;
+      return { summary: newSummary, newSummaryCreated: true };
     }
 
     // Return existing summary combined with basic summary of recent unsummarized
     if (existingSummary?.content) {
       if (unsummarizedMessages.length > 0) {
         const basicSummary = this.createBasicSummary(unsummarizedMessages);
-        return `${existingSummary.content}\n\n${basicSummary}`;
+        return { summary: `${existingSummary.content}\n\n${basicSummary}`, newSummaryCreated: false };
       }
-      return existingSummary.content;
+      return { summary: existingSummary.content, newSummaryCreated: false };
     }
 
     // No existing summary - create basic summary if we have messages
     if (unsummarizedMessages.length > 0) {
-      return this.createBasicSummary(unsummarizedMessages);
+      return { summary: this.createBasicSummary(unsummarizedMessages), newSummaryCreated: false };
     }
 
-    return null;
+    return { summary: null, newSummaryCreated: false };
   }
 
   /**

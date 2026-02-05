@@ -3039,6 +3039,11 @@
           if (result.success) {
             addMessage('assistant', result.response);
 
+            // Show compaction notice if conversation was compacted
+            if (result.wasCompacted) {
+              addMessage('system', 'your chat has been compacted', true, [], null, false);
+            }
+
             // If there's a suggested prompt, show it as ghost text
             if (result.suggestedPrompt) {
               setSuggestion(result.suggestedPrompt);

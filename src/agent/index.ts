@@ -437,7 +437,10 @@ class AgentManagerClass extends EventEmitter {
       const factsContext = memory.getFactsForContext();
       const soulContext = memory.getSoulContext();
 
-      console.log(`[AgentManager] Smart context: ${smartContext.stats.recentCount} recent, ${smartContext.stats.summarizedMessages} summarized, ${smartContext.stats.relevantCount} relevant (${smartContext.totalTokens} tokens)`);
+      // Set wasCompacted if a new rolling summary was created this turn
+      wasCompacted = smartContext.stats.newSummaryCreated;
+
+      console.log(`[AgentManager] Smart context: ${smartContext.stats.recentCount} recent, ${smartContext.stats.summarizedMessages} summarized, ${smartContext.stats.relevantCount} relevant (${smartContext.totalTokens} tokens)${wasCompacted ? ' [COMPACTED]' : ''}`);
 
       const contextParts: string[] = [];
 
