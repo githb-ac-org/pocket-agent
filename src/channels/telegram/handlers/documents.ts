@@ -217,7 +217,13 @@ export async function handleDocumentMessage(
         sessionId,
         hasAttachment: true,
         attachmentType: 'document',
+        wasCompacted: result.wasCompacted,
       });
+    }
+
+    // If compaction happened, notify
+    if (result.wasCompacted) {
+      await ctx.reply('(your chat has been compacted)');
     }
   } catch (error) {
     console.error('[Telegram] Document error:', error);

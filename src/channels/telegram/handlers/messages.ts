@@ -48,6 +48,7 @@ export async function handleTextMessage(
         channel: 'telegram',
         chatId,
         sessionId,
+        wasCompacted: result.wasCompacted,
       });
     }
 

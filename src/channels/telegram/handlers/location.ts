@@ -205,7 +205,13 @@ export async function handleLocationMessage(
         sessionId,
         hasAttachment: true,
         attachmentType: 'location',
+        wasCompacted: result.agentResult.wasCompacted,
       });
+    }
+
+    // If compaction happened, notify
+    if (result.agentResult.wasCompacted) {
+      await ctx.reply('(your chat has been compacted)');
     }
   } catch (error) {
     console.error('[Telegram] Location error:', error);

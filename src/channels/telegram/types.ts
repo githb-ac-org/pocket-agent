@@ -16,6 +16,7 @@ export type MessageCallback = (data: {
   sessionId: string;
   hasAttachment?: boolean;
   attachmentType?: AttachmentType;
+  wasCompacted?: boolean;
 }) => void;
 
 /**

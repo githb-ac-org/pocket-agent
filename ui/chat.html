@@ -2733,6 +2733,11 @@
       // Add the agent's response
       addMessage('assistant', data.response);
 
+      // Show compaction notice if conversation was compacted
+      if (data.wasCompacted) {
+        addMessage('system', 'your chat has been compacted', true, [], null, false);
+      }
+
       // Update stats and scroll
       updateStats();
       scrollToBottom();

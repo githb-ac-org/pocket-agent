@@ -126,7 +126,13 @@ export async function handlePhotoMessage(
         sessionId,
         hasAttachment: true,
         attachmentType: 'photo',
+        wasCompacted: result.wasCompacted,
       });
+    }
+
+    // If compaction happened, notify
+    if (result.wasCompacted) {
+      await ctx.reply('(your chat has been compacted)');
     }
   } catch (error) {
     console.error('[Telegram] Photo error:', error);
@@ -236,7 +242,13 @@ export async function handleVoiceMessage(
         sessionId,
         hasAttachment: true,
         attachmentType: 'voice',
+        wasCompacted: result.result.wasCompacted,
       });
+    }
+
+    // If compaction happened, notify
+    if (result.result.wasCompacted) {
+      await ctx.reply('(your chat has been compacted)');
     }
   } catch (error) {
     console.error('[Telegram] Voice error:', error);
@@ -356,7 +368,13 @@ export async function handleAudioMessage(
         sessionId,
         hasAttachment: true,
         attachmentType: 'audio',
+        wasCompacted: result.result.wasCompacted,
       });
+    }
+
+    // If compaction happened, notify
+    if (result.result.wasCompacted) {
+      await ctx.reply('(your chat has been compacted)');
     }
   } catch (error) {
     console.error('[Telegram] Audio error:', error);
