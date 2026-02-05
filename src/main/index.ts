@@ -505,8 +505,8 @@ function showSplashScreen(): void {
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
 
-  const splashWidth = 400;
-  const splashHeight = 160;
+  const splashWidth = 650;
+  const splashHeight = 200;
 
   splashWindow = new BrowserWindow({
     width: splashWidth,
