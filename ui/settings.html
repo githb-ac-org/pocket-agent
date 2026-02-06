@@ -1361,9 +1361,25 @@
             <div id="pocket-cli-status" class="status info" style="margin: 0;">checking...</div>
           </div>
           <div class="setting-row">
-            <label>Install</label>
-            <button id="pocket-cli-install-btn" onclick="playNormalClick(); installPocketCli()" class="skills-setup-btn" style="margin: 0;">Install Pocket CLI</button>
+            <label>Installed Version</label>
+            <span id="pocket-cli-version" class="key-link" style="font-size: 12px;">—</span>
           </div>
+          <div class="setting-row">
+            <label>Latest Version</label>
+            <span id="pocket-cli-latest" class="key-link" style="font-size: 12px;">—</span>
+          </div>
+          <div class="setting-row">
+            <label>Actions</label>
+            <div style="display: flex; gap: 6px;">
+              <button id="pocket-cli-install-btn" onclick="playNormalClick(); installPocketCli()" class="skills-setup-btn" style="margin: 0;">Install Pocket CLI</button>
+              <button id="pocket-cli-update-btn" onclick="playNormalClick(); updatePocketCli()" class="skills-setup-btn" style="margin: 0; display: none; background: var(--accent); color: white; border-color: var(--accent);">Update</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="pocket-cli-info" class="info-box" style="margin-top: 12px; display: none;">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <span id="pocket-cli-info-text"></span>
         </div>
       </section>
 
@@ -2295,6 +2311,13 @@
     async function checkPocketCliStatus() {
       const statusEl = document.getElementById('pocket-cli-status');
       const installBtn = document.getElementById('pocket-cli-install-btn');
+      const updateBtn = document.getElementById('pocket-cli-update-btn');
+      const versionEl = document.getElementById('pocket-cli-version');
+      const latestEl = document.getElementById('pocket-cli-latest');
+      const infoBox = document.getElementById('pocket-cli-info');
+      const infoText = document.getElementById('pocket-cli-info-text');
+
+      let installedVersion = null;
 
       try {
         // Check if pocket command exists
@@ -2303,15 +2326,55 @@
           statusEl.className = 'status success';
           statusEl.textContent = 'Installed';
           installBtn.textContent = 'Reinstall';
+
+          // Get installed version
+          try {
+            const versionResult = await window.pocketAgent.runCommand('pocket --version');
+            if (versionResult && versionResult.trim()) {
+              installedVersion = versionResult.trim().replace(/^v/, '');
+              versionEl.textContent = `v${installedVersion}`;
+            }
+          } catch (e) {
+            versionEl.textContent = 'Unknown';
+          }
         } else {
           statusEl.className = 'status warning';
           statusEl.textContent = 'Not installed';
           installBtn.textContent = 'Install Pocket CLI';
+          versionEl.textContent = '—';
         }
       } catch (err) {
         statusEl.className = 'status warning';
         statusEl.textContent = 'Not installed';
         installBtn.textContent = 'Install Pocket CLI';
+        versionEl.textContent = '—';
+      }
+
+      // Check latest version from GitHub
+      try {
+        const latestJson = await window.pocketAgent.runCommand(
+          'curl -fsSL https://api.github.com/repos/KenKaiii/pocket-agent-cli/releases/latest'
+        );
+        if (latestJson) {
+          const release = JSON.parse(latestJson);
+          const latestVersion = (release.tag_name || '').replace(/^v/, '');
+          if (latestVersion) {
+            latestEl.textContent = `v${latestVersion}`;
+
+            // Compare versions if CLI is installed
+            if (installedVersion && latestVersion !== installedVersion) {
+              updateBtn.style.display = 'inline-block';
+              updateBtn.textContent = `Update to v${latestVersion}`;
+              infoBox.style.display = 'flex';
+              infoText.textContent = `A new version (v${latestVersion}) is available. You are on v${installedVersion}.`;
+            } else if (installedVersion && latestVersion === installedVersion) {
+              updateBtn.style.display = 'none';
+              infoBox.style.display = 'none';
+            }
+          }
+        }
+      } catch (e) {
+        latestEl.textContent = 'Unable to check';
       }
     }
 
@@ -2326,7 +2389,7 @@
         statusEl.textContent = 'Installing...';
 
         // Run the install script
-        const result = await window.pocketAgent.runCommand('curl -fsSL https://raw.githubusercontent.com/KenKaiii/pocket-agent-cli/main/scripts/install.sh | bash');
+        await window.pocketAgent.runCommand('curl -fsSL https://raw.githubusercontent.com/KenKaiii/pocket-agent-cli/main/scripts/install.sh | bash');
 
         // Check if installation succeeded
         await checkPocketCliStatus();
@@ -2343,6 +2406,42 @@
         showToast('Failed to install Pocket CLI: ' + err.message, 'error');
       } finally {
         installBtn.disabled = false;
+        await checkPocketCliStatus();
+      }
+    }
+
+    async function updatePocketCli() {
+      const statusEl = document.getElementById('pocket-cli-status');
+      const updateBtn = document.getElementById('pocket-cli-update-btn');
+      const infoBox = document.getElementById('pocket-cli-info');
+      const infoText = document.getElementById('pocket-cli-info-text');
+
+      try {
+        updateBtn.disabled = true;
+        updateBtn.textContent = 'Updating...';
+        statusEl.className = 'status info';
+        statusEl.textContent = 'Updating...';
+        infoBox.style.display = 'flex';
+        infoText.textContent = 'Downloading and installing latest version...';
+
+        // Re-run the install script to update
+        await window.pocketAgent.runCommand('curl -fsSL https://raw.githubusercontent.com/KenKaiii/pocket-agent-cli/main/scripts/install.sh | bash');
+
+        // Refresh status
+        await checkPocketCliStatus();
+
+        const newStatus = document.getElementById('pocket-cli-status');
+        if (newStatus.classList.contains('success')) {
+          showToast('Pocket CLI updated successfully!', 'success');
+        } else {
+          showToast('Update completed, please check status', 'warning');
+        }
+      } catch (err) {
+        statusEl.className = 'status error';
+        statusEl.textContent = 'Update failed';
+        showToast('Failed to update Pocket CLI: ' + err.message, 'error');
+      } finally {
+        updateBtn.disabled = false;
         await checkPocketCliStatus();
       }
     }
