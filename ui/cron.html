@@ -756,7 +756,14 @@
           </div>
         </div>
 
-        <div class="setting-row full-width">
+        <div class="setting-row">
+          <label>Source</label>
+          <select id="prompt-source" onchange="handlePromptSourceChange()">
+            <option value="custom">Custom prompt</option>
+          </select>
+        </div>
+
+        <div class="setting-row full-width" id="prompt-row">
           <label>Prompt</label>
           <textarea id="job-prompt" placeholder="what should i do when this kicks off? ✨"></textarea>
         </div>
@@ -1020,10 +1027,47 @@
     const jobsList = document.getElementById('jobs-list');
     let sessionsMap = {}; // Map session_id to session name
 
+    let workflowCommands = [];
+
     window.addEventListener('DOMContentLoaded', async () => {
       await loadSessions();
+      await loadWorkflows();
       await loadJobs();
     });
+
+    async function loadWorkflows() {
+      try {
+        workflowCommands = await window.pocketAgent.getCommands();
+        const sourceSelect = document.getElementById('prompt-source');
+        workflowCommands.forEach(cmd => {
+          const opt = document.createElement('option');
+          opt.value = cmd.name;
+          opt.textContent = cmd.name;
+          sourceSelect.appendChild(opt);
+        });
+      } catch (err) {
+        console.error('Failed to load workflows:', err);
+      }
+    }
+
+    function handlePromptSourceChange() {
+      const source = document.getElementById('prompt-source').value;
+      const promptRow = document.getElementById('prompt-row');
+      const promptTextarea = document.getElementById('job-prompt');
+
+      if (source === 'custom') {
+        promptRow.style.display = '';
+        promptTextarea.value = '';
+        promptTextarea.readOnly = false;
+        promptTextarea.placeholder = "what should i do when this kicks off? ✨";
+      } else {
+        const cmd = workflowCommands.find(c => c.name === source);
+        if (cmd) {
+          promptRow.style.display = 'none';
+          promptTextarea.value = `[Workflow: ${cmd.name}]\n${cmd.content}\n[/Workflow]`;
+        }
+      }
+    }
 
     async function loadSessions() {
       try {
@@ -1071,7 +1115,7 @@
             <div class="job-info">
               <div class="job-name">${escapeHtml(job.name)}<span class="job-session-badge">${escapeHtml(sessionName)}</span></div>
               <div class="job-schedule">${scheduleToHuman(job)}</div>
-              <div class="job-prompt">${escapeHtml(job.prompt)}</div>
+              <div class="job-prompt">${job.prompt.startsWith('[Workflow: ') ? '⚡ ' + escapeHtml(job.prompt.substring(11, job.prompt.indexOf(']'))) : escapeHtml(job.prompt)}</div>
             </div>
             <div class="job-actions">
               <button class="icon-btn" onclick="playNormalClick(); toggleJob('${escapeAttr(job.name)}', ${!job.enabled})" title="${job.enabled ? 'Pause' : 'Resume'}">
@@ -1100,11 +1144,17 @@
 
     async function createJob() {
       const name = document.getElementById('job-name').value.trim();
+      const source = document.getElementById('prompt-source').value;
       const prompt = document.getElementById('job-prompt').value.trim();
       const sessionId = document.getElementById('job-session').value;
 
-      if (!name || !prompt) {
-        showToast('Need a name and prompt!', 'error');
+      if (!name) {
+        showToast('Need a name!', 'error');
+        return;
+      }
+
+      if (source === 'custom' && !prompt) {
+        showToast('Need a prompt!', 'error');
         return;
       }
 
@@ -1115,6 +1165,8 @@
         if (result.success) {
           document.getElementById('job-name').value = '';
           document.getElementById('job-prompt').value = '';
+          document.getElementById('prompt-source').value = 'custom';
+          handlePromptSourceChange();
           showToast('Routine created! 🎉', 'success');
           loadJobs();
         } else {
