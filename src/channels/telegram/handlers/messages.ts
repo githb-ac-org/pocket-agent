@@ -6,6 +6,7 @@ import { Context } from 'grammy';
 import { AgentManager } from '../../../agent';
 import { MessageCallback } from '../types';
 import { withTyping } from '../utils/typing';
+import { findWorkflowCommand } from '../../../config/commands-loader';
 
 export interface MessageHandlerDeps {
   onMessageCallback: MessageCallback | null;
@@ -25,13 +26,28 @@ export async function handleTextMessage(
 
   const { onMessageCallback, sendResponse } = deps;
 
+  // Check if this is a workflow slash command (e.g., /create-workflow some context)
+  let fullMessage = message;
+  if (message.startsWith('/')) {
+    const spaceIdx = message.indexOf(' ');
+    const commandName = (spaceIdx !== -1 ? message.substring(1, spaceIdx) : message.substring(1))
+      .replace(/@\w+$/, ''); // Strip @botname suffix
+    const userText = spaceIdx !== -1 ? message.substring(spaceIdx + 1).trim() : '';
+    const workflow = findWorkflowCommand(commandName);
+
+    if (workflow) {
+      fullMessage = `[Workflow: ${workflow.name}]\n${workflow.content}\n[/Workflow]`;
+      if (userText) fullMessage += `\n\n${userText}`;
+    }
+  }
+
   try {
     const result = await withTyping(ctx, async () => {
       // Look up which session this chat is linked to
       const memory = AgentManager.getMemory();
       const sessionId = memory?.getSessionForChat(chatId) || 'default';
 
-      return AgentManager.processMessage(message, 'telegram', sessionId);
+      return AgentManager.processMessage(fullMessage, 'telegram', sessionId);
     });
 
     // Send response, splitting if necessary

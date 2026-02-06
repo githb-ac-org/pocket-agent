@@ -817,6 +817,25 @@
       fill: #ffffff;
     }
 
+    /* Workflow badge */
+    .message.from-workflow {
+      position: relative;
+    }
+
+    .message.from-workflow::after {
+      content: 'workflow';
+      position: absolute;
+      top: -8px;
+      left: 8px;
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      color: #ffffff;
+      background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
     /* Queue indicator in status */
     .queue-indicator {
       display: flex;
@@ -1393,9 +1412,6 @@
 
     /* Search Area */
     #search-area {
-      padding: 10px 20px;
-      background: var(--bg-secondary);
-      border-top: 1px solid var(--border);
       flex-shrink: 0;
     }
 
@@ -1527,6 +1543,159 @@
     .search-close-btn svg {
       width: 14px;
       height: 14px;
+    }
+
+    /* Toolbar row (search + workflows side by side) */
+    #toolbar-row {
+      display: flex;
+      gap: 8px;
+      padding: 10px 20px;
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    /* Workflows Area */
+    #workflows-area {
+      flex-shrink: 0;
+    }
+
+    .workflows-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .workflows-toggle:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: rgba(168, 85, 247, 0.1);
+    }
+
+    .workflows-toggle svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    #workflows-area.active .workflows-toggle {
+      display: none;
+    }
+
+    #workflows-expanded {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    #workflows-area.active #workflows-expanded {
+      display: flex;
+    }
+
+    #workflows-grid {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .workflow-btn {
+      padding: 5px 12px;
+      background: rgba(168, 85, 247, 0.12);
+      border: 1px solid rgba(168, 85, 247, 0.3);
+      border-radius: 16px;
+      color: var(--accent-hover);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: inherit;
+    }
+
+    .workflow-btn:hover {
+      background: rgba(168, 85, 247, 0.25);
+      border-color: var(--accent);
+      color: white;
+      transform: translateY(-1px);
+    }
+
+    .workflows-close-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .workflows-close-btn:hover {
+      background: var(--error);
+      color: white;
+    }
+
+    .workflows-close-btn svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    /* Workflow badge in input area */
+    .workflow-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 10px;
+      background: linear-gradient(135deg, rgba(168, 85, 247, 0.2), rgba(236, 72, 153, 0.2));
+      border: 1px solid rgba(168, 85, 247, 0.4);
+      border-radius: 12px;
+      color: var(--accent-hover);
+      font-size: 11px;
+      font-weight: 600;
+      font-family: inherit;
+      margin-right: 6px;
+      flex-shrink: 0;
+    }
+
+    .workflow-badge-remove {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px;
+      height: 14px;
+      background: transparent;
+      border: none;
+      border-radius: 50%;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      padding: 0;
+    }
+
+    .workflow-badge-remove:hover {
+      color: var(--error);
+    }
+
+    .workflow-badge-remove svg {
+      width: 10px;
+      height: 10px;
+    }
+
+    #workflow-badge-container {
+      display: flex;
+      align-items: center;
+      align-self: center;
     }
 
     /* Search highlight */
@@ -2035,42 +2204,64 @@
     </svg>
   </button>
 
-  <!-- Search Area -->
-  <div id="search-area">
-    <!-- Toggle Button (shown by default) -->
-    <button class="search-toggle" id="search-toggle-btn" onclick="playNormalClick(); toggleSearch()">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="11" cy="11" r="8"></circle>
-        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-      </svg>
-      <span>search</span>
-    </button>
-    <!-- Search Input (hidden by default) -->
-    <div id="search-expanded">
-      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="search-icon">
-        <circle cx="11" cy="11" r="8"></circle>
-        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-      </svg>
-      <input type="text" id="search-input" placeholder="Search in chat..." oninput="handleSearchInput(event)" onkeydown="handleSearchKeydown(event)">
-      <span id="search-results-count" class="search-results-count"></span>
-      <div class="search-nav">
-        <button class="search-nav-btn" id="search-prev-btn" onclick="playNormalClick(); navigateSearch(-1)" title="Previous" disabled>
+  <!-- Toolbar Row (Search + Workflows) -->
+  <div id="toolbar-row">
+    <div id="search-area">
+      <!-- Toggle Button (shown by default) -->
+      <button class="search-toggle" id="search-toggle-btn" onclick="playNormalClick(); toggleSearch()">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <span>search</span>
+      </button>
+      <!-- Search Input (hidden by default) -->
+      <div id="search-expanded">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="search-icon">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="search-input" placeholder="Search in chat..." oninput="handleSearchInput(event)" onkeydown="handleSearchKeydown(event)">
+        <span id="search-results-count" class="search-results-count"></span>
+        <div class="search-nav">
+          <button class="search-nav-btn" id="search-prev-btn" onclick="playNormalClick(); navigateSearch(-1)" title="Previous" disabled>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="18 15 12 9 6 15"></polyline>
+            </svg>
+          </button>
+          <button class="search-nav-btn" id="search-next-btn" onclick="playNormalClick(); navigateSearch(1)" title="Next" disabled>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+        </div>
+        <button class="search-close-btn" onclick="playNormalClick(); closeSearch()" title="Close">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="18 15 12 9 6 15"></polyline>
-          </svg>
-        </button>
-        <button class="search-nav-btn" id="search-next-btn" onclick="playNormalClick(); navigateSearch(1)" title="Next" disabled>
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="6 9 12 15 18 9"></polyline>
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
           </svg>
         </button>
       </div>
-      <button class="search-close-btn" onclick="playNormalClick(); closeSearch()" title="Close">
+    </div>
+
+    <!-- Workflows Area -->
+    <div id="workflows-area">
+      <button class="workflows-toggle" onclick="playNormalClick(); toggleWorkflows()">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="18" y1="6" x2="6" y2="18"></line>
-          <line x1="6" y1="6" x2="18" y2="18"></line>
+          <polyline points="16 18 22 12 16 6"></polyline>
+          <polyline points="8 6 2 12 8 18"></polyline>
         </svg>
+        <span>workflows</span>
       </button>
+      <div id="workflows-expanded">
+        <div id="workflows-grid"></div>
+        <button class="workflows-close-btn" onclick="playNormalClick(); closeWorkflows()" title="Close">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
     </div>
   </div>
 
@@ -2081,6 +2272,7 @@
           <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
         </svg>
       </button>
+      <span id="workflow-badge-container"></span>
       <div class="textarea-wrapper">
         <div id="ghost-suggestion"></div>
         <textarea
@@ -2469,6 +2661,10 @@
             userMsgEl.classList.add('queued');
             queuedMessageElements.set(msgId, userMsgEl);
           }
+          // Restore workflow badge
+          if (msgData.workflowName) {
+            userMsgEl.classList.add('from-workflow');
+          }
         });
       }
 
@@ -2811,7 +3007,24 @@
               lastDate = msgDate;
             }
 
-            const msgEl = addMessage(msg.role, msg.content, false, [], msg.timestamp);
+            // Strip workflow content from user messages — show badge + user text only
+            let displayContent = msg.content;
+            let isWorkflowMsg = false;
+            if (msg.role === 'user' && msg.content.startsWith('[Workflow: ')) {
+              const endBracket = msg.content.indexOf(']');
+              const endMarker = msg.content.indexOf('[/Workflow]');
+              if (endBracket !== -1 && endMarker !== -1) {
+                const workflowName = msg.content.substring(11, endBracket);
+                const userText = msg.content.substring(endMarker + 11).replace(/^\n\n/, '').trim();
+                displayContent = workflowName + (userText ? ' ' + userText : '');
+                isWorkflowMsg = true;
+              }
+            }
+            const msgEl = addMessage(msg.role, displayContent, false, [], msg.timestamp);
+            // Add workflow badge
+            if (isWorkflowMsg) {
+              msgEl.classList.add('from-workflow');
+            }
             // Add scheduled badge if message came from scheduler
             if (msg.metadata?.source === 'scheduler' && msg.metadata?.jobName) {
               msgEl.classList.add('scheduled');
@@ -2934,8 +3147,9 @@
       const message = input.value.trim();
       const attachments = [...getPendingAttachments()];
       const sessionId = currentSessionId; // Capture session at start
+      const workflow = activeWorkflow; // Capture active workflow
 
-      if (!message && attachments.length === 0) return;
+      if (!message && attachments.length === 0 && !workflow) return;
 
       // Clear empty state if present
       const emptyState = messagesDiv.querySelector('.empty-state');
@@ -2950,16 +3164,21 @@
       input.style.height = 'auto';
       clearSuggestion();
       clearAttachments();
+      if (workflow) clearWorkflow();
 
       // Show user message - mark as queued if there's already a message processing
-      const userMsgEl = addMessage('user', message, true, attachments);
+      const displayMessage = workflow ? `${workflow.name}${message ? ' ' + message : ''}` : message;
+      const userMsgEl = addMessage('user', displayMessage, true, attachments);
       userMsgEl.dataset.messageId = messageId;
+      if (workflow) {
+        userMsgEl.classList.add('from-workflow');
+      }
 
       // Track pending user message for session state restoration
       if (!pendingUserMessagesBySession.has(sessionId)) {
         pendingUserMessagesBySession.set(sessionId, new Map());
       }
-      pendingUserMessagesBySession.get(sessionId).set(messageId, { content: message, attachments: attachments });
+      pendingUserMessagesBySession.get(sessionId).set(messageId, { content: displayMessage, attachments: attachments, workflowName: workflow?.name || null });
 
       if (isQueued) {
         userMsgEl.classList.add('queued');
@@ -2983,8 +3202,12 @@
 
       scrollToBottom();
 
-      // Build the full message with attachments
-      const fullMessage = await buildMessageWithAttachments(message, attachments);
+      // Build the full message with attachments and workflow
+      let fullMessage = await buildMessageWithAttachments(message, attachments);
+      if (workflow) {
+        const workflowPrefix = `[Workflow: ${workflow.name}]\n${workflow.content}\n[/Workflow]`;
+        fullMessage = fullMessage ? `${workflowPrefix}\n\n${fullMessage}` : workflowPrefix;
+      }
 
       // Set up status listener for this session (only if not already set up)
       if (!statusCleanupBySession.has(sessionId)) {
@@ -3517,6 +3740,55 @@
     let currentSearchIndex = -1;
     let searchDebounceTimer = null;
 
+    // Workflow state
+    let activeWorkflow = null;
+
+    async function toggleWorkflows() {
+      const area = document.getElementById('workflows-area');
+      if (area.classList.contains('active')) {
+        closeWorkflows();
+      } else {
+        // Hide search area when workflows is open
+        document.getElementById('search-area').style.display = 'none';
+        area.classList.add('active');
+        try {
+          const commands = await window.pocketAgent.getCommands();
+          const grid = document.getElementById('workflows-grid');
+          grid.innerHTML = '';
+          commands.forEach(cmd => {
+            const btn = document.createElement('button');
+            btn.className = 'workflow-btn';
+            btn.title = cmd.description || cmd.name;
+            btn.textContent = cmd.name;
+            btn.onclick = () => { playNormalClick(); selectWorkflow(cmd); };
+            grid.appendChild(btn);
+          });
+        } catch (err) {
+          console.error('Failed to load commands:', err);
+        }
+      }
+    }
+
+    function closeWorkflows() {
+      document.getElementById('workflows-area').classList.remove('active');
+      document.getElementById('search-area').style.display = '';
+    }
+
+    function selectWorkflow(command) {
+      activeWorkflow = command;
+      closeWorkflows();
+      const container = document.getElementById('workflow-badge-container');
+      container.innerHTML = `<span class="workflow-badge">${command.name}<button class="workflow-badge-remove" onclick="playNormalClick(); clearWorkflow()" title="Remove workflow"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></span>`;
+      input.placeholder = `add context for /${command.name}...`;
+      input.focus();
+    }
+
+    function clearWorkflow() {
+      activeWorkflow = null;
+      document.getElementById('workflow-badge-container').innerHTML = '';
+      input.placeholder = "what's on your mind? \u{1F431}";
+    }
+
     function toggleSearch() {
       const searchArea = document.getElementById('search-area');
       const searchInput = document.getElementById('search-input');
@@ -3524,6 +3796,8 @@
       if (searchArea.classList.contains('searching')) {
         closeSearch();
       } else {
+        // Hide workflows when search is open
+        document.getElementById('workflows-area').style.display = 'none';
         searchArea.classList.add('searching');
         searchInput.focus();
       }
@@ -3539,6 +3813,8 @@
       updateSearchResultsCount(0, 0);
       searchMatches = [];
       currentSearchIndex = -1;
+      // Restore workflows visibility
+      document.getElementById('workflows-area').style.display = '';
     }
 
     function handleSearchInput(event) {

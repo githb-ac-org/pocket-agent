@@ -108,6 +108,9 @@ contextBridge.exposeInMainWorld('pocketAgent', {
   cancelOAuth: () => ipcRenderer.invoke('auth:cancelOAuth'),
   isOAuthPending: () => ipcRenderer.invoke('auth:isOAuthPending'),
 
+  // Commands (Workflows)
+  getCommands: () => ipcRenderer.invoke('commands:list'),
+
   // Skills
   getSkillsStatus: () => ipcRenderer.invoke('skills:getStatus'),
   installSkillDeps: (skillName: string) => ipcRenderer.invoke('skills:install', skillName),
@@ -236,6 +239,8 @@ declare global {
       completeOAuth: (code: string) => Promise<{ success: boolean; error?: string }>;
       cancelOAuth: () => Promise<{ success: boolean }>;
       isOAuthPending: () => Promise<boolean>;
+      // Commands (Workflows)
+      getCommands: () => Promise<Array<{ name: string; description: string; filename: string; content: string }>>;
       // Skills
       getSkillsStatus: () => Promise<{
         skills: Array<{

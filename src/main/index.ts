@@ -10,6 +10,8 @@ import { createTelegramBot, TelegramBot } from '../channels/telegram';
 import { SettingsManager } from '../settings';
 import { loadIdentity, saveIdentity, getIdentityPath, DEFAULT_IDENTITY } from '../config/identity';
 import { loadInstructions, saveInstructions, getInstructionsPath, DEFAULT_INSTRUCTIONS } from '../config/instructions';
+import { DEFAULT_COMMANDS } from '../config/commands';
+import { loadWorkflowCommands } from '../config/commands-loader';
 import { closeTaskDb } from '../tools';
 import { initializeUpdater, setupUpdaterIPC, setSettingsWindow } from './updater';
 import cityTimezones from 'city-timezones';
@@ -252,6 +254,45 @@ function ensureAgentWorkspace(): string {
     }
     fs.writeFileSync(claudeMdPath, DEFAULT_INSTRUCTIONS);
     console.log('[Main] Repopulated CLAUDE.md with latest defaults');
+
+    // Populate default workflow commands
+    // If .claude is a symlink from a previous install, replace it with a real directory
+    // (the symlink logic below will re-link skills inside it)
+    const workspaceClaudeDirForCmds = path.join(workspace, '.claude');
+    if (fs.existsSync(workspaceClaudeDirForCmds) && fs.lstatSync(workspaceClaudeDirForCmds).isSymbolicLink()) {
+      // Preserve any user-created commands from the symlink target before replacing
+      const symlinkCommandsDir = path.join(workspaceClaudeDirForCmds, 'commands');
+      const preservedCommands: Array<{ name: string; content: string }> = [];
+      if (fs.existsSync(symlinkCommandsDir)) {
+        const defaultFilenames = new Set(DEFAULT_COMMANDS.map(c => c.filename));
+        for (const file of fs.readdirSync(symlinkCommandsDir).filter(f => f.endsWith('.md'))) {
+          if (!defaultFilenames.has(file)) {
+            preservedCommands.push({ name: file, content: fs.readFileSync(path.join(symlinkCommandsDir, file), 'utf-8') });
+          }
+        }
+      }
+      fs.unlinkSync(workspaceClaudeDirForCmds);
+      fs.mkdirSync(workspaceClaudeDirForCmds, { recursive: true });
+      console.log('[Main] Replaced .claude symlink with real directory for commands');
+      // Restore preserved user commands
+      if (preservedCommands.length > 0) {
+        const restoredDir = path.join(workspaceClaudeDirForCmds, 'commands');
+        fs.mkdirSync(restoredDir, { recursive: true });
+        for (const cmd of preservedCommands) {
+          fs.writeFileSync(path.join(restoredDir, cmd.name), cmd.content);
+        }
+        console.log(`[Main] Preserved ${preservedCommands.length} user workflow command(s)`);
+      }
+    }
+    const commandsDir = path.join(workspaceClaudeDirForCmds, 'commands');
+    if (!fs.existsSync(commandsDir)) {
+      fs.mkdirSync(commandsDir, { recursive: true });
+    }
+    // Only write defaults — never delete existing user commands
+    for (const cmd of DEFAULT_COMMANDS) {
+      fs.writeFileSync(path.join(commandsDir, cmd.filename), cmd.content);
+    }
+    console.log(`[Main] Populated ${DEFAULT_COMMANDS.length} default workflow command(s)`);
 
     // Update version file
     fs.writeFileSync(versionFile, currentVersion);
@@ -1442,6 +1483,11 @@ function setupIPC(): void {
       console.error('[Shell] Command failed:', errorMsg);
       throw error;
     }
+  });
+
+  // Commands (Workflows)
+  ipcMain.handle('commands:list', async () => {
+    return loadWorkflowCommands();
   });
 
   // File attachments
