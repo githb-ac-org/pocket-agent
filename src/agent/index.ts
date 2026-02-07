@@ -1,4 +1,4 @@
-import { MemoryManager, Message, SmartContextOptions } from '../memory';
+import { MemoryManager, Message } from '../memory';
 import { buildMCPServers, buildSdkMcpServers, setMemoryManager, setSoulMemoryManager, ToolsConfig, validateToolsConfig, runWithSessionId, getCurrentSessionId } from '../tools';
 import { closeBrowserManager } from '../browser';
 import { loadIdentity } from '../config/identity';
@@ -6,11 +6,6 @@ import { loadInstructions } from '../config/instructions';
 import { SettingsManager } from '../settings';
 import { EventEmitter } from 'events';
 import { buildCanUseToolCallback, buildPreToolUseHook, setStatusEmitter } from './safety';
-
-// Smart context defaults
-const DEFAULT_RECENT_MESSAGE_LIMIT = 20;
-const DEFAULT_ROLLING_SUMMARY_INTERVAL = 50;
-const DEFAULT_SEMANTIC_RETRIEVAL_COUNT = 5;
 
 // Provider configuration for different LLM backends
 type ProviderType = 'anthropic' | 'moonshot' | 'glm';
@@ -99,16 +94,6 @@ function configureProviderEnvironment(model: string): void {
   }
 }
 
-// Get smart context options from settings
-function getSmartContextOptions(currentQuery?: string): SmartContextOptions {
-  return {
-    recentMessageLimit: Number(SettingsManager.get('agent.recentMessageLimit')) || DEFAULT_RECENT_MESSAGE_LIMIT,
-    rollingSummaryInterval: Number(SettingsManager.get('agent.rollingSummaryInterval')) || DEFAULT_ROLLING_SUMMARY_INTERVAL,
-    semanticRetrievalCount: Number(SettingsManager.get('agent.semanticRetrievalCount')) || DEFAULT_SEMANTIC_RETRIEVAL_COUNT,
-    currentQuery,
-  };
-}
-
 // Status event types
 export type AgentStatus = {
   type: 'thinking' | 'tool_start' | 'tool_end' | 'tool_blocked' | 'responding' | 'done' | 'subagent_start' | 'subagent_update' | 'subagent_end' | 'queued' | 'queue_processing';
@@ -152,6 +137,7 @@ type SDKOptions = {
   tools?: string[] | { type: 'preset'; preset: 'claude_code' };
   allowedTools?: string[];
   persistSession?: boolean;
+  resume?: string;  // SDK session ID to resume
   systemPrompt?: string | { type: 'preset'; preset: 'claude_code'; append?: string };
   mcpServers?: Record<string, unknown>;
   settingSources?: ('project' | 'user')[];
@@ -245,6 +231,7 @@ class AgentManagerClass extends EventEmitter {
   private lastSuggestedPromptBySession: Map<string, string | undefined> = new Map();
   private messageQueueBySession: Map<string, Array<{ message: string; channel: string; images?: ImageContent[]; attachmentInfo?: AttachmentInfo; resolve: (result: ProcessResult) => void; reject: (error: Error) => void }>> = new Map();
   private providerLock: Promise<void> = Promise.resolve();
+  private sdkSessionIdBySession: Map<string, string> = new Map();
 
   private constructor() {
     super();
@@ -267,7 +254,6 @@ class AgentManagerClass extends EventEmitter {
 
     this.identity = loadIdentity();
     this.instructions = loadInstructions();
-    this.memory.setSummarizer(this.createSummary.bind(this));
     setMemoryManager(this.memory);
     setSoulMemoryManager(this.memory);
 
@@ -438,116 +424,116 @@ class AgentManagerClass extends EventEmitter {
     // within the SDK's query() inherit the correct session ID
     return runWithSessionId(sessionId, async () => {
     try {
-      // Use smart context: recent messages + rolling summary + semantic retrieval
-      const smartContextOptions = getSmartContextOptions(userMessage);
-      const smartContext = await memory.getSmartContext(sessionId, smartContextOptions);
+      // Look up SDK session for resume (in-memory cache first, then DB)
+      let sdkSessionId = this.sdkSessionIdBySession.get(sessionId)
+        || memory.getSdkSessionId(sessionId)
+        || undefined;
+
       const factsContext = memory.getFactsForContext();
       const soulContext = memory.getSoulContext();
 
-      // Set wasCompacted if a new rolling summary was created this turn
-      wasCompacted = smartContext.stats.newSummaryCreated;
+      // Get last message timestamp for temporal context (lightweight query)
+      const recentMsgs = memory.getRecentMessages(1, sessionId);
+      const lastUserMsg = recentMsgs.find(m => m.role === 'user');
+      const lastUserMessageTimestamp = lastUserMsg?.timestamp;
 
-      console.log(`[AgentManager] Smart context: ${smartContext.stats.recentCount} recent, ${smartContext.stats.summarizedMessages} summarized, ${smartContext.stats.relevantCount} relevant (${smartContext.totalTokens} tokens)${wasCompacted ? ' [COMPACTED]' : ''}`);
-
-      const contextParts: string[] = [];
-
-      // Add rolling summary of older conversations
-      if (smartContext.rollingSummary) {
-        contextParts.push(`[Summary of previous conversations]\n${smartContext.rollingSummary}`);
+      if (sdkSessionId) {
+        console.log(`[AgentManager] Resuming SDK session: ${sdkSessionId}`);
+      } else {
+        console.log('[AgentManager] Starting new SDK session');
       }
-
-      // Add semantically relevant past messages
-      if (smartContext.relevantMessages.length > 0) {
-        const relevantText = smartContext.relevantMessages
-          .map(m => {
-            const timeStr = m.timestamp ? this.formatMessageTimestamp(m.timestamp) : '';
-            const prefix = timeStr ? `${m.role.toUpperCase()} [${timeStr}]` : m.role.toUpperCase();
-            return `${prefix}: ${m.content}`;
-          })
-          .join('\n\n');
-        contextParts.push(`[Relevant past context]\n${relevantText}`);
-      }
-
-      // Add recent conversation
-      if (smartContext.recentMessages.length > 0) {
-        const historyText = smartContext.recentMessages
-          .map(m => {
-            const timeStr = m.timestamp ? this.formatMessageTimestamp(m.timestamp) : '';
-            const prefix = timeStr ? `${m.role.toUpperCase()} [${timeStr}]` : m.role.toUpperCase();
-            return `${prefix}: ${m.content}`;
-          })
-          .join('\n\n');
-        contextParts.push(`[Recent conversation]\n${historyText}`);
-      }
-
-      const fullPromptText = contextParts.length > 0
-        ? `${contextParts.join('\n\n---\n\n')}\n\n---\n\nUser: ${userMessage}`
-        : userMessage;
 
       const query = await loadSDK();
       if (!query) throw new Error('Failed to load SDK');
 
-      // Get last user message timestamp for temporal context
-      const userMessages = smartContext.recentMessages.filter(m => m.role === 'user');
-      const lastUserMessageTimestamp = userMessages.length > 0
-        ? userMessages[userMessages.length - 1].timestamp
-        : undefined;
+      // Helper to launch and iterate an SDK query
+      const runQuery = async (opts: SDKOptions): Promise<string> => {
+        const queryResult = await new Promise<SDKQuery>((resolve) => {
+          this.providerLock = this.providerLock.then(() => {
+            configureProviderEnvironment(this.model);
 
-      const options = await this.buildOptions(factsContext, soulContext, abortController, lastUserMessageTimestamp);
+            if (images && images.length > 0) {
+              // For images, create an async generator that yields SDKUserMessage
+              const contentBlocks: ContentBlock[] = [
+                { type: 'text', text: userMessage },
+                ...images.map(img => ({
+                  type: 'image' as const,
+                  source: {
+                    type: 'base64' as const,
+                    media_type: img.mediaType,
+                    data: img.data,
+                  },
+                })),
+              ];
+
+              async function* messageGenerator() {
+                yield {
+                  type: 'user' as const,
+                  message: {
+                    role: 'user' as const,
+                    content: contentBlocks,
+                  },
+                  parent_tool_use_id: null,
+                  session_id: 'default',
+                };
+              }
+
+              console.log(`[AgentManager] Calling query() with ${images.length} image(s)`);
+              resolve(query({ prompt: messageGenerator(), options: opts }));
+            } else {
+              resolve(query({ prompt: userMessage, options: opts }));
+            }
+          });
+        });
+
+        let result = '';
+        for await (const message of queryResult) {
+          if (abortController.signal.aborted) {
+            console.log('[AgentManager] Query aborted by user');
+            throw new Error('Query stopped by user');
+          }
+          this.processStatusFromMessage(message);
+          result = this.extractFromMessage(message, result);
+
+          // Capture SDK session ID for future resume
+          const msg = message as { type?: string; subtype?: string; session_id?: string };
+          if (msg.session_id && !sdkSessionId) {
+            sdkSessionId = msg.session_id;
+            this.sdkSessionIdBySession.set(sessionId, sdkSessionId);
+            memory.setSdkSessionId(sessionId, sdkSessionId);
+            console.log(`[AgentManager] Captured SDK session ID: ${sdkSessionId}`);
+          }
+
+          // Detect SDK auto-compaction
+          if (msg.type === 'system' && msg.subtype === 'compact_boundary') {
+            wasCompacted = true;
+          }
+        }
+        return result;
+      };
+
+      let options = await this.buildOptions(factsContext, soulContext, abortController, lastUserMessageTimestamp, sdkSessionId);
 
       // Build prompt - use async generator for images, string for text-only
       console.log('[AgentManager] Calling query() with model:', options.model, 'thinking:', options.maxThinkingTokens || 'default');
       this.emitStatus({ type: 'thinking', sessionId, message: '*stretches paws* thinking...' });
 
-      // Serialize provider env setup + query start so concurrent sessions
-      // with different providers don't stomp each other's env vars
-      const queryResult = await new Promise<SDKQuery>((resolve) => {
-        this.providerLock = this.providerLock.then(() => {
-          configureProviderEnvironment(this.model);
-
-          if (images && images.length > 0) {
-            // For images, create an async generator that yields SDKUserMessage
-            const contentBlocks: ContentBlock[] = [
-              { type: 'text', text: fullPromptText },
-              ...images.map(img => ({
-                type: 'image' as const,
-                source: {
-                  type: 'base64' as const,
-                  media_type: img.mediaType,
-                  data: img.data,
-                },
-              })),
-            ];
-
-            async function* messageGenerator() {
-              yield {
-                type: 'user' as const,
-                message: {
-                  role: 'user' as const,
-                  content: contentBlocks,
-                },
-                parent_tool_use_id: null,
-                session_id: 'default',
-              };
-            }
-
-            console.log(`[AgentManager] Calling query() with ${images.length} image(s)`);
-            resolve(query({ prompt: messageGenerator(), options }));
-          } else {
-            resolve(query({ prompt: fullPromptText, options }));
-          }
-        });
-      });
       let response = '';
-
-      for await (const message of queryResult) {
-        // Check if aborted
-        if (abortController.signal.aborted) {
-          console.log('[AgentManager] Query aborted by user');
-          throw new Error('Query stopped by user');
+      try {
+        response = await runQuery(options);
+      } catch (resumeError) {
+        // If resume failed (corrupted/missing SDK session), retry without resume
+        if (sdkSessionId && !abortController.signal.aborted) {
+          const errMsg = resumeError instanceof Error ? resumeError.message : String(resumeError);
+          console.warn(`[AgentManager] Resume failed (${errMsg}), retrying without resume...`);
+          sdkSessionId = undefined;
+          this.sdkSessionIdBySession.delete(sessionId);
+          memory.clearSdkSessionId(sessionId);
+          options = await this.buildOptions(factsContext, soulContext, abortController, lastUserMessageTimestamp, undefined);
+          response = await runQuery(options);
+        } else {
+          throw resumeError;
         }
-        this.processStatusFromMessage(message);
-        response = this.extractFromMessage(message, response);
       }
 
       this.emitStatus({ type: 'done', sessionId });
@@ -562,6 +548,7 @@ class AgentManagerClass extends EventEmitter {
           options: {
             ...options,
             maxThinkingTokens: undefined, // No extended thinking for summary
+            ...(sdkSessionId && { resume: sdkSessionId }),
           },
         });
 
@@ -759,21 +746,34 @@ class AgentManagerClass extends EventEmitter {
   /**
    * Set the workspace directory for agent file operations.
    * This takes effect on the next SDK query (cwd option).
+   * Clears SDK session mappings since sessions are tied to cwd.
    */
   setWorkspace(path: string): void {
     console.log('[AgentManager] Workspace changed:', this.workspace, '->', path);
     this.workspace = path;
+    // SDK sessions are stored per-cwd, so changing cwd invalidates them
+    this.sdkSessionIdBySession.clear();
   }
 
   /**
    * Reset workspace to default project root
+   * Clears SDK session mappings since sessions are tied to cwd.
    */
   resetWorkspace(): void {
     console.log('[AgentManager] Workspace reset to project root:', this.projectRoot);
     this.workspace = this.projectRoot;
+    this.sdkSessionIdBySession.clear();
   }
 
-  private async buildOptions(factsContext: string, soulContext: string, abortController: AbortController, lastMessageTimestamp?: string): Promise<SDKOptions> {
+  /**
+   * Clear the SDK session mapping for a given session (e.g., on session delete or clear)
+   */
+  clearSdkSessionMapping(sessionId: string): void {
+    this.sdkSessionIdBySession.delete(sessionId);
+    console.log(`[AgentManager] Cleared SDK session mapping for ${sessionId}`);
+  }
+
+  private async buildOptions(factsContext: string, soulContext: string, abortController: AbortController, lastMessageTimestamp?: string, sdkSessionId?: string): Promise<SDKOptions> {
     const appendParts: string[] = [];
 
     // Add temporal context first (current time awareness)
@@ -868,7 +868,8 @@ class AgentManagerClass extends EventEmitter {
         'mcp__pocket-agent__get_project',
         'mcp__pocket-agent__clear_project',
       ],
-      persistSession: false,
+      persistSession: true,
+      ...(sdkSessionId && { resume: sdkSessionId }),
     };
 
     if (appendParts.length > 0) {
@@ -1217,6 +1218,16 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
     if (msg.type === 'system') {
       if (msg.subtype === 'init') {
         this.emitStatus({ type: 'thinking', sessionId, message: 'waking up from a nap...' });
+      } else if (msg.subtype === 'status') {
+        const statusMsg = msg as { status?: string };
+        if (statusMsg.status === 'compacting') {
+          console.log('[AgentManager] SDK auto-compaction triggered');
+          this.emitStatus({ type: 'thinking', sessionId, message: 'compacting context...' });
+        }
+      } else if (msg.subtype === 'compact_boundary') {
+        const compactMsg = msg as { compact_metadata?: { trigger: string; pre_tokens: number } };
+        const meta = compactMsg.compact_metadata;
+        console.log(`[AgentManager] SDK compaction complete: trigger=${meta?.trigger}, pre_tokens=${meta?.pre_tokens}`);
       }
     }
   }
@@ -1356,68 +1367,6 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
     return categories[subcommand] || 'running pocket cli';
   }
 
-  private async createSummary(messages: Message[]): Promise<string> {
-    if (messages.length === 0) {
-      return '';
-    }
-
-    const conversationText = messages
-      .map(m => `${m.role.toUpperCase()}: ${m.content}`)
-      .join('\n\n---\n\n');
-
-    const summaryPrompt = `Summarize this conversation concisely, preserving key facts about the user (name, preferences, work), important decisions, ongoing tasks, and context needed to continue the conversation:\n\n${conversationText}`;
-
-    // Try Haiku first (cheap/fast), fall back to user's model if unavailable
-    const modelsToTry = ['claude-haiku-4-5-20251001'];
-    if (this.model !== 'claude-haiku-4-5-20251001') {
-      modelsToTry.push(this.model);
-    }
-
-    for (const model of modelsToTry) {
-      try {
-        const query = await loadSDK();
-        if (!query) throw new Error('Failed to load SDK');
-
-        const options: SDKOptions = {
-          model,
-          maxTurns: 1,
-          abortController: new AbortController(),
-          tools: [],
-          persistSession: false,
-        };
-
-        // Use providerLock to prevent stomping env vars during concurrent queries
-        const queryResult = await new Promise<SDKQuery>((resolve) => {
-          this.providerLock = this.providerLock.then(() => {
-            configureProviderEnvironment(model);
-            resolve(query({ prompt: summaryPrompt, options }));
-          });
-        });
-        let summary = '';
-
-        for await (const message of queryResult) {
-          summary = this.extractFromMessage(message, summary);
-        }
-
-        console.log(`[AgentManager] Created summary of ${messages.length} messages using ${model}`);
-        return summary || `Previous conversation (${messages.length} messages) summarized.`;
-      } catch (error) {
-        console.warn(`[AgentManager] Summarization with ${model} failed:`, error);
-        // Continue to next model
-      }
-    }
-
-    // All models failed - use basic summary
-    console.error('[AgentManager] All summarization attempts failed, using basic summary');
-    const userMessages = messages.filter(m => m.role === 'user');
-    const snippets = userMessages
-      .slice(-10)
-      .map(m => m.content.slice(0, 100))
-      .join('; ');
-
-    return `Previous conversation (${messages.length} messages). Topics discussed: ${snippets}`;
-  }
-
   /**
    * Parse database timestamp
    * If user has timezone configured, treat DB timestamps as UTC
@@ -1440,32 +1389,6 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
       // No timezone configured - use system local time
       const normalized = timestamp.replace(' ', 'T');
       return new Date(normalized);
-    }
-  }
-
-  /**
-   * Format a message timestamp for display in conversation context
-   * Shows relative time for recent messages, date for older ones
-   */
-  private formatMessageTimestamp(timestamp: string): string {
-    try {
-      const date = this.parseDbTimestamp(timestamp);
-      const now = new Date();
-      const diffMs = now.getTime() - date.getTime();
-      const diffMins = Math.floor(diffMs / 60000);
-      const diffHours = Math.floor(diffMs / 3600000);
-      const diffDays = Math.floor(diffMs / 86400000);
-
-      // Very recent: show relative time
-      if (diffMins < 1) return 'just now';
-      if (diffMins < 60) return `${diffMins}m ago`;
-      if (diffHours < 24) return `${diffHours}h ago`;
-      if (diffDays < 7) return `${diffDays}d ago`;
-
-      // Older: show date
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    } catch {
-      return '';
     }
   }
 

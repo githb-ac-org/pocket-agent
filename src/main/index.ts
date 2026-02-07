@@ -1046,6 +1046,9 @@ function setupIPC(): void {
 
   ipcMain.handle('agent:clear', async (_, sessionId?: string) => {
     AgentManager.clearConversation(sessionId);
+    if (sessionId) {
+      AgentManager.clearSdkSessionMapping(sessionId);
+    }
     updateTrayMenu();
     return { success: true };
   });
@@ -1075,6 +1078,7 @@ function setupIPC(): void {
   ipcMain.handle('sessions:delete', async (_, id: string) => {
     // Stop any running query for this session first
     AgentManager.stopQuery(id);
+    AgentManager.clearSdkSessionMapping(id);
     const success = memory?.deleteSession(id) ?? false;
     return { success };
   });

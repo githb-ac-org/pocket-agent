@@ -109,6 +109,7 @@ Workflows are reusable command templates. Use /workflow to see what's available,
     const sessionId = chatId && memory ? memory.getSessionForChat(chatId) || 'default' : 'default';
 
     AgentManager.clearConversation(sessionId);
+    AgentManager.clearSdkSessionMapping(sessionId);
     await ctx.reply('Fresh start! Conversation cleared.\nDon\'t worry - I still remember everything about you.');
   });
 

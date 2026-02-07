@@ -410,6 +410,13 @@ export class MemoryManager {
 
     // Migration: add session_id to calendar_events, tasks, and cron_jobs
     this.migrateSessionScopedTables();
+
+    // Migration: add sdk_session_id to sessions for SDK session persistence
+    const sessColumns = this.db.pragma('table_info(sessions)') as Array<{ name: string }>;
+    if (!sessColumns.some(c => c.name === 'sdk_session_id')) {
+      this.db.exec('ALTER TABLE sessions ADD COLUMN sdk_session_id TEXT');
+      console.log('[Memory] Migrated sessions table: added sdk_session_id column');
+    }
   }
 
   /**
@@ -1834,11 +1841,38 @@ export class MemoryManager {
       // Clear only the specified session
       this.db.prepare('DELETE FROM messages WHERE session_id = ?').run(sessionId);
       this.db.prepare('DELETE FROM summaries WHERE session_id = ?').run(sessionId);
+      // Clear SDK session so next message starts fresh
+      this.clearSdkSessionId(sessionId);
     } else {
       // Clear all (legacy behavior)
       this.db.exec('DELETE FROM messages');
       this.db.exec('DELETE FROM summaries');
+      this.db.exec('UPDATE sessions SET sdk_session_id = NULL');
     }
+  }
+
+  // ============ SDK SESSION PERSISTENCE ============
+
+  /**
+   * Get the SDK session ID for a given app session
+   */
+  getSdkSessionId(sessionId: string): string | null {
+    const row = this.db.prepare('SELECT sdk_session_id FROM sessions WHERE id = ?').get(sessionId) as { sdk_session_id: string | null } | undefined;
+    return row?.sdk_session_id ?? null;
+  }
+
+  /**
+   * Store the SDK session ID for a given app session
+   */
+  setSdkSessionId(sessionId: string, sdkSessionId: string): void {
+    this.db.prepare('UPDATE sessions SET sdk_session_id = ? WHERE id = ?').run(sdkSessionId, sessionId);
+  }
+
+  /**
+   * Clear the SDK session ID for a given app session (forces fresh start)
+   */
+  clearSdkSessionId(sessionId: string): void {
+    this.db.prepare('UPDATE sessions SET sdk_session_id = NULL WHERE id = ?').run(sessionId);
   }
 
   /**
