@@ -5,6 +5,7 @@ import { loadIdentity } from '../config/identity';
 import { loadInstructions } from '../config/instructions';
 import { SettingsManager } from '../settings';
 import { EventEmitter } from 'events';
+import path from 'path';
 import { buildCanUseToolCallback, buildPreToolUseHook, setStatusEmitter } from './safety';
 
 // Provider configuration for different LLM backends
@@ -202,6 +203,7 @@ export interface AgentConfig {
   memory: MemoryManager;
   projectRoot?: string;
   workspace?: string;  // Isolated working directory for agent file operations
+  dataDir?: string;    // App data directory (e.g. ~/Library/Application Support/pocket-agent)
   model?: string;
   tools?: ToolsConfig;
 }
@@ -251,6 +253,11 @@ class AgentManagerClass extends EventEmitter {
     this.model = config.model || 'claude-opus-4-6';
     this.toolsConfig = config.tools || null;
     this.initialized = true;
+
+    // Isolate SDK session storage from global Claude Code installation
+    if (config.dataDir) {
+      process.env.CLAUDE_CONFIG_DIR = path.join(config.dataDir, '.claude');
+    }
 
     this.identity = loadIdentity();
     this.instructions = loadInstructions();
@@ -821,7 +828,7 @@ class AgentManagerClass extends EventEmitter {
     const options: SDKOptions = {
       model: this.model,
       cwd: this.workspace,  // Use isolated workspace for agent file operations
-      maxTurns: 20,
+      maxTurns: 100,
       ...(thinkingBudget !== undefined && thinkingBudget > 0 && { maxThinkingTokens: thinkingBudget }),
       abortController,
       tools: { type: 'preset', preset: 'claude_code' },

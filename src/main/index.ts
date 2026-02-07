@@ -1514,6 +1514,7 @@ async function initializeAgent(): Promise<void> {
     memory,
     projectRoot,
     workspace,  // Isolated working directory for agent file operations
+    dataDir: app.getPath('userData'),
     model: SettingsManager.get('agent.model'),
     tools: toolsConfig,
   });
