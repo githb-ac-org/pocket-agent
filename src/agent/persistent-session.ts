@@ -12,7 +12,7 @@
  */
 
 import { EventEmitter } from 'events';
-import { runWithSessionId } from '../tools';
+import { runWithSessionId, setCurrentSessionId } from '../tools';
 
 // Re-export types used by AgentManager
 export interface TurnResult {
@@ -290,6 +290,8 @@ export class PersistentSDKSession extends EventEmitter {
     if (!this.query) return;
 
     try {
+      // Set fallback session ID for MCP tool handlers that may run outside AsyncLocalStorage context
+      setCurrentSessionId(this.sessionId);
       await runWithSessionId(this.sessionId, async () => {
         for await (const message of this.query!) {
           // Process status updates (tool_start, tool_end, etc.)

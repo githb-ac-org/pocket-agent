@@ -1465,6 +1465,9 @@
     /* Search Area */
     #search-area {
       flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      min-height: 30px;
     }
 
     .search-toggle {
@@ -1472,6 +1475,8 @@
       align-items: center;
       gap: 6px;
       padding: 6px 12px;
+      height: 30px;
+      box-sizing: border-box;
       background: var(--bg-tertiary);
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
@@ -1610,6 +1615,9 @@
     /* Workflows Area */
     #workflows-area {
       flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      min-height: 30px;
     }
 
     .workflows-toggle {
@@ -1617,6 +1625,8 @@
       align-items: center;
       gap: 6px;
       padding: 6px 12px;
+      height: 30px;
+      box-sizing: border-box;
       background: var(--bg-tertiary);
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
@@ -1660,7 +1670,7 @@
     }
 
     .workflow-btn {
-      padding: 5px 12px;
+      padding: 6px 12px;
       background: rgba(168, 85, 247, 0.12);
       border: 1px solid rgba(168, 85, 247, 0.3);
       border-radius: 16px;
