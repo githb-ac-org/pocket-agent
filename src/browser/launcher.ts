@@ -236,6 +236,7 @@ export async function launchBrowser(
       {
         detached: !IS_WINDOWS, // detached is not needed on Windows
         stdio: 'ignore',
+        windowsHide: true,
       },
     );
 
