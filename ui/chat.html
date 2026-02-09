@@ -1228,6 +1228,32 @@
       color: #22c55e;
     }
 
+    /* Agent Teams active state - blue/cyan vibe */
+    .status-indicator.team-active {
+      border-color: #3b82f6;
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(6, 182, 212, 0.1) 100%);
+    }
+
+    .status-indicator.team-active .status-action {
+      background: linear-gradient(
+        90deg,
+        #3b82f6 0%,
+        #06b6d4 25%,
+        #3b82f6 50%,
+        #06b6d4 75%,
+        #3b82f6 100%
+      );
+      background-size: 200% 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: shimmer 1.5s ease-in-out infinite;
+    }
+
+    .status-indicator.team-active .status-detail {
+      color: #06b6d4;
+    }
+
     .status-detail {
       font-size: 12px;
       color: var(--text-muted);
@@ -1675,6 +1701,194 @@
     .workflows-close-btn svg {
       width: 14px;
       height: 14px;
+    }
+
+    /* Background Tasks Area */
+    #background-tasks-area {
+      flex-shrink: 0;
+      margin-left: auto;
+      position: relative;
+    }
+
+    .background-tasks-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .background-tasks-toggle:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: rgba(168, 85, 247, 0.1);
+    }
+
+    .bg-task-pulse {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: bgPulse 1.5s ease-in-out infinite;
+    }
+
+    @keyframes bgPulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.4); }
+      50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(168, 85, 247, 0); }
+    }
+
+    .bg-task-count {
+      font-weight: 700;
+      font-size: 11px;
+      min-width: 14px;
+      text-align: center;
+    }
+
+    /* Dropdown (hidden by default, appears above the toggle) */
+    #background-tasks-dropdown {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 6px);
+      right: 0;
+      min-width: 260px;
+      max-width: 340px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.35);
+      overflow: hidden;
+      z-index: 50;
+    }
+
+    #background-tasks-area.active #background-tasks-dropdown {
+      display: block;
+    }
+
+    .bg-dropdown-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-tertiary);
+    }
+
+    .bg-dropdown-back {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .bg-dropdown-back:hover {
+      background: var(--bg-primary);
+      color: var(--text-primary);
+    }
+
+    .bg-dropdown-back svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .bg-dropdown-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
+
+    #background-tasks-list {
+      display: flex;
+      flex-direction: column;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .bg-task-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--text-primary);
+      transition: background 0.15s ease;
+    }
+
+    .bg-task-item:last-child {
+      border-bottom: none;
+    }
+
+    .bg-task-item:hover {
+      background: rgba(168, 85, 247, 0.05);
+    }
+
+    .bg-task-item .bg-task-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+      animation: bgPulse 1.5s ease-in-out infinite;
+    }
+
+    .bg-task-item .bg-task-label {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text-secondary);
+    }
+
+    .bg-task-item .bg-task-type {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--accent-hover);
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+
+    .bg-task-item .bg-task-close {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      color: var(--text-muted);
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: all 0.15s ease;
+      opacity: 0;
+    }
+
+    .bg-task-item:hover .bg-task-close {
+      opacity: 1;
+    }
+
+    .bg-task-close:hover {
+      background: var(--error);
+      color: white;
+    }
+
+    .bg-task-close svg {
+      width: 12px;
+      height: 12px;
     }
 
     /* Workflow badge in input area */
@@ -2289,6 +2503,26 @@
         </button>
       </div>
     </div>
+
+    <!-- Background Tasks Indicator (pushed to right) -->
+    <div id="background-tasks-area" style="display: none;">
+      <button class="background-tasks-toggle" onclick="playNormalClick(); toggleBackgroundTasks()">
+        <span class="bg-task-pulse"></span>
+        <span class="bg-task-count">0</span>
+        <span>background</span>
+      </button>
+      <div id="background-tasks-dropdown">
+        <div class="bg-dropdown-header">
+          <button class="bg-dropdown-back" onclick="playNormalClick(); closeBackgroundTasks()" title="Close">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+          </button>
+          <span class="bg-dropdown-title">Background Tasks</span>
+        </div>
+        <div id="background-tasks-list"></div>
+      </div>
+    </div>
   </div>
 
   <div id="input-area">
@@ -2665,6 +2899,7 @@
       localStorage.setItem('currentSessionId', currentSessionId);
       renderTabs();
       messagesDiv.innerHTML = '';
+      updateBackgroundTasksUI();
       await loadHistory();
 
       // Restore pending user messages that haven't been saved to history yet
@@ -3628,6 +3863,7 @@
           detailEl.style.display = 'none';
           statusEl.classList.remove('subagent-active');
           statusEl.classList.remove('pocket-cli-active');
+          statusEl.classList.remove('team-active');
         }
       } else if (status.type === 'tool_start') {
         actionEl.textContent = status.toolName || 'pouncing on it...';
@@ -3640,6 +3876,7 @@
           detailEl.style.display = 'none';
         }
         statusEl.classList.remove('subagent-active');
+        statusEl.classList.remove('team-active');
         if (status.isPocketCli) {
           statusEl.classList.add('pocket-cli-active');
         } else {
@@ -3653,6 +3890,7 @@
           detailEl.style.display = 'none';
           statusEl.classList.remove('subagent-active');
           statusEl.classList.remove('pocket-cli-active');
+          statusEl.classList.remove('team-active');
         }
       } else if (status.type === 'tool_blocked') {
         // Safety hook blocked a dangerous command
@@ -3668,6 +3906,7 @@
         }
         statusEl.classList.remove('subagent-active');
         statusEl.classList.remove('pocket-cli-active');
+        statusEl.classList.remove('team-active');
       } else if (status.type === 'subagent_start') {
         // Subagent spawned - show special status
         statusEl.classList.add('subagent-active');
@@ -3691,15 +3930,86 @@
         // All subagents done
         statusEl.classList.remove('subagent-active');
         statusEl.classList.remove('pocket-cli-active');
+        statusEl.classList.remove('team-active');
         actionEl.textContent = status.message || 'cat squad finished! ✨';
         detailEl.textContent = '';
         detailEl.style.display = 'none';
+      } else if (status.type === 'teammate_start') {
+        // Teammate spawned - show team status
+        statusEl.classList.add('team-active');
+        statusEl.classList.remove('subagent-active');
+        statusEl.classList.remove('pocket-cli-active');
+        actionEl.textContent = status.message || 'rallying the squad';
+        if (status.teammateName) {
+          detailEl.textContent = status.teammateName + (status.toolInput ? ': ' + status.toolInput : '');
+          detailEl.title = detailEl.textContent;
+          detailEl.style.display = 'block';
+        } else {
+          detailEl.textContent = '';
+          detailEl.style.display = 'none';
+        }
+      } else if (status.type === 'teammate_message') {
+        // Message sent between teammates
+        statusEl.classList.add('team-active');
+        statusEl.classList.remove('subagent-active');
+        statusEl.classList.remove('pocket-cli-active');
+        actionEl.textContent = status.message || 'passing a note';
+        if (status.toolInput) {
+          detailEl.textContent = status.toolInput;
+          detailEl.title = status.toolInput;
+          detailEl.style.display = 'block';
+        } else {
+          detailEl.textContent = '';
+          detailEl.style.display = 'none';
+        }
+      } else if (status.type === 'teammate_idle') {
+        // Teammate went idle
+        statusEl.classList.add('team-active');
+        statusEl.classList.remove('subagent-active');
+        statusEl.classList.remove('pocket-cli-active');
+        actionEl.textContent = status.message || 'teammate idle';
+        if (status.teammateName) {
+          detailEl.textContent = status.teammateName + ' finished their part';
+          detailEl.style.display = 'block';
+        } else {
+          detailEl.textContent = '';
+          detailEl.style.display = 'none';
+        }
+      } else if (status.type === 'task_completed') {
+        // Team task completed
+        statusEl.classList.add('team-active');
+        statusEl.classList.remove('subagent-active');
+        statusEl.classList.remove('pocket-cli-active');
+        actionEl.textContent = status.message || 'task done!';
+        if (status.taskSubject) {
+          const by = status.teammateName ? ` (by ${status.teammateName})` : '';
+          detailEl.textContent = status.taskSubject + by;
+          detailEl.title = detailEl.textContent;
+          detailEl.style.display = 'block';
+        } else {
+          detailEl.textContent = '';
+          detailEl.style.display = 'none';
+        }
+      } else if (status.type === 'background_task_start') {
+        // Background task spawned
+        if (status.backgroundTaskId) {
+          addBackgroundTask(
+            status.sessionId || currentSessionId,
+            status.backgroundTaskId,
+            status.toolName || 'task',
+            status.backgroundTaskDescription || 'background task'
+          );
+        }
+        // Don't change the main status indicator — background tasks are passive
+      } else if (status.type === 'background_task_output') {
+        // Checking on a background task — no special UI action needed
       } else if (status.type === 'responding') {
         actionEl.textContent = 'grooming my response... 🐈';
         detailEl.textContent = '';
         detailEl.style.display = 'none';
         statusEl.classList.remove('subagent-active');
         statusEl.classList.remove('pocket-cli-active');
+        statusEl.classList.remove('team-active');
       } else if (status.type === 'queued') {
         // Message was queued - show queue position
         actionEl.textContent = status.message || 'in the litter queue 📋';
@@ -3712,6 +4022,7 @@
         }
         statusEl.classList.remove('subagent-active');
         statusEl.classList.remove('pocket-cli-active');
+        statusEl.classList.remove('team-active');
       } else if (status.type === 'queue_processing') {
         // Now processing a queued message
         actionEl.textContent = status.message || 'digging it up now...';
@@ -3725,6 +4036,7 @@
         }
         statusEl.classList.remove('subagent-active');
         statusEl.classList.remove('pocket-cli-active');
+        statusEl.classList.remove('team-active');
 
         // Remove 'queued' class from the oldest queued message since it's now processing
         const queuedMsgs = messagesDiv.querySelectorAll('.message.queued');
@@ -3811,6 +4123,79 @@
     function closeWorkflows() {
       document.getElementById('workflows-area').classList.remove('active');
       document.getElementById('search-area').style.display = '';
+    }
+
+    // Background tasks tracking
+    let backgroundTasksBySession = new Map(); // sessionId -> Map(taskId -> { type, description })
+
+    function addBackgroundTask(sessionId, taskId, type, description) {
+      if (!backgroundTasksBySession.has(sessionId)) {
+        backgroundTasksBySession.set(sessionId, new Map());
+      }
+      backgroundTasksBySession.get(sessionId).set(taskId, { type, description });
+      updateBackgroundTasksUI();
+    }
+
+    function getBackgroundTaskCount(sessionId) {
+      const tasks = backgroundTasksBySession.get(sessionId || currentSessionId);
+      return tasks ? tasks.size : 0;
+    }
+
+    function updateBackgroundTasksUI() {
+      const area = document.getElementById('background-tasks-area');
+      const countEl = area.querySelector('.bg-task-count');
+      const listEl = document.getElementById('background-tasks-list');
+      const tasks = backgroundTasksBySession.get(currentSessionId);
+      const count = tasks ? tasks.size : 0;
+
+      if (count === 0) {
+        area.style.display = 'none';
+        area.classList.remove('active');
+        return;
+      }
+
+      area.style.display = '';
+      countEl.textContent = count;
+
+      // Update vertical list — only current session's tasks
+      listEl.innerHTML = '';
+      for (const [tid, task] of tasks) {
+        const item = document.createElement('div');
+        item.className = 'bg-task-item';
+        item.innerHTML = `
+          <span class="bg-task-dot"></span>
+          <span class="bg-task-type">${escapeHtml(task.type)}</span>
+          <span class="bg-task-label" title="${escapeHtml(task.description)}">${escapeHtml(task.description)}</span>
+          <button class="bg-task-close" onclick="playNormalClick(); removeBackgroundTask('${currentSessionId}', '${tid}')" title="Stop task">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>`;
+        listEl.appendChild(item);
+      }
+    }
+
+    function removeBackgroundTask(sessionId, taskId) {
+      const tasks = backgroundTasksBySession.get(sessionId);
+      if (tasks) {
+        tasks.delete(taskId);
+        if (tasks.size === 0) backgroundTasksBySession.delete(sessionId);
+      }
+      updateBackgroundTasksUI();
+    }
+
+    function toggleBackgroundTasks() {
+      const area = document.getElementById('background-tasks-area');
+      if (area.classList.contains('active')) {
+        closeBackgroundTasks();
+      } else {
+        area.classList.add('active');
+      }
+    }
+
+    function closeBackgroundTasks() {
+      document.getElementById('background-tasks-area').classList.remove('active');
     }
 
     function selectWorkflow(command) {

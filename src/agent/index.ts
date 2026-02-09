@@ -97,7 +97,7 @@ function configureProviderEnvironment(model: string): void {
 
 // Status event types
 export type AgentStatus = {
-  type: 'thinking' | 'tool_start' | 'tool_end' | 'tool_blocked' | 'responding' | 'done' | 'subagent_start' | 'subagent_update' | 'subagent_end' | 'queued' | 'queue_processing';
+  type: 'thinking' | 'tool_start' | 'tool_end' | 'tool_blocked' | 'responding' | 'done' | 'subagent_start' | 'subagent_update' | 'subagent_end' | 'queued' | 'queue_processing' | 'teammate_start' | 'teammate_idle' | 'teammate_message' | 'task_completed' | 'background_task_start' | 'background_task_output';
   sessionId?: string;
   toolName?: string;
   toolInput?: string;
@@ -113,6 +113,15 @@ export type AgentStatus = {
   blockedReason?: string;
   // Pocket CLI indicator
   isPocketCli?: boolean;
+  // Team tracking
+  teammateName?: string;
+  teamName?: string;
+  taskId?: string;
+  taskSubject?: string;
+  // Background task tracking
+  backgroundTaskId?: string;
+  backgroundTaskDescription?: string;
+  backgroundTaskCount?: number;
 };
 
 // SDK types (loaded dynamically)
@@ -129,6 +138,18 @@ type PreToolUseHookCallback = (input: { tool_name: string; tool_input: unknown }
     permissionDecisionReason?: string;
   };
 }>;
+// Hook callback types for team events
+type TeammateIdleHookCallback = (input: { teammate_name: string; team_name: string }) => Promise<{
+  hookSpecificOutput: {
+    hookEventName: 'TeammateIdle';
+  };
+}>;
+type TaskCompletedHookCallback = (input: { task_id: string; task_subject: string; task_description?: string; teammate_name?: string; team_name?: string }) => Promise<{
+  hookSpecificOutput: {
+    hookEventName: 'TaskCompleted';
+  };
+}>;
+
 type SDKOptions = {
   model?: string;
   cwd?: string;
@@ -143,8 +164,11 @@ type SDKOptions = {
   mcpServers?: Record<string, unknown>;
   settingSources?: ('project' | 'user')[];
   canUseTool?: CanUseToolCallback;  // Pre-tool-use validation callback
+  env?: { [envVar: string]: string | undefined };  // Environment variables for Claude Code process
   hooks?: {
     PreToolUse?: Array<{ hooks: PreToolUseHookCallback[] }>;
+    TeammateIdle?: Array<{ hooks: TeammateIdleHookCallback[] }>;
+    TaskCompleted?: Array<{ hooks: TaskCompletedHookCallback[] }>;
   };
 };
 
@@ -459,6 +483,15 @@ class AgentManagerClass extends EventEmitter {
           this.providerLock = this.providerLock.then(() => {
             configureProviderEnvironment(this.model);
 
+            // Capture env AFTER provider config so correct vars are set
+            // Remove CLAUDE_CONFIG_DIR so SDK child process uses global ~/.claude/
+            // for Keychain-based OAuth. Sessions use unique IDs so no conflict.
+            opts.env = {
+              ...process.env,
+              CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
+            };
+            delete opts.env.CLAUDE_CONFIG_DIR;
+
             if (images && images.length > 0) {
               // For images, create an async generator that yields SDKUserMessage
               const contentBlocks: ContentBlock[] = [
@@ -499,6 +532,7 @@ class AgentManagerClass extends EventEmitter {
             console.log('[AgentManager] Query aborted by user');
             throw new Error('Query stopped by user');
           }
+
           this.processStatusFromMessage(message);
           result = this.extractFromMessage(message, result);
 
@@ -834,12 +868,41 @@ class AgentManagerClass extends EventEmitter {
       tools: { type: 'preset', preset: 'claude_code' },
       settingSources: ['project'],
       canUseTool: buildCanUseToolCallback(),  // Pre-tool-use safety validation
+      // env is set dynamically in runQuery() after configureProviderEnvironment()
       hooks: {
         PreToolUse: [buildPreToolUseHook()],  // Pre-tool-use safety hook
+        TeammateIdle: [{
+          hooks: [async (input: { teammate_name: string; team_name: string }) => {
+            this.emitStatus({
+              type: 'teammate_idle',
+              teammateName: input.teammate_name,
+              teamName: input.team_name,
+              message: `${input.teammate_name} is idle`,
+            });
+            return { hookSpecificOutput: { hookEventName: 'TeammateIdle' as const } };
+          }],
+        }],
+        TaskCompleted: [{
+          hooks: [async (input: { task_id: string; task_subject: string; task_description?: string; teammate_name?: string; team_name?: string }) => {
+            this.emitStatus({
+              type: 'task_completed',
+              taskId: input.task_id,
+              taskSubject: input.task_subject,
+              teammateName: input.teammate_name,
+              teamName: input.team_name,
+              message: `task done: ${input.task_subject}`,
+            });
+            return { hookSpecificOutput: { hookEventName: 'TaskCompleted' as const } };
+          }],
+        }],
       },
       allowedTools: [
         // Built-in SDK tools
         'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep', 'WebSearch', 'WebFetch',
+        // Agent Teams tools
+        'TeammateTool', 'TeamCreate', 'SendMessage', 'TaskCreate', 'TaskGet', 'TaskUpdate', 'TaskList',
+        // Background task tools
+        'TaskOutput', 'TaskStop',
         // Custom MCP tools - browser & system
         'mcp__pocket-agent__browser',
         'mcp__pocket-agent__notify',
@@ -1030,6 +1093,10 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
         const textBlocks = content
           .filter((block: unknown) => (block as { type?: string })?.type === 'text')
           .map((block: unknown) => (block as { text: string }).text);
+        // If no text blocks (tool-only turn), preserve the accumulated response
+        if (textBlocks.length === 0) {
+          return current;
+        }
         const text = textBlocks.join('\n');
         // Extract and strip any trailing "User:" suggested prompts
         const { text: cleanedText, suggestion } = this.extractSuggestedPrompt(text);
@@ -1112,6 +1179,8 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
 
   // Track active subagents per session
   private activeSubagentsBySession: Map<string, Map<string, { type: string; description: string }>> = new Map();
+  // Track background tasks per session
+  private backgroundTasksBySession: Map<string, Map<string, { type: string; description: string; toolUseId: string }>> = new Map();
 
   private getActiveSubagents(sessionId: string): Map<string, { type: string; description: string }> {
     let map = this.activeSubagentsBySession.get(sessionId);
@@ -1122,9 +1191,19 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
     return map;
   }
 
+  private getBackgroundTasks(sessionId: string): Map<string, { type: string; description: string; toolUseId: string }> {
+    let map = this.backgroundTasksBySession.get(sessionId);
+    if (!map) {
+      map = new Map();
+      this.backgroundTasksBySession.set(sessionId, map);
+    }
+    return map;
+  }
+
   private processStatusFromMessage(message: unknown): void {
     const sessionId = getCurrentSessionId();
     const activeSubagents = this.getActiveSubagents(sessionId);
+    const backgroundTasks = this.getBackgroundTasks(sessionId);
 
     // Handle tool use from assistant messages
     const msg = message as { type?: string; subtype?: string; message?: { content?: unknown } };
@@ -1136,6 +1215,41 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
             const rawName = block.name as string;
             const toolName = this.formatToolName(rawName);
             const toolInput = this.formatToolInput(block.input);
+            const blockInput = block.input as Record<string, unknown>;
+            const toolUseId = (block.id as string) || `bg-${Date.now()}`;
+
+            // Detect background tasks (Bash or Task with run_in_background)
+            if (blockInput?.run_in_background === true) {
+              const bgId = `bg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+              const description = (rawName === 'Bash'
+                ? (blockInput.command as string)?.slice(0, 60)
+                : (blockInput.description as string) || (blockInput.prompt as string)?.slice(0, 60)
+              ) || rawName;
+
+              backgroundTasks.set(bgId, { type: rawName, description, toolUseId });
+              console.log(`[AgentManager] Background task started: ${rawName} - ${description} (${backgroundTasks.size} active)`);
+
+              this.emitStatus({
+                type: 'background_task_start',
+                sessionId,
+                backgroundTaskId: bgId,
+                backgroundTaskDescription: description,
+                backgroundTaskCount: backgroundTasks.size,
+                toolName: rawName,
+                message: `background: ${description}`,
+              });
+            }
+
+            // Detect TaskOutput (checking on background tasks)
+            if (rawName === 'TaskOutput') {
+              this.emitStatus({
+                type: 'background_task_output',
+                sessionId,
+                backgroundTaskId: blockInput.task_id as string,
+                backgroundTaskCount: backgroundTasks.size,
+                message: 'checking background task...',
+              });
+            }
 
             // Check if this is a Task (subagent) tool
             if (rawName === 'Task') {
@@ -1154,6 +1268,27 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
                 toolInput: description,
                 agentCount: activeSubagents.size,
                 message: this.getSubagentMessage(agentType),
+              });
+            } else if (rawName === 'TeammateTool') {
+              const input = block.input as { name?: string; team_name?: string; description?: string };
+              this.emitStatus({
+                type: 'teammate_start',
+                sessionId,
+                teammateName: input.name,
+                teamName: input.team_name,
+                toolName,
+                toolInput: input.description || input.name || 'spawning teammate',
+                message: `rallying ${input.name || 'a teammate'}`,
+              });
+            } else if (rawName === 'SendMessage') {
+              const input = block.input as { to?: string; type?: string; message?: string };
+              this.emitStatus({
+                type: 'teammate_message',
+                sessionId,
+                teammateName: input.to,
+                toolName,
+                toolInput: input.message?.slice(0, 80) || '',
+                message: input.type === 'broadcast' ? 'broadcasting to the squad' : `messaging ${input.to || 'teammate'}`,
               });
             } else if (rawName === 'Bash' && this.isPocketCliCommand(block.input)) {
               const pocketName = this.formatPocketCommand(block.input);
@@ -1296,6 +1431,17 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
       calendar_list: 'checking the calendar',
       calendar_upcoming: 'seeing what\'s coming up',
       calendar_delete: 'scratching that out',
+
+      // Agent Teams tools
+      TeammateTool: 'rallying the squad',
+      TeamCreate: 'rallying the squad',
+      SendMessage: 'passing a note',
+      TaskCreate: 'creating a team task',
+      TaskGet: 'checking task details',
+      TaskUpdate: 'updating team task',
+      TaskList: 'listing team tasks',
+      TaskOutput: 'checking background task',
+      TaskStop: 'stopping background task',
     };
     return friendlyNames[name] || name;
   }
@@ -1346,6 +1492,11 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
       return `at (${inp.coordinate[0]}, ${inp.coordinate[1]})`;
     }
     if (inp.text) return `"${(inp.text as string).slice(0, 40)}"`;
+
+    // Agent Teams tools
+    if (inp.to && inp.message) return `→ ${inp.to}: ${(inp.message as string).slice(0, 60)}`;
+    if (inp.name && inp.team_name) return `${inp.name} in ${inp.team_name}`;
+    if (inp.name) return inp.name as string;
 
     return '';
   }
