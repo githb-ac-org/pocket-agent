@@ -2264,6 +2264,36 @@
 
     // Pocket CLI functions
     let pocketCliInstalledVersion = null;
+    const CLI_IS_WINDOWS = window.pocketAgent.getPlatform() === 'win32';
+
+    // Platform-aware shell commands for Pocket CLI
+    const cliCommands = {
+      which: CLI_IS_WINDOWS
+        ? '(Get-Command pocket -ErrorAction SilentlyContinue).Source'
+        : 'which pocket',
+      version: (pocketPath) => CLI_IS_WINDOWS
+        ? null // No reliable way to extract version from Windows binary without strings
+        : `strings "${pocketPath}" | grep -E '^v[0-9]+\\.[0-9]+\\.[0-9]+$' | head -1`,
+      fetchLatest: CLI_IS_WINDOWS
+        ? 'Invoke-RestMethod https://api.github.com/repos/KenKaiii/pocket-agent-cli/releases/latest | ConvertTo-Json -Depth 10'
+        : 'curl -fsSL https://api.github.com/repos/KenKaiii/pocket-agent-cli/releases/latest',
+      install: CLI_IS_WINDOWS
+        ? [
+            '$installDir = Join-Path $env:LOCALAPPDATA "pocket-agent-cli"',
+            'New-Item -ItemType Directory -Force -Path $installDir | Out-Null',
+            '$release = Invoke-RestMethod "https://api.github.com/repos/KenKaiii/pocket-agent-cli/releases/latest"',
+            '$asset = $release.assets | Where-Object { $_.name -like "*windows*amd64*" } | Select-Object -First 1',
+            'if (-not $asset) { throw "No Windows release asset found" }',
+            '$zipPath = Join-Path $env:TEMP "pocket_cli.zip"',
+            'Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath',
+            'Expand-Archive -Path $zipPath -DestinationPath $installDir -Force',
+            'Remove-Item $zipPath -Force',
+            '$userPath = [Environment]::GetEnvironmentVariable("Path", "User")',
+            'if ($userPath -notlike "*$installDir*") { [Environment]::SetEnvironmentVariable("Path", "$userPath;$installDir", "User") }',
+            'Write-Output "Installed to $installDir"',
+          ].join('; ')
+        : 'curl -fsSL https://raw.githubusercontent.com/KenKaiii/pocket-agent-cli/main/scripts/install.sh | sed "s/^.*exec .*$//" | bash',
+    };
 
     async function initPocketCli() {
       const versionEl = document.getElementById('pocket-cli-version');
@@ -2273,21 +2303,23 @@
 
       // Check if pocket command exists and get version
       try {
-        const result = await window.pocketAgent.runCommand('which pocket');
+        const result = await window.pocketAgent.runCommand(cliCommands.which);
         if (result && result.trim()) {
-          // pocket has no --version flag; extract version from binary with strings
-          try {
-            const pocketPath = result.trim();
-            const versionResult = await window.pocketAgent.runCommand(
-              `strings "${pocketPath}" | grep -E '^v[0-9]+\\.[0-9]+\\.[0-9]+$' | head -1`
-            );
-            if (versionResult && versionResult.trim()) {
-              pocketCliInstalledVersion = versionResult.trim().replace(/^v/, '');
-              versionEl.textContent = `v${pocketCliInstalledVersion}`;
-            } else {
+          // Try to extract version from binary (macOS only; Windows shows "Installed")
+          const versionCmd = cliCommands.version(result.trim());
+          if (versionCmd) {
+            try {
+              const versionResult = await window.pocketAgent.runCommand(versionCmd);
+              if (versionResult && versionResult.trim()) {
+                pocketCliInstalledVersion = versionResult.trim().replace(/^v/, '');
+                versionEl.textContent = `v${pocketCliInstalledVersion}`;
+              } else {
+                versionEl.textContent = 'Installed';
+              }
+            } catch (e) {
               versionEl.textContent = 'Installed';
             }
-          } catch (e) {
+          } else {
             versionEl.textContent = 'Installed';
           }
           statusEl.className = 'status success';
@@ -2332,9 +2364,7 @@
       statusEl.textContent = 'Checking...';
 
       try {
-        const latestJson = await window.pocketAgent.runCommand(
-          'curl -fsSL https://api.github.com/repos/KenKaiii/pocket-agent-cli/releases/latest'
-        );
+        const latestJson = await window.pocketAgent.runCommand(cliCommands.fetchLatest);
         if (latestJson) {
           const release = JSON.parse(latestJson);
           const latestVersion = (release.tag_name || '').replace(/^v/, '');
@@ -2379,14 +2409,11 @@
         statusEl.className = 'status info';
         statusEl.textContent = 'Installing...';
 
-        // Strip the 'exec' line from install script so the command returns cleanly
-        await window.pocketAgent.runCommand(
-          'curl -fsSL https://raw.githubusercontent.com/KenKaiii/pocket-agent-cli/main/scripts/install.sh | sed "s/^.*exec .*$//" | bash'
-        );
+        await window.pocketAgent.runCommand(cliCommands.install);
         await initPocketCli();
 
         if (document.getElementById('pocket-cli-status').classList.contains('success')) {
-          showToast('Pocket CLI installed successfully!', 'success');
+          showToast('Pocket CLI installed successfully!' + (CLI_IS_WINDOWS ? ' Restart your terminal to use it.' : ''), 'success');
         } else {
           showToast('Installation completed, please check status', 'warning');
         }
@@ -2414,10 +2441,7 @@
         infoBox.style.display = 'flex';
         infoText.textContent = 'Downloading and installing latest version...';
 
-        // Strip the 'exec' line from install script so the command returns cleanly
-        await window.pocketAgent.runCommand(
-          'curl -fsSL https://raw.githubusercontent.com/KenKaiii/pocket-agent-cli/main/scripts/install.sh | sed "s/^.*exec .*$//" | bash'
-        );
+        await window.pocketAgent.runCommand(cliCommands.install);
         await initPocketCli();
 
         if (document.getElementById('pocket-cli-status').classList.contains('success')) {

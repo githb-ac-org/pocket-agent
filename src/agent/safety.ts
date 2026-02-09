@@ -505,7 +505,7 @@ export function validateBashCommand(command: string): ValidationResult {
  */
 export function validateWritePath(filePath: string): ValidationResult {
   // Expand ~ to home directory for pattern matching (cross-platform)
-  const homeDir = process.env.HOME || process.env.USERPROFILE || '/home/user';
+  const homeDir = process.env.HOME || process.env.USERPROFILE || (process.platform === 'win32' ? 'C:\\Users\\user' : '/home/user');
   const expandedPath = filePath.replace(/^~/, homeDir);
 
   // Normalize to resolve ../ traversal attempts and canonicalize separators

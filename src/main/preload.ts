@@ -130,6 +130,9 @@ contextBridge.exposeInMainWorld('pocketAgent', {
   // Shell commands
   runCommand: (command: string) => ipcRenderer.invoke('shell:runCommand', command),
 
+  // Platform info
+  getPlatform: () => process.platform,
+
   // Navigation
   onNavigateTab: (callback: (tab: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, tab: string) => callback(tab);
@@ -240,6 +243,8 @@ declare global {
       testBrowserConnection: (cdpUrl?: string) => Promise<{ connected: boolean; error?: string; browserInfo?: unknown }>;
       // Shell commands
       runCommand: (command: string) => Promise<string>;
+      // Platform info
+      getPlatform: () => string;
     };
   }
 }
