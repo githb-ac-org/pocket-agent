@@ -187,10 +187,10 @@ describe('Source Code Verification', () => {
     expect(content).toMatch(/UPDATE cron_jobs SET.*session_id/s);
   });
 
-  it('agent/index.ts should import runWithSessionId and use it', () => {
-    const content = fs.readFileSync(path.join(srcDir, 'agent/index.ts'), 'utf-8');
+  it('agent/persistent-session.ts should import and use runWithSessionId', () => {
+    const content = fs.readFileSync(path.join(srcDir, 'agent/persistent-session.ts'), 'utf-8');
     expect(content).toContain('runWithSessionId');
-    expect(content).toContain('runWithSessionId(sessionId');
+    expect(content).toContain('runWithSessionId(this.sessionId');
   });
 
   it('scheduler/index.ts should include session_id in calendar reminder queries', () => {
@@ -261,10 +261,10 @@ describe('Source Code Verification', () => {
     expect(content).not.toMatch(/private activeSubagents:/);
   });
 
-  it('agent/index.ts should have providerLock for environment mutex', () => {
+  it('agent/index.ts should configure provider environment in buildPersistentOptions', () => {
     const content = fs.readFileSync(path.join(srcDir, 'agent/index.ts'), 'utf-8');
-    expect(content).toContain('private providerLock');
-    expect(content).toContain('this.providerLock = this.providerLock.then');
+    expect(content).toContain('configureProviderEnvironment');
+    expect(content).toContain('buildPersistentOptions');
   });
 
   it('agent/index.ts should import getCurrentSessionId', () => {

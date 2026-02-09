@@ -1076,9 +1076,9 @@ function setupIPC(): void {
   });
 
   ipcMain.handle('sessions:delete', async (_, id: string) => {
-    // Stop any running query for this session first
-    AgentManager.stopQuery(id);
-    AgentManager.clearSdkSessionMapping(id);
+    // Close persistent session (kills subprocess + bg tasks) and clear queue
+    AgentManager.clearQueue(id);
+    AgentManager.clearSdkSessionMapping(id);  // Also closes persistent session
     const success = memory?.deleteSession(id) ?? false;
     return { success };
   });

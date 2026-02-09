@@ -1,5 +1,5 @@
 import { MemoryManager, Message } from '../memory';
-import { buildMCPServers, buildSdkMcpServers, setMemoryManager, setSoulMemoryManager, ToolsConfig, validateToolsConfig, runWithSessionId, getCurrentSessionId } from '../tools';
+import { buildMCPServers, buildSdkMcpServers, setMemoryManager, setSoulMemoryManager, ToolsConfig, validateToolsConfig, getCurrentSessionId } from '../tools';
 import { closeBrowserManager } from '../browser';
 import { loadIdentity } from '../config/identity';
 import { loadInstructions } from '../config/instructions';
@@ -7,6 +7,7 @@ import { SettingsManager } from '../settings';
 import { EventEmitter } from 'events';
 import path from 'path';
 import { buildCanUseToolCallback, buildPreToolUseHook, setStatusEmitter } from './safety';
+import { PersistentSDKSession, TurnResult } from './persistent-session';
 
 // Provider configuration for different LLM backends
 type ProviderType = 'anthropic' | 'moonshot' | 'glm';
@@ -97,7 +98,7 @@ function configureProviderEnvironment(model: string): void {
 
 // Status event types
 export type AgentStatus = {
-  type: 'thinking' | 'tool_start' | 'tool_end' | 'tool_blocked' | 'responding' | 'done' | 'subagent_start' | 'subagent_update' | 'subagent_end' | 'queued' | 'queue_processing' | 'teammate_start' | 'teammate_idle' | 'teammate_message' | 'task_completed' | 'background_task_start' | 'background_task_output';
+  type: 'thinking' | 'tool_start' | 'tool_end' | 'tool_blocked' | 'responding' | 'done' | 'subagent_start' | 'subagent_update' | 'subagent_end' | 'queued' | 'queue_processing' | 'teammate_start' | 'teammate_idle' | 'teammate_message' | 'task_completed' | 'background_task_start' | 'background_task_output' | 'background_task_end';
   sessionId?: string;
   toolName?: string;
   toolInput?: string;
@@ -149,6 +150,13 @@ type TaskCompletedHookCallback = (input: { task_id: string; task_subject: string
     hookEventName: 'TaskCompleted';
   };
 }>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type UserPromptSubmitHookCallback = (input: any, toolUseID: string | undefined, options: { signal: AbortSignal }) => Promise<{
+  hookSpecificOutput: {
+    hookEventName: 'UserPromptSubmit';
+    additionalContext?: string;
+  };
+}>;
 
 type SDKOptions = {
   model?: string;
@@ -167,6 +175,7 @@ type SDKOptions = {
   env?: { [envVar: string]: string | undefined };  // Environment variables for Claude Code process
   hooks?: {
     PreToolUse?: Array<{ hooks: PreToolUseHookCallback[] }>;
+    UserPromptSubmit?: Array<{ hooks: UserPromptSubmitHookCallback[] }>;
     TeammateIdle?: Array<{ hooks: TeammateIdleHookCallback[] }>;
     TaskCompleted?: Array<{ hooks: TaskCompletedHookCallback[] }>;
   };
@@ -256,8 +265,8 @@ class AgentManagerClass extends EventEmitter {
   private processingBySession: Map<string, boolean> = new Map();
   private lastSuggestedPromptBySession: Map<string, string | undefined> = new Map();
   private messageQueueBySession: Map<string, Array<{ message: string; channel: string; images?: ImageContent[]; attachmentInfo?: AttachmentInfo; resolve: (result: ProcessResult) => void; reject: (error: Error) => void }>> = new Map();
-  private providerLock: Promise<void> = Promise.resolve();
   private sdkSessionIdBySession: Map<string, string> = new Map();
+  private persistentSessions: Map<string, PersistentSDKSession> = new Map();
 
   private constructor() {
     super();
@@ -346,6 +355,16 @@ class AgentManagerClass extends EventEmitter {
     this.model = model;
     SettingsManager.set('agent.model', model);
     console.log('[AgentManager] Model changed to:', model);
+
+    // Update model on all live persistent sessions
+    for (const [sid, session] of this.persistentSessions.entries()) {
+      if (session.isAlive()) {
+        session.setModel(model).catch(err => {
+          console.error(`[AgentManager] Failed to set model on session ${sid}:`, err);
+        });
+      }
+    }
+
     this.emit('model:changed', model);
   }
 
@@ -430,6 +449,8 @@ class AgentManagerClass extends EventEmitter {
 
   /**
    * Actually execute a message (internal implementation)
+   * Uses persistent sessions: first message creates a Query, subsequent messages
+   * use streamInput() to keep the subprocess alive (preserving background tasks).
    */
   private async executeMessage(
     userMessage: string,
@@ -446,164 +467,176 @@ class AgentManagerClass extends EventEmitter {
     const memory = this.memory; // Local reference for TypeScript narrowing
 
     this.processingBySession.set(sessionId, true);
-    const abortController = new AbortController();
-    this.abortControllersBySession.set(sessionId, abortController);
     this.lastSuggestedPromptBySession.set(sessionId, undefined);
-    let wasCompacted = false;
 
-    // Wrap entire execution in AsyncLocalStorage context so all tool callbacks
-    // within the SDK's query() inherit the correct session ID
-    return runWithSessionId(sessionId, async () => {
     try {
-      // Look up SDK session for resume (in-memory cache first, then DB)
-      let sdkSessionId = this.sdkSessionIdBySession.get(sessionId)
-        || memory.getSdkSessionId(sessionId)
-        || undefined;
+      const existingSession = this.persistentSessions.get(sessionId);
+      let turnResult: TurnResult;
 
-      const factsContext = memory.getFactsForContext();
-      const soulContext = memory.getSoulContext();
+      if (existingSession?.isAlive()) {
+        // === Existing session: send via streamInput ===
+        console.log(`[AgentManager] Sending to existing persistent session: ${sessionId}`);
+        this.emitStatus({ type: 'thinking', sessionId, message: '*stretches paws* thinking...' });
 
-      // Get last message timestamp for temporal context (lightweight query)
-      const recentMsgs = memory.getRecentMessages(1, sessionId);
-      const lastUserMsg = recentMsgs.find(m => m.role === 'user');
-      const lastUserMessageTimestamp = lastUserMsg?.timestamp;
+        // Build content blocks for images
+        const contentBlocks = images && images.length > 0
+          ? [
+              { type: 'text' as const, text: userMessage },
+              ...images.map(img => ({
+                type: 'image' as const,
+                source: {
+                  type: 'base64' as const,
+                  media_type: img.mediaType,
+                  data: img.data,
+                },
+              })),
+            ]
+          : undefined;
 
-      if (sdkSessionId) {
-        console.log(`[AgentManager] Resuming SDK session: ${sdkSessionId}`);
+        turnResult = await existingSession.send(userMessage, contentBlocks);
       } else {
-        console.log('[AgentManager] Starting new SDK session');
-      }
+        // === New session: create Query with first message ===
+        // Clean up dead session if present
+        if (existingSession) {
+          this.persistentSessions.delete(sessionId);
+        }
 
-      const query = await loadSDK();
-      if (!query) throw new Error('Failed to load SDK');
+        // Look up SDK session for resume (in-memory cache first, then DB)
+        let sdkSessionId = this.sdkSessionIdBySession.get(sessionId)
+          || memory.getSdkSessionId(sessionId)
+          || undefined;
 
-      // Helper to launch and iterate an SDK query
-      const runQuery = async (opts: SDKOptions): Promise<string> => {
-        const queryResult = await new Promise<SDKQuery>((resolve) => {
-          this.providerLock = this.providerLock.then(() => {
-            configureProviderEnvironment(this.model);
+        if (sdkSessionId) {
+          console.log(`[AgentManager] Resuming SDK session: ${sdkSessionId}`);
+        } else {
+          console.log('[AgentManager] Starting new persistent SDK session');
+        }
 
-            // Capture env AFTER provider config so correct vars are set
-            // Remove CLAUDE_CONFIG_DIR so SDK child process uses global ~/.claude/
-            // for Keychain-based OAuth. Sessions use unique IDs so no conflict.
-            opts.env = {
-              ...process.env,
-              CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
-            };
-            delete opts.env.CLAUDE_CONFIG_DIR;
+        const queryFn = await loadSDK();
+        if (!queryFn) throw new Error('Failed to load SDK');
 
-            if (images && images.length > 0) {
-              // For images, create an async generator that yields SDKUserMessage
-              const contentBlocks: ContentBlock[] = [
-                { type: 'text', text: userMessage },
-                ...images.map(img => ({
-                  type: 'image' as const,
-                  source: {
-                    type: 'base64' as const,
-                    media_type: img.mediaType,
-                    data: img.data,
-                  },
-                })),
-              ];
+        // Build options with dynamic context
+        const options = await this.buildPersistentOptions(memory, sessionId, sdkSessionId);
 
-              async function* messageGenerator() {
-                yield {
-                  type: 'user' as const,
-                  message: {
-                    role: 'user' as const,
-                    content: contentBlocks,
-                  },
-                  parent_tool_use_id: null,
-                  session_id: 'default',
-                };
-              }
+        console.log('[AgentManager] Calling query() with model:', options.model, 'thinking:', options.maxThinkingTokens || 'default');
+        this.emitStatus({ type: 'thinking', sessionId, message: '*stretches paws* thinking...' });
 
-              console.log(`[AgentManager] Calling query() with ${images.length} image(s)`);
-              resolve(query({ prompt: messageGenerator(), options: opts }));
-            } else {
-              resolve(query({ prompt: userMessage, options: opts }));
-            }
-          });
+        // Create persistent session
+        const session = new PersistentSDKSession(
+          sessionId,
+          (msg) => this.processStatusFromMessage(msg),
+          (msg, current) => this.extractFromMessage(msg, current)
+        );
+
+        // Listen for SDK session ID capture
+        session.on('sdkSessionId', (capturedId: string) => {
+          this.sdkSessionIdBySession.set(sessionId, capturedId);
+          memory.setSdkSessionId(sessionId, capturedId);
         });
 
-        let result = '';
-        for await (const message of queryResult) {
-          if (abortController.signal.aborted) {
-            console.log('[AgentManager] Query aborted by user');
-            throw new Error('Query stopped by user');
-          }
+        // Listen for session closure
+        session.on('closed', () => {
+          console.log(`[AgentManager] Persistent session closed: ${sessionId}`);
+        });
 
-          this.processStatusFromMessage(message);
-          result = this.extractFromMessage(message, result);
+        this.persistentSessions.set(sessionId, session);
 
-          // Capture SDK session ID for future resume
-          const msg = message as { type?: string; subtype?: string; session_id?: string };
-          if (msg.session_id && !sdkSessionId) {
-            sdkSessionId = msg.session_id;
-            this.sdkSessionIdBySession.set(sessionId, sdkSessionId);
-            memory.setSdkSessionId(sessionId, sdkSessionId);
-            console.log(`[AgentManager] Captured SDK session ID: ${sdkSessionId}`);
-          }
+        // Build content blocks for images (if any)
+        const firstContentBlocks: ContentBlock[] | undefined = images && images.length > 0
+          ? [
+              { type: 'text' as const, text: userMessage },
+              ...images.map(img => ({
+                type: 'image' as const,
+                source: {
+                  type: 'base64' as const,
+                  media_type: img.mediaType,
+                  data: img.data,
+                },
+              })),
+            ]
+          : undefined;
 
-          // Detect SDK auto-compaction
-          if (msg.type === 'system' && msg.subtype === 'compact_boundary') {
-            wasCompacted = true;
-          }
+        if (firstContentBlocks) {
+          console.log(`[AgentManager] Starting persistent session with ${images!.length} image(s)`);
         }
-        return result;
-      };
 
-      let options = await this.buildOptions(factsContext, soulContext, abortController, lastUserMessageTimestamp, sdkSessionId);
+        try {
+          turnResult = await session.start(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            queryFn as any,
+            userMessage,
+            options as unknown as Record<string, unknown>,
+            firstContentBlocks
+          );
+        } catch (startError) {
+          // If resume failed (corrupted/missing SDK session), retry without resume
+          if (sdkSessionId) {
+            const errMsg = startError instanceof Error ? startError.message : String(startError);
+            console.warn(`[AgentManager] Resume failed (${errMsg}), retrying without resume...`);
+            sdkSessionId = undefined;
+            this.sdkSessionIdBySession.delete(sessionId);
+            memory.clearSdkSessionId(sessionId);
 
-      // Build prompt - use async generator for images, string for text-only
-      console.log('[AgentManager] Calling query() with model:', options.model, 'thinking:', options.maxThinkingTokens || 'default');
-      this.emitStatus({ type: 'thinking', sessionId, message: '*stretches paws* thinking...' });
+            // Clean up failed session
+            session.close();
+            this.persistentSessions.delete(sessionId);
 
-      let response = '';
-      try {
-        response = await runQuery(options);
-      } catch (resumeError) {
-        // If resume failed (corrupted/missing SDK session), retry without resume
-        if (sdkSessionId && !abortController.signal.aborted) {
-          const errMsg = resumeError instanceof Error ? resumeError.message : String(resumeError);
-          console.warn(`[AgentManager] Resume failed (${errMsg}), retrying without resume...`);
-          sdkSessionId = undefined;
-          this.sdkSessionIdBySession.delete(sessionId);
-          memory.clearSdkSessionId(sessionId);
-          options = await this.buildOptions(factsContext, soulContext, abortController, lastUserMessageTimestamp, undefined);
-          response = await runQuery(options);
-        } else {
-          throw resumeError;
+            // Create new session without resume
+            const freshOptions = await this.buildPersistentOptions(memory, sessionId, undefined);
+            const freshSession = new PersistentSDKSession(
+              sessionId,
+              (msg) => this.processStatusFromMessage(msg),
+              (msg, current) => this.extractFromMessage(msg, current)
+            );
+
+            freshSession.on('sdkSessionId', (capturedId: string) => {
+              this.sdkSessionIdBySession.set(sessionId, capturedId);
+              memory.setSdkSessionId(sessionId, capturedId);
+            });
+
+            freshSession.on('closed', () => {
+              console.log(`[AgentManager] Persistent session closed: ${sessionId}`);
+            });
+
+            this.persistentSessions.set(sessionId, freshSession);
+
+            turnResult = await freshSession.start(
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              queryFn as any,
+              userMessage,
+              freshOptions as unknown as Record<string, unknown>,
+              firstContentBlocks
+            );
+          } else {
+            throw startError;
+          }
         }
       }
+
+      // === Process turn result (same for both paths) ===
+      let response = turnResult.response;
+      const wasCompacted = turnResult.wasCompacted;
 
       this.emitStatus({ type: 'done', sessionId });
 
-      // If no text response, make a follow-up call to get one
+      // If no text response, request a summary via the persistent session
       if (!response) {
-        console.log('[AgentManager] No text response, requesting summary...');
-        this.emitStatus({ type: 'thinking', sessionId, message: 'summarizing...' });
+        const currentSession = this.persistentSessions.get(sessionId);
+        if (currentSession?.isAlive()) {
+          console.log('[AgentManager] No text response, requesting summary...');
+          this.emitStatus({ type: 'thinking', sessionId, message: 'summarizing...' });
 
-        const summaryResult = query({
-          prompt: 'Briefly summarize what you just did in 1-2 sentences.',
-          options: {
-            ...options,
-            maxThinkingTokens: undefined, // No extended thinking for summary
-            ...(sdkSessionId && { resume: sdkSessionId }),
-          },
-        });
+          try {
+            const summaryResult = await currentSession.send('Briefly summarize what you just did in 1-2 sentences.');
+            response = summaryResult.response || 'Done.';
+          } catch {
+            response = 'Done.';
+          }
 
-        for await (const message of summaryResult) {
-          if (abortController.signal.aborted) break;
-          response = this.extractFromMessage(message, response);
-        }
-
-        // Final fallback if summary also fails
-        if (!response) {
+          this.emitStatus({ type: 'done', sessionId });
+        } else {
           response = 'Done.';
         }
-
-        this.emitStatus({ type: 'done', sessionId });
       }
 
       // Skip saving HEARTBEAT_OK responses from scheduled jobs to memory/chat
@@ -670,15 +703,12 @@ class AgentManagerClass extends EventEmitter {
       // Log full error object for debugging
       console.error('[AgentManager] Full error:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
 
-      // Only save user message if not aborted
-      if (!abortController.signal.aborted) {
-        memory.saveMessage('user', userMessage, sessionId);
-      }
+      // Only save user message if error is not user-initiated
+      memory.saveMessage('user', userMessage, sessionId);
 
       throw error;
     } finally {
       this.processingBySession.set(sessionId, false);
-      this.abortControllersBySession.delete(sessionId);
 
       // Process next message in queue (if any)
       // Use setTimeout(0) to avoid blocking the current promise resolution
@@ -688,7 +718,6 @@ class AgentManagerClass extends EventEmitter {
         });
       }, 0);
     }
-    }); // end runWithSessionId
   }
 
   /**
@@ -718,8 +747,10 @@ class AgentManagerClass extends EventEmitter {
   }
 
   /**
-   * Stop the query for a specific session (or any running query if no sessionId)
-   * Also clears any queued messages for that session
+   * Stop the current turn for a specific session (or any running query if no sessionId).
+   * Uses interrupt() on persistent sessions to stop the current turn while keeping
+   * the subprocess alive (preserving background tasks).
+   * Also clears any queued messages for that session.
    */
   stopQuery(sessionId?: string, clearQueuedMessages: boolean = true): boolean {
     if (sessionId) {
@@ -728,12 +759,20 @@ class AgentManagerClass extends EventEmitter {
         this.clearQueue(sessionId);
       }
 
+      const session = this.persistentSessions.get(sessionId);
+      if (session?.isAlive() && this.processingBySession.get(sessionId)) {
+        console.log(`[AgentManager] Interrupting persistent session ${sessionId} (bg tasks survive)...`);
+        session.interrupt().catch(err => {
+          console.error(`[AgentManager] Interrupt failed for ${sessionId}:`, err);
+        });
+        return true;
+      }
+
+      // Fallback to abort controller (for non-persistent queries)
       const abortController = this.abortControllersBySession.get(sessionId);
       if (this.processingBySession.get(sessionId) && abortController) {
-        console.log(`[AgentManager] Stopping query for session ${sessionId}...`);
+        console.log(`[AgentManager] Stopping query for session ${sessionId} via abort...`);
         abortController.abort();
-        // Note: Don't emit 'done' here - it would broadcast to ALL sessions.
-        // The frontend handles cleanup on its end when stopping/deleting a session.
         return true;
       }
       return false;
@@ -745,9 +784,19 @@ class AgentManagerClass extends EventEmitter {
         if (clearQueuedMessages) {
           this.clearQueue(sid);
         }
+
+        const session = this.persistentSessions.get(sid);
+        if (session?.isAlive()) {
+          console.log(`[AgentManager] Interrupting persistent session ${sid}...`);
+          session.interrupt().catch(err => {
+            console.error(`[AgentManager] Interrupt failed for ${sid}:`, err);
+          });
+          return true;
+        }
+
         const abortController = this.abortControllersBySession.get(sid);
         if (abortController) {
-          console.log(`[AgentManager] Stopping query for session ${sid}...`);
+          console.log(`[AgentManager] Stopping query for session ${sid} via abort...`);
           abortController.abort();
           return true;
         }
@@ -787,90 +836,153 @@ class AgentManagerClass extends EventEmitter {
   /**
    * Set the workspace directory for agent file operations.
    * This takes effect on the next SDK query (cwd option).
-   * Clears SDK session mappings since sessions are tied to cwd.
+   * Closes all persistent sessions and clears SDK session mappings since sessions are tied to cwd.
    */
   setWorkspace(path: string): void {
     console.log('[AgentManager] Workspace changed:', this.workspace, '->', path);
     this.workspace = path;
     // SDK sessions are stored per-cwd, so changing cwd invalidates them
+    this.closeAllPersistentSessions();
     this.sdkSessionIdBySession.clear();
   }
 
   /**
    * Reset workspace to default project root
-   * Clears SDK session mappings since sessions are tied to cwd.
+   * Closes all persistent sessions and clears SDK session mappings since sessions are tied to cwd.
    */
   resetWorkspace(): void {
     console.log('[AgentManager] Workspace reset to project root:', this.projectRoot);
     this.workspace = this.projectRoot;
+    this.closeAllPersistentSessions();
     this.sdkSessionIdBySession.clear();
   }
 
   /**
-   * Clear the SDK session mapping for a given session (e.g., on session delete or clear)
+   * Clear the SDK session mapping for a given session (e.g., on session delete or clear).
+   * Also closes the persistent session subprocess.
    */
   clearSdkSessionMapping(sessionId: string): void {
+    this.closePersistentSession(sessionId);
     this.sdkSessionIdBySession.delete(sessionId);
     console.log(`[AgentManager] Cleared SDK session mapping for ${sessionId}`);
   }
 
-  private async buildOptions(factsContext: string, soulContext: string, abortController: AbortController, lastMessageTimestamp?: string, sdkSessionId?: string): Promise<SDKOptions> {
-    const appendParts: string[] = [];
+  /**
+   * Close a single persistent session (kills subprocess and all background tasks).
+   */
+  closePersistentSession(sessionId: string): void {
+    const session = this.persistentSessions.get(sessionId);
+    if (session) {
+      console.log(`[AgentManager] Closing persistent session: ${sessionId}`);
+      session.close();
+      this.persistentSessions.delete(sessionId);
+    }
+  }
 
-    // Add temporal context first (current time awareness)
-    const temporalContext = this.buildTemporalContext(lastMessageTimestamp);
-    appendParts.push(temporalContext);
+  /**
+   * Close all persistent sessions (e.g., on workspace change or cleanup).
+   */
+  private closeAllPersistentSessions(): void {
+    for (const [sid, session] of this.persistentSessions.entries()) {
+      console.log(`[AgentManager] Closing persistent session: ${sid}`);
+      session.close();
+    }
+    this.persistentSessions.clear();
+  }
+
+  /**
+   * Build options for persistent sessions.
+   *
+   * Static context (identity, instructions, profile, capabilities) goes in systemPrompt.append
+   * since it only needs to be set once when the session is created.
+   *
+   * Dynamic context (temporal, facts, soul, daily logs) is injected per-message via
+   * the UserPromptSubmit hook's additionalContext, so it's fresh for each turn.
+   */
+  private async buildPersistentOptions(memory: MemoryManager, sessionId: string, sdkSessionId?: string): Promise<SDKOptions> {
+    // === Static context (set once at session creation) ===
+    const staticParts: string[] = [];
 
     if (this.instructions) {
-      appendParts.push(this.instructions);
+      staticParts.push(this.instructions);
     }
 
     if (this.identity) {
-      appendParts.push(this.identity);
+      staticParts.push(this.identity);
     }
 
     // Add user profile from settings
     const userProfile = SettingsManager.getFormattedProfile();
     if (userProfile) {
-      appendParts.push(userProfile);
-    }
-
-    if (factsContext) {
-      appendParts.push(factsContext);
-    }
-
-    if (soulContext) {
-      appendParts.push(soulContext);
-    }
-
-    // Add daily logs context (recent activity journal)
-    const dailyLogsContext = this.memory?.getDailyLogsContext(3);
-    if (dailyLogsContext) {
-      appendParts.push(dailyLogsContext);
+      staticParts.push(userProfile);
     }
 
     // Add capabilities information
     const capabilities = this.buildCapabilitiesPrompt();
     if (capabilities) {
-      appendParts.push(capabilities);
+      staticParts.push(capabilities);
     }
 
     // Get thinking level and convert to token budget
     const thinkingLevel = SettingsManager.get('agent.thinkingLevel') || 'normal';
     const thinkingBudget = THINKING_BUDGETS[thinkingLevel];
 
+    // Configure provider environment and capture env vars
+    configureProviderEnvironment(this.model);
+    const env: Record<string, string | undefined> = {
+      ...process.env,
+      CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
+    };
+    delete env.CLAUDE_CONFIG_DIR;
+
     const options: SDKOptions = {
       model: this.model,
-      cwd: this.workspace,  // Use isolated workspace for agent file operations
+      cwd: this.workspace,
       maxTurns: 100,
       ...(thinkingBudget !== undefined && thinkingBudget > 0 && { maxThinkingTokens: thinkingBudget }),
-      abortController,
       tools: { type: 'preset', preset: 'claude_code' },
       settingSources: ['project'],
-      canUseTool: buildCanUseToolCallback(),  // Pre-tool-use safety validation
-      // env is set dynamically in runQuery() after configureProviderEnvironment()
+      canUseTool: buildCanUseToolCallback(),
+      env,
       hooks: {
-        PreToolUse: [buildPreToolUseHook()],  // Pre-tool-use safety hook
+        PreToolUse: [buildPreToolUseHook()],
+        // Dynamic context injection: fresh facts/soul/temporal for each message
+        UserPromptSubmit: [{
+          hooks: [async () => {
+            const dynamicParts: string[] = [];
+
+            // Temporal context (current time)
+            const recentMsgs = memory.getRecentMessages(1, sessionId);
+            const lastUserMsg = recentMsgs.find(m => m.role === 'user');
+            const temporalContext = this.buildTemporalContext(lastUserMsg?.timestamp);
+            dynamicParts.push(temporalContext);
+
+            // Facts context
+            const factsContext = memory.getFactsForContext();
+            if (factsContext) {
+              dynamicParts.push(factsContext);
+            }
+
+            // Soul context
+            const soulContext = memory.getSoulContext();
+            if (soulContext) {
+              dynamicParts.push(soulContext);
+            }
+
+            // Daily logs
+            const dailyLogsContext = memory.getDailyLogsContext(3);
+            if (dailyLogsContext) {
+              dynamicParts.push(dailyLogsContext);
+            }
+
+            return {
+              hookSpecificOutput: {
+                hookEventName: 'UserPromptSubmit' as const,
+                additionalContext: dynamicParts.join('\n\n'),
+              },
+            };
+          }],
+        }],
         TeammateIdle: [{
           hooks: [async (input: { teammate_name: string; team_name: string }) => {
             this.emitStatus({
@@ -901,8 +1013,8 @@ class AgentManagerClass extends EventEmitter {
         'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep', 'WebSearch', 'WebFetch',
         // Agent Teams tools
         'TeammateTool', 'TeamCreate', 'SendMessage', 'TaskCreate', 'TaskGet', 'TaskUpdate', 'TaskList',
-        // Background task tools
-        'TaskOutput', 'TaskStop',
+        // Background task tools (persist across turns with persistent sessions)
+        'TaskOutput', 'TaskStop', 'BashOutput', 'KillBash',
         // Custom MCP tools - browser & system
         'mcp__pocket-agent__browser',
         'mcp__pocket-agent__notify',
@@ -942,11 +1054,11 @@ class AgentManagerClass extends EventEmitter {
       ...(sdkSessionId && { resume: sdkSessionId }),
     };
 
-    if (appendParts.length > 0) {
+    if (staticParts.length > 0) {
       options.systemPrompt = {
         type: 'preset',
         preset: 'claude_code',
-        append: appendParts.join('\n\n'),
+        append: staticParts.join('\n\n'),
       };
     }
 
@@ -1251,6 +1363,23 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
               });
             }
 
+            // Detect TaskStop/KillBash — remove bg task from tracking
+            // Note: SDK task IDs don't match our toolUseIds, so remove oldest matching type
+            if (rawName === 'TaskStop' || rawName === 'KillBash') {
+              const firstKey = backgroundTasks.keys().next().value;
+              if (firstKey) {
+                backgroundTasks.delete(firstKey);
+                console.log(`[AgentManager] Background task removed via ${rawName}: ${firstKey} (${backgroundTasks.size} remaining)`);
+                this.emitStatus({
+                  type: 'background_task_end',
+                  sessionId,
+                  backgroundTaskId: firstKey,
+                  backgroundTaskCount: backgroundTasks.size,
+                  message: 'background task stopped',
+                });
+              }
+            }
+
             // Check if this is a Task (subagent) tool
             if (rawName === 'Task') {
               const input = block.input as { subagent_type?: string; description?: string; prompt?: string };
@@ -1370,6 +1499,26 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
         const compactMsg = msg as { compact_metadata?: { trigger: string; pre_tokens: number } };
         const meta = compactMsg.compact_metadata;
         console.log(`[AgentManager] SDK compaction complete: trigger=${meta?.trigger}, pre_tokens=${meta?.pre_tokens}`);
+      } else if (msg.subtype === 'task_notification') {
+        const taskMsg = msg as { task_id?: string; status?: string; summary?: string };
+        const taskStatus = taskMsg.status;
+        if (taskStatus === 'completed' || taskStatus === 'failed' || taskStatus === 'stopped') {
+          // Remove oldest tracked bg task (SDK task IDs don't map to our internal IDs)
+          const firstKey = backgroundTasks.keys().next().value;
+          if (firstKey) {
+            backgroundTasks.delete(firstKey);
+            console.log(`[AgentManager] Background task ${taskStatus} (notification): removed ${firstKey} (${backgroundTasks.size} remaining)`);
+            this.emitStatus({
+              type: 'background_task_end',
+              sessionId,
+              backgroundTaskId: firstKey,
+              backgroundTaskCount: backgroundTasks.size,
+              message: `background task ${taskStatus}`,
+            });
+          } else {
+            console.log(`[AgentManager] Background task ${taskStatus} (notification): ${taskMsg.task_id} (not tracked)`);
+          }
+        }
       }
     }
   }
@@ -1442,6 +1591,8 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
       TaskList: 'listing team tasks',
       TaskOutput: 'checking background task',
       TaskStop: 'stopping background task',
+      BashOutput: 'checking background command',
+      KillBash: 'killing background command',
     };
     return friendlyNames[name] || name;
   }
@@ -1659,6 +1810,7 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
   }
 
   cleanup(): void {
+    this.closeAllPersistentSessions();
     closeBrowserManager();
     console.log('[AgentManager] Cleanup complete');
   }

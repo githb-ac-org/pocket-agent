@@ -4003,6 +4003,11 @@
         // Don't change the main status indicator — background tasks are passive
       } else if (status.type === 'background_task_output') {
         // Checking on a background task — no special UI action needed
+      } else if (status.type === 'background_task_end') {
+        // Background task completed/stopped/failed — remove from UI
+        if (status.backgroundTaskId) {
+          removeBackgroundTask(status.sessionId || currentSessionId, status.backgroundTaskId);
+        }
       } else if (status.type === 'responding') {
         actionEl.textContent = 'grooming my response... 🐈';
         detailEl.textContent = '';
