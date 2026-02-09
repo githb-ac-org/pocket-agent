@@ -722,10 +722,11 @@ class SettingsManagerClass {
       return !!oauthToken;
     }
 
-    // Check for API key authentication (Anthropic OR Moonshot)
+    // Check for API key authentication (any supported provider)
     const anthropicKey = this.get('anthropic.apiKey');
     const moonshotKey = this.get('moonshot.apiKey');
-    return !!anthropicKey || !!moonshotKey;
+    const glmKey = this.get('glm.apiKey');
+    return !!anthropicKey || !!moonshotKey || !!glmKey;
   }
 
   /**
