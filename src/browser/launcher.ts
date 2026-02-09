@@ -15,40 +15,46 @@ export interface BrowserInfo {
   name: string;
   path: string;
   processName: string;
+  bundleId: string;
   installed: boolean;
 }
 
-// macOS browser paths
-const BROWSERS: Omit<BrowserInfo, 'installed'>[] = [
+// macOS browser paths and bundle IDs (for App Nap disabling)
+const BROWSERS: (Omit<BrowserInfo, 'installed'> & { bundleId: string })[] = [
   {
     id: 'chrome',
     name: 'Google Chrome',
     path: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     processName: 'Google Chrome',
+    bundleId: 'com.google.Chrome',
   },
   {
     id: 'edge',
     name: 'Microsoft Edge',
     path: '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
     processName: 'Microsoft Edge',
+    bundleId: 'com.microsoft.edgemac',
   },
   {
     id: 'brave',
     name: 'Brave',
     path: '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
     processName: 'Brave Browser',
+    bundleId: 'com.brave.Browser',
   },
   {
     id: 'arc',
     name: 'Arc',
     path: '/Applications/Arc.app/Contents/MacOS/Arc',
     processName: 'Arc',
+    bundleId: 'company.thebrowser.Browser',
   },
   {
     id: 'chromium',
     name: 'Chromium',
     path: '/Applications/Chromium.app/Contents/MacOS/Chromium',
     processName: 'Chromium',
+    bundleId: 'org.chromium.Chromium',
   },
 ];
 
@@ -128,11 +134,39 @@ export async function launchBrowser(
   }
 
   try {
-    // Launch browser with remote debugging
-    const child = spawn(browser.path, [`--remote-debugging-port=${port}`], {
-      detached: true,
-      stdio: 'ignore',
-    });
+    // Disable macOS App Nap for this browser before launch.
+    // App Nap throttles invisible apps' timers and CPU, which kills
+    // CDP responsiveness when the screen is locked.
+    if (process.platform === 'darwin') {
+      try {
+        await execAsync(
+          `defaults write ${browser.bundleId} NSAppSleepDisabled -bool YES`
+        );
+        console.log(`[Browser] Disabled App Nap for ${browser.name}`);
+      } catch {
+        console.warn(`[Browser] Could not disable App Nap for ${browser.name}`);
+      }
+    }
+
+    // Launch browser with remote debugging and anti-throttling flags.
+    // Without these, Chrome aggressively throttles background tabs
+    // (1 timer/sec after 10s, 1 timer/min after 5min) which makes
+    // CDP commands unreliable for long-running automation.
+    const child = spawn(
+      browser.path,
+      [
+        `--remote-debugging-port=${port}`,
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-ipc-flooding-protection',
+        '--disable-features=IntensiveWakeUpThrottling',
+      ],
+      {
+        detached: true,
+        stdio: 'ignore',
+      },
+    );
 
     // Don't wait for the process
     child.unref();

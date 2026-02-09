@@ -13,6 +13,7 @@ import { loadInstructions, saveInstructions, getInstructionsPath, DEFAULT_INSTRU
 import { DEFAULT_COMMANDS } from '../config/commands';
 import { loadWorkflowCommands } from '../config/commands-loader';
 import { closeTaskDb } from '../tools';
+import { getBrowserManager } from '../browser';
 import { initializeUpdater, setupUpdaterIPC, setSettingsWindow } from './updater';
 import cityTimezones from 'city-timezones';
 
@@ -1685,7 +1686,10 @@ app.whenReady().then(async () => {
       console.log('[Power] System resumed from sleep');
       // Restart power blocker in case it was affected
       startPowerBlocker();
-      // Note: Scheduler and Telegram will auto-recover on next tick
+      // Force CDP reconnection — WebSocket is dead after sleep
+      getBrowserManager().forceReconnectCdp().catch((err) => {
+        console.warn('[Power] CDP reconnect after resume failed:', err);
+      });
     });
 
     // Handle lock screen (display off but CPU running)
@@ -1696,6 +1700,10 @@ app.whenReady().then(async () => {
 
     powerMonitor.on('unlock-screen', () => {
       console.log('[Power] Screen unlocked');
+      // Force CDP reconnection — connection may have gone stale during lock
+      getBrowserManager().forceReconnectCdp().catch((err) => {
+        console.warn('[Power] CDP reconnect after unlock failed:', err);
+      });
     });
 
     // Clean up on app quit
