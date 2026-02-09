@@ -19,6 +19,8 @@ export interface TurnResult {
   response: string;
   sdkSessionId?: string;
   wasCompacted: boolean;
+  contextTokens?: number;
+  contextWindow?: number;
 }
 
 // Typed references to SDK objects (loaded dynamically)
@@ -121,6 +123,10 @@ export class PersistentSDKSession extends EventEmitter {
   private turnReject: ((error: Error) => void) | null = null;
   private turnResponse = '';
   private turnTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  // Context window tracking (from SDK result)
+  private contextTokens?: number;
+  private contextWindow?: number;
 
   constructor(
     sessionId: string,
@@ -315,6 +321,25 @@ export class PersistentSDKSession extends EventEmitter {
 
           // Turn boundary: SDK emits 'result' when a turn is complete
           if (msg.type === 'result') {
+            // Extract context window usage from SDK result
+            const resultMsg = message as {
+              usage?: { input_tokens?: number; cache_read_input_tokens?: number };
+              modelUsage?: Record<string, { contextWindow?: number; inputTokens?: number; cacheReadInputTokens?: number }>;
+            };
+
+            if (resultMsg.usage?.input_tokens !== undefined) {
+              // Total context = fresh tokens + cached tokens (both count toward the context window)
+              const cached = resultMsg.usage.cache_read_input_tokens ?? 0;
+              this.contextTokens = resultMsg.usage.input_tokens + cached;
+            }
+            if (resultMsg.modelUsage) {
+              // Get contextWindow from first model in modelUsage
+              const firstModel = Object.values(resultMsg.modelUsage)[0];
+              if (firstModel?.contextWindow) {
+                this.contextWindow = firstModel.contextWindow;
+              }
+            }
+
             this.completeTurn();
           }
         }
@@ -337,6 +362,8 @@ export class PersistentSDKSession extends EventEmitter {
           response: this.turnResponse,
           sdkSessionId: this.sdkSessionId,
           wasCompacted: this.wasCompacted,
+          contextTokens: this.contextTokens,
+          contextWindow: this.contextWindow,
         });
         this.turnResolve = null;
         this.turnReject = null;
@@ -378,6 +405,8 @@ export class PersistentSDKSession extends EventEmitter {
         response: this.turnResponse,
         sdkSessionId: this.sdkSessionId,
         wasCompacted: this.wasCompacted,
+        contextTokens: this.contextTokens,
+        contextWindow: this.contextWindow,
       };
       this.turnResolve(result);
       this.turnResolve = null;

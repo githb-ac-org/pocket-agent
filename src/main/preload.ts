@@ -161,7 +161,7 @@ declare global {
       onSessionsChanged: (callback: () => void) => () => void;
       onModelChanged: (callback: (model: string) => void) => () => void;
       getHistory: (limit?: number, sessionId?: string) => Promise<Array<{ role: string; content: string; timestamp: string; metadata?: { source?: string; jobName?: string } }>>;
-      getStats: (sessionId?: string) => Promise<{ messageCount: number; factCount: number; estimatedTokens: number; sessionCount?: number } | null>;
+      getStats: (sessionId?: string) => Promise<{ messageCount: number; factCount: number; estimatedTokens: number; sessionCount?: number; contextTokens?: number; contextWindow?: number } | null>;
       clearConversation: (sessionId?: string) => Promise<{ success: boolean }>;
       // Sessions
       getSessions: () => Promise<Session[]>;

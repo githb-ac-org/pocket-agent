@@ -246,6 +246,8 @@ export interface ProcessResult {
   tokensUsed: number;
   wasCompacted: boolean;
   suggestedPrompt?: string;
+  contextTokens?: number;
+  contextWindow?: number;
 }
 
 /**
@@ -267,6 +269,7 @@ class AgentManagerClass extends EventEmitter {
   private messageQueueBySession: Map<string, Array<{ message: string; channel: string; images?: ImageContent[]; attachmentInfo?: AttachmentInfo; resolve: (result: ProcessResult) => void; reject: (error: Error) => void }>> = new Map();
   private sdkSessionIdBySession: Map<string, string> = new Map();
   private persistentSessions: Map<string, PersistentSDKSession> = new Map();
+  private contextUsageBySession: Map<string, { contextTokens: number; contextWindow: number }> = new Map();
 
   private constructor() {
     super();
@@ -617,6 +620,15 @@ class AgentManagerClass extends EventEmitter {
       let response = turnResult.response;
       const wasCompacted = turnResult.wasCompacted;
 
+      // Store context window usage from SDK result
+      if (turnResult.contextTokens !== undefined || turnResult.contextWindow !== undefined) {
+        const existing = this.contextUsageBySession.get(sessionId);
+        this.contextUsageBySession.set(sessionId, {
+          contextTokens: turnResult.contextTokens ?? existing?.contextTokens ?? 0,
+          contextWindow: turnResult.contextWindow ?? existing?.contextWindow ?? 0,
+        });
+      }
+
       this.emitStatus({ type: 'done', sessionId });
 
       // If no text response, request a summary via the persistent session
@@ -687,12 +699,15 @@ class AgentManagerClass extends EventEmitter {
       this.extractAndStoreFacts(userMessage);
 
       const statsAfter = memory.getStats();
+      const contextUsage = this.contextUsageBySession.get(sessionId);
 
       return {
         response,
         tokensUsed: statsAfter.estimatedTokens,
         wasCompacted,
         suggestedPrompt: this.lastSuggestedPromptBySession.get(sessionId),
+        contextTokens: contextUsage?.contextTokens,
+        contextWindow: contextUsage?.contextWindow,
       };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
@@ -1776,8 +1791,15 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
 
   // ============ Public API ============
 
-  getStats(sessionId?: string): ReturnType<MemoryManager['getStats']> | null {
-    return this.memory?.getStats(sessionId) || null;
+  getStats(sessionId?: string): (ReturnType<MemoryManager['getStats']> & { contextTokens?: number; contextWindow?: number }) | null {
+    const stats = this.memory?.getStats(sessionId);
+    if (!stats) return null;
+    const contextUsage = sessionId ? this.contextUsageBySession.get(sessionId) : undefined;
+    return {
+      ...stats,
+      contextTokens: contextUsage?.contextTokens,
+      contextWindow: contextUsage?.contextWindow,
+    };
   }
 
   clearConversation(sessionId?: string): void {

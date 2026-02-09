@@ -3324,10 +3324,14 @@
       try {
         const stats = await window.pocketAgent.getStats(currentSessionId);
         if (stats) {
-          const tokens = stats.estimatedTokens >= 1000
-            ? `${(stats.estimatedTokens / 1000).toFixed(1)}k`
-            : stats.estimatedTokens;
-          statsDiv.textContent = `${stats.messageCount} msgs · ${stats.factCount} facts · ${tokens} tokens`;
+          const formatTokens = (n) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+
+          let parts = [`${stats.messageCount} msgs`, `${stats.factCount} facts`];
+          if (stats.contextTokens != null && stats.contextWindow) {
+            parts.push(`${formatTokens(stats.contextTokens)} / ${formatTokens(stats.contextWindow)} context`);
+          }
+
+          statsDiv.textContent = parts.join(' · ');
         }
       } catch (err) {
         console.error('Failed to get stats:', err);
