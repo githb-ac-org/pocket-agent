@@ -30,10 +30,14 @@ process.on('uncaughtException', (err) => {
   process.exit(1);
 });
 
-// Detect NVM node versions once at startup (cached for performance)
+const IS_WINDOWS = process.platform === 'win32';
+const IS_MACOS = process.platform === 'darwin';
+const HOME_DIR = process.env.HOME || process.env.USERPROFILE || '';
+
+// Detect NVM node versions once at startup (cached for performance) — Unix only
 function detectNvmNodePaths(): string[] {
-  const home = process.env.HOME || '';
-  const nvmVersionsDir = path.join(home, '.nvm/versions/node');
+  if (IS_WINDOWS) return [];
+  const nvmVersionsDir = path.join(HOME_DIR, '.nvm/versions/node');
   const paths: string[] = [];
   try {
     if (fs.existsSync(nvmVersionsDir)) {
@@ -54,19 +58,31 @@ function detectNvmNodePaths(): string[] {
 // Cache NVM paths at module load
 const cachedNvmPaths = detectNvmNodePaths();
 
-// Fix PATH for packaged apps - node/npm binaries aren't in PATH when launched from Finder
+// Fix PATH for packaged apps — platform-aware
 if (app.isPackaged) {
-  const fixedPath = [
-    '/opt/homebrew/bin',        // Apple Silicon Homebrew
-    '/usr/local/bin',           // Intel Homebrew / standard location
-    '/usr/bin',
-    '/bin',
-    '/usr/sbin',
-    '/sbin',
-    ...cachedNvmPaths,          // nvm (dynamically detected)
-    process.env.HOME + '/.local/bin',
-  ].join(':');
-  process.env.PATH = fixedPath + ':' + (process.env.PATH || '');
+  if (IS_WINDOWS) {
+    // Windows: ensure common tool directories are on PATH
+    const winPaths = [
+      path.join(HOME_DIR, 'AppData', 'Roaming', 'npm'),
+      path.join(HOME_DIR, '.local', 'bin'),
+      'C:\\Program Files\\nodejs',
+      'C:\\Program Files\\Git\\cmd',
+    ].join(';');
+    process.env.PATH = winPaths + ';' + (process.env.PATH || '');
+  } else {
+    // macOS / Linux: node/npm binaries aren't in PATH when launched from Finder
+    const fixedPath = [
+      '/opt/homebrew/bin',        // Apple Silicon Homebrew
+      '/usr/local/bin',           // Intel Homebrew / standard location
+      '/usr/bin',
+      '/bin',
+      '/usr/sbin',
+      '/sbin',
+      ...cachedNvmPaths,          // nvm (dynamically detected)
+      HOME_DIR + '/.local/bin',
+    ].join(':');
+    process.env.PATH = fixedPath + ':' + (process.env.PATH || '');
+  }
   console.log('[Main] Fixed PATH for packaged app');
 }
 
@@ -335,12 +351,14 @@ async function createTray(): Promise<void> {
     if (!icon1x.isEmpty() && !icon2x.isEmpty()) {
       // Create a multi-resolution image
       icon = nativeImage.createEmpty();
-      icon.addRepresentation({ scaleFactor: 1, width: 22, height: 22, buffer: icon1x.resize({ width: 22, height: 22 }).toPNG() });
-      icon.addRepresentation({ scaleFactor: 2, width: 44, height: 44, buffer: icon2x.resize({ width: 44, height: 44 }).toPNG() });
-      icon.setTemplateImage(true); // For macOS menu bar
+      const traySize = IS_WINDOWS ? 16 : 22;
+      const traySize2x = IS_WINDOWS ? 32 : 44;
+      icon.addRepresentation({ scaleFactor: 1, width: traySize, height: traySize, buffer: icon1x.resize({ width: traySize, height: traySize }).toPNG() });
+      icon.addRepresentation({ scaleFactor: 2, width: traySize2x, height: traySize2x, buffer: icon2x.resize({ width: traySize2x, height: traySize2x }).toPNG() });
+      if (IS_MACOS) icon.setTemplateImage(true); // macOS menu bar only
     } else if (!icon1x.isEmpty()) {
-      icon = icon1x.resize({ width: 22, height: 22 });
-      icon.setTemplateImage(true);
+      icon = icon1x.resize({ width: IS_WINDOWS ? 16 : 22, height: IS_WINDOWS ? 16 : 22 });
+      if (IS_MACOS) icon.setTemplateImage(true);
     } else {
       icon = createDefaultIcon();
     }
@@ -1407,14 +1425,14 @@ function setupIPC(): void {
     return testCdpConnection(cdpUrl || 'http://localhost:9222');
   });
 
-  // Shell commands
+  // Shell commands — platform-aware shell selection
   ipcMain.handle('shell:runCommand', async (_, command: string) => {
     const execAsync = promisify(exec);
+    const shellOpts: Record<string, unknown> = IS_WINDOWS
+      ? { shell: 'powershell.exe', env: process.env }
+      : { shell: '/bin/bash', env: { ...process.env, PATH: `${process.env.PATH}:/usr/local/bin:/opt/homebrew/bin:${HOME_DIR}/.local/bin` } };
     try {
-      const { stdout } = await execAsync(command, {
-        shell: '/bin/bash',
-        env: { ...process.env, PATH: `${process.env.PATH}:/usr/local/bin:/opt/homebrew/bin:${process.env.HOME}/.local/bin` },
-      });
+      const { stdout } = await execAsync(command, shellOpts);
       return stdout;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
@@ -1749,8 +1767,8 @@ app.whenReady().then(async () => {
       console.log('[Main] Auto-updater initialized');
     }
 
-    // Register global shortcut (Option+Z on macOS, Alt+Z on Windows/Linux)
-    const shortcut = process.platform === 'darwin' ? 'Alt+Z' : 'Alt+Z';
+    // Register global shortcut (Alt+Z on all platforms — maps to Option+Z on macOS)
+    const shortcut = 'Alt+Z';
     const registered = globalShortcut.register(shortcut, () => {
       openChatWindow();
     });

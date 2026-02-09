@@ -1,6 +1,6 @@
 {
   "name": "pocket-agent",
-  "version": "2.1.12",
+  "version": "2.2.0",
   "description": "Desktop AI agent with persistent memory powered by Claude Agent SDK",
   "main": "dist/main/index.js",
   "scripts": {
@@ -10,7 +10,7 @@
     "watch": "tsc -w",
     "preelectron": "node scripts/check-native.js",
     "electron": "electron .",
-    "clean": "rm -rf dist",
+    "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\"",
     "rebuild": "npm run clean && npm run build",
     "rebuild:native": "npx electron-rebuild -f -w better-sqlite3",
     "postinstall": "npx electron-rebuild -f -w better-sqlite3",
@@ -24,7 +24,9 @@
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
     "dist": "npm run build && electron-builder --mac",
-    "dist:local": "npm run build && electron-builder --mac --config.mac.identity=null"
+    "dist:local": "npm run build && electron-builder --mac --config.mac.identity=null",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:win:local": "npm run build && electron-builder --win --config.win.certificateFile=null"
   },
   "build": {
     "appId": "com.unstablemind.pocket-agent",
@@ -62,6 +64,35 @@
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "notarize": true
+    },
+    "win": {
+      "artifactName": "Pocket-Agent-${version}-${arch}-win.${ext}",
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Pocket-Agent-${version}-${arch}-setup.${ext}",
+      "shortcutName": "Pocket Agent",
+      "uninstallDisplayName": "Pocket Agent"
     },
     "dmg": {
       "artifactName": "Pocket-Agent-${version}-${arch}.${ext}",
