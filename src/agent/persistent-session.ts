@@ -21,6 +21,7 @@ export interface TurnResult {
   wasCompacted: boolean;
   contextTokens?: number;
   contextWindow?: number;
+  errors?: string[];
 }
 
 // Typed references to SDK objects (loaded dynamically)
@@ -127,6 +128,7 @@ export class PersistentSDKSession extends EventEmitter {
   // Context window tracking (from SDK result)
   private contextTokens?: number;
   private contextWindow?: number;
+  private turnErrors?: string[];
 
   constructor(
     sessionId: string,
@@ -321,6 +323,13 @@ export class PersistentSDKSession extends EventEmitter {
 
           // Turn boundary: SDK emits 'result' when a turn is complete
           if (msg.type === 'result') {
+            // Capture errors from result
+            const errResult = message as { errors?: string[]; subtype?: string };
+            if (errResult.errors && errResult.errors.length > 0) {
+              this.turnErrors = errResult.errors;
+              console.warn(`[PersistentSession:${this.sessionId}] Result errors:`, errResult.errors);
+            }
+
             // Extract context window usage from SDK result
             const resultMsg = message as {
               usage?: { input_tokens?: number; cache_read_input_tokens?: number };
@@ -364,6 +373,7 @@ export class PersistentSDKSession extends EventEmitter {
           wasCompacted: this.wasCompacted,
           contextTokens: this.contextTokens,
           contextWindow: this.contextWindow,
+          errors: this.turnErrors,
         });
         this.turnResolve = null;
         this.turnReject = null;
@@ -407,10 +417,12 @@ export class PersistentSDKSession extends EventEmitter {
         wasCompacted: this.wasCompacted,
         contextTokens: this.contextTokens,
         contextWindow: this.contextWindow,
+        errors: this.turnErrors,
       };
       this.turnResolve(result);
       this.turnResolve = null;
       this.turnReject = null;
+      this.turnErrors = undefined;
     }
   }
 }

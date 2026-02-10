@@ -1011,6 +1011,18 @@ function setupIPC(): void {
   // Chat messages with status streaming
   ipcMain.handle('agent:send', async (event, message: string, sessionId?: string) => {
     console.log(`[IPC] agent:send received sessionId: ${sessionId}`);
+
+    // Auto-initialize agent if not yet initialized (handles race conditions and late key setup)
+    if (!AgentManager.isInitialized()) {
+      if (SettingsManager.hasRequiredKeys()) {
+        console.log('[IPC] Agent not initialized, initializing now...');
+        await initializeAgent();
+      }
+      if (!AgentManager.isInitialized()) {
+        return { success: false, error: 'No API keys configured. Please add your key in Settings > LLM.' };
+      }
+    }
+
     // Set up status listener to forward to renderer
     const effectiveSessionId = sessionId || 'default';
     const statusHandler = (status: { type: string; sessionId?: string; toolName?: string; toolInput?: string; message?: string }) => {

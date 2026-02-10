@@ -59,8 +59,6 @@ function configureProviderEnvironment(model: string): void {
   // Clear all provider-related env vars first
   delete process.env.ANTHROPIC_BASE_URL;
   delete process.env.ANTHROPIC_AUTH_TOKEN;
-  // Note: ANTHROPIC_API_KEY may be set by OAuth or settings, don't clear if using Anthropic
-
   if (provider === 'moonshot') {
     // Moonshot requires base URL and uses Bearer token auth
     const moonshotKey = SettingsManager.get('moonshot.apiKey');
@@ -70,8 +68,10 @@ function configureProviderEnvironment(model: string): void {
 
     process.env.ANTHROPIC_BASE_URL = config.baseUrl;
     process.env.ANTHROPIC_AUTH_TOKEN = moonshotKey;
-    // Clear ANTHROPIC_API_KEY so SDK uses AUTH_TOKEN instead
-    delete process.env.ANTHROPIC_API_KEY;
+    // Set ANTHROPIC_API_KEY so the SDK subprocess passes its auth check.
+    // The request sends both x-api-key and Authorization: Bearer headers;
+    // OpenAI-compatible providers use Bearer and ignore x-api-key.
+    process.env.ANTHROPIC_API_KEY = moonshotKey;
 
     console.log('[AgentManager] Provider configured: Moonshot (Kimi)');
   } else if (provider === 'glm') {
@@ -83,14 +83,22 @@ function configureProviderEnvironment(model: string): void {
 
     process.env.ANTHROPIC_BASE_URL = config.baseUrl;
     process.env.ANTHROPIC_AUTH_TOKEN = glmKey;
-    // Clear ANTHROPIC_API_KEY so SDK uses AUTH_TOKEN instead
-    delete process.env.ANTHROPIC_API_KEY;
+    // Set ANTHROPIC_API_KEY so the SDK subprocess passes its auth check.
+    // The request sends both x-api-key and Authorization: Bearer headers;
+    // OpenAI-compatible providers use Bearer and ignore x-api-key.
+    process.env.ANTHROPIC_API_KEY = glmKey;
 
     console.log('[AgentManager] Provider configured: Z.AI GLM');
   } else {
-    // Anthropic provider - ensure no base URL override
+    // Anthropic provider - restore correct API key and clear non-Anthropic vars
     delete process.env.ANTHROPIC_BASE_URL;
     delete process.env.ANTHROPIC_AUTH_TOKEN;
+
+    // Restore Anthropic API key (may have been overwritten by non-Anthropic provider key)
+    const anthropicKey = SettingsManager.get('anthropic.apiKey');
+    if (anthropicKey) {
+      process.env.ANTHROPIC_API_KEY = anthropicKey;
+    }
 
     console.log('[AgentManager] Provider configured: Anthropic');
   }
@@ -614,6 +622,69 @@ class AgentManagerClass extends EventEmitter {
             throw startError;
           }
         }
+      }
+
+      // === Check for stale session errors and retry without resume ===
+      if (turnResult.errors?.some(e => e.includes('No conversation found with session ID'))) {
+        const staleId = this.sdkSessionIdBySession.get(sessionId);
+        console.warn(`[AgentManager] Stale SDK session detected (${staleId}), retrying without resume...`);
+
+        // Clear the stale session reference
+        this.sdkSessionIdBySession.delete(sessionId);
+        memory.clearSdkSessionId(sessionId);
+
+        // Close the dead session
+        const deadSession = this.persistentSessions.get(sessionId);
+        if (deadSession) {
+          deadSession.close();
+          this.persistentSessions.delete(sessionId);
+        }
+
+        // Retry with a fresh session (no resume)
+        const queryFn = await loadSDK();
+        if (!queryFn) throw new Error('Failed to load SDK');
+
+        const freshOptions = await this.buildPersistentOptions(memory, sessionId, undefined);
+        const freshSession = new PersistentSDKSession(
+          sessionId,
+          (msg) => this.processStatusFromMessage(msg),
+          (msg, current) => this.extractFromMessage(msg, current)
+        );
+
+        freshSession.on('sdkSessionId', (capturedId: string) => {
+          this.sdkSessionIdBySession.set(sessionId, capturedId);
+          memory.setSdkSessionId(sessionId, capturedId);
+        });
+
+        freshSession.on('closed', () => {
+          console.log(`[AgentManager] Persistent session closed: ${sessionId}`);
+        });
+
+        this.persistentSessions.set(sessionId, freshSession);
+        this.emitStatus({ type: 'thinking', sessionId, message: 'reconnecting...' });
+
+        // Build content blocks for images (if any)
+        const retryContentBlocks = images && images.length > 0
+          ? [
+              { type: 'text' as const, text: userMessage },
+              ...images.map(img => ({
+                type: 'image' as const,
+                source: {
+                  type: 'base64' as const,
+                  media_type: img.mediaType,
+                  data: img.data,
+                },
+              })),
+            ]
+          : undefined;
+
+        turnResult = await freshSession.start(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          queryFn as any,
+          userMessage,
+          freshOptions as unknown as Record<string, unknown>,
+          retryContentBlocks
+        );
       }
 
       // === Process turn result (same for both paths) ===
