@@ -1248,15 +1248,16 @@ export class MemoryManager {
       const queryEmbedding = await embed(query);
 
       // Get message embeddings (excluding recent messages)
-      const excludeList = excludeIds.length > 0 ? excludeIds.join(',') : '0';
+      const placeholders = excludeIds.length > 0 ? excludeIds.map(() => '?').join(',') : '0';
+      const params = excludeIds.length > 0 ? [sessionId, ...excludeIds] : [sessionId];
       const embeddings = this.db.prepare(`
         SELECT me.message_id, me.embedding, m.role, m.content, m.timestamp
         FROM message_embeddings me
         JOIN messages m ON me.message_id = m.id
-        WHERE m.session_id = ? AND m.id NOT IN (${excludeList})
+        WHERE m.session_id = ? AND m.id NOT IN (${placeholders})
         ORDER BY m.id DESC
         LIMIT 200
-      `).all(sessionId) as Array<{
+      `).all(...params) as Array<{
         message_id: number;
         embedding: Buffer;
         role: string;
