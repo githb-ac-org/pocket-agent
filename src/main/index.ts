@@ -1553,6 +1553,13 @@ function setupIPC(): void {
     }
   });
 
+  // Extract text from Office documents (docx, pptx, xlsx, odt, odp, ods, rtf)
+  ipcMain.handle('attachment:extract-text', async (_, filePath: string) => {
+    const { parseOffice } = await import('officeparser');
+    const ast = await parseOffice(filePath);
+    return ast.toText();
+  });
+
 }
 
 // ============ Agent Lifecycle ============

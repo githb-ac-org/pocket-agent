@@ -2165,18 +2165,20 @@
     }
 
     .attachment-icon {
-      width: 24px;
+      min-width: 28px;
       height: 24px;
+      padding: 0 4px;
       display: flex;
       align-items: center;
       justify-content: center;
       background: var(--bg-tertiary);
       border-radius: 4px;
-      font-size: 10px;
+      font-size: 9px;
       font-weight: 600;
       color: var(--text-muted);
       text-transform: uppercase;
       flex-shrink: 0;
+      box-sizing: border-box;
     }
 
     .attachment-info {
@@ -2284,13 +2286,15 @@
     }
 
     .message-attachment {
-      display: flex;
+      display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 4px 8px;
+      padding: 6px 10px;
       background: rgba(0, 0, 0, 0.2);
-      border-radius: 6px;
-      font-size: 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.3;
+      margin: 2px 0;
     }
 
     .message-attachment img {
@@ -2708,10 +2712,22 @@
       // Images
       'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico',
       // Documents
-      'pdf'
+      'pdf', 'docx', 'doc', 'rtf', 'odt', 'pages',
+      'xlsx', 'xls', 'ods', 'numbers',
+      'pptx', 'ppt', 'odp', 'keynote',
+      'epub', 'zip', 'tar', 'gz'
     ]);
 
     const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico']);
+    const EXTRACTABLE_EXTENSIONS = new Set([
+      'docx', 'pptx', 'xlsx', 'odt', 'odp', 'ods', 'rtf'
+    ]);
+    const BINARY_EXTENSIONS = new Set([
+      'pdf', 'doc', 'pages',
+      'xls', 'numbers',
+      'ppt', 'keynote',
+      'epub', 'zip', 'tar', 'gz'
+    ]);
     const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
     // Initialize
@@ -3318,6 +3334,7 @@
                 isWorkflowMsg = true;
               }
             }
+
             const msgEl = addMessage(msg.role, displayContent, false, [], msg.timestamp);
             // Add workflow badge
             if (isWorkflowMsg) {
@@ -3662,13 +3679,27 @@
           } catch (err) {
             parts.push(`\n\n[Image: ${att.name}] (failed to save: ${err.message})`);
           }
-        } else if (att.ext === 'pdf' && att.dataUrl) {
-          // Save PDF to temp file and reference path
+        } else if (EXTRACTABLE_EXTENSIONS.has(att.ext) && att.dataUrl) {
+          // Save Office document, extract text, and include inline
           try {
             const filePath = await window.pocketAgent.saveAttachment(att.name, att.dataUrl);
-            parts.push(`\n\n[Attached PDF: ${att.name}]\nFile saved at: ${filePath}\nUse the Read tool to view this PDF.`);
+            try {
+              const text = await window.pocketAgent.extractText(filePath);
+              const content = text.length > 50000 ? text.slice(0, 50000) + '\n... (truncated)' : text;
+              parts.push(`\n\n[Attached document: ${att.name}]\nFile saved at: ${filePath}\n\n\`\`\`\n${content}\n\`\`\``);
+            } catch {
+              parts.push(`\n\n[Attached document: ${att.name}]\nFile saved at: ${filePath}\nUse the Read tool to view this document.`);
+            }
           } catch (err) {
-            parts.push(`\n\n[PDF: ${att.name}] (failed to save: ${err.message})`);
+            parts.push(`\n\n[Document: ${att.name}] (failed to save: ${err.message})`);
+          }
+        } else if (BINARY_EXTENSIONS.has(att.ext) && att.dataUrl) {
+          // Save binary document to temp file and reference path
+          try {
+            const filePath = await window.pocketAgent.saveAttachment(att.name, att.dataUrl);
+            parts.push(`\n\n[Attached document: ${att.name}]\nFile saved at: ${filePath}\nUse the Read tool to view this document.`);
+          } catch (err) {
+            parts.push(`\n\n[Document: ${att.name}] (failed to save: ${err.message})`);
           }
         } else if (att.content) {
           // For text files, include content directly (truncate if very large)
@@ -3766,6 +3797,12 @@
             if (src) {
               window.pocketAgent.openImage(src);
             }
+            return;
+          }
+          // Open attached files from history
+          const attEl = e.target.closest('.message-attachment[data-path]');
+          if (attEl) {
+            window.pocketAgent.openPath(attEl.dataset.path);
           }
         });
       }
@@ -3887,6 +3924,31 @@
     }
 
     function formatContent(text) {
+      // Pre-process: convert attachment markers into styled chips before markdown
+      // Handles: [Attached document: name], [Attached PDF: name], [Attached image: name], etc.
+      // Also strips trailing extracted content code block if present
+      text = text.replace(
+        /\[Attached [^\]]*?: ([^\]]+)\]\nFile saved at: ([^\n]+)\n(?:Use the Read tool to view this [^\n]*\.)?(?:\n*```[\s\S]*?```)?/g,
+        (_, name, filePath) => {
+          const ext = name.split('.').pop()?.toLowerCase() || '';
+          const safeExt = ext.replace(/[<>&"']/g, '');
+          const safeName = name.replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
+          const safePath = filePath.replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
+          return `\n<div class="message-attachment" data-path="${safePath}" style="cursor:pointer" title="${safePath}"><span class="attachment-icon">${safeExt}</span> ${safeName}</div>\n`;
+        }
+      );
+      // Handle legacy [File: name] format (old extracted documents stored without path)
+      // Also strips the code block that follows
+      text = text.replace(
+        /\[File: ([^\]]+\.(?:docx|pptx|xlsx|odt|odp|ods|rtf))\]\n(?:```[\s\S]*?```)?/gi,
+        (_, name) => {
+          const ext = name.split('.').pop()?.toLowerCase() || '';
+          const safeExt = ext.replace(/[<>&"']/g, '');
+          const safeName = name.replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
+          return `<div class="message-attachment"><span class="attachment-icon">${safeExt}</span> ${safeName}</div>\n`;
+        }
+      );
+
       // Use marked for full markdown rendering
       if (typeof marked !== 'undefined') {
         marked.setOptions({
@@ -4721,8 +4783,8 @@
             isImage: IMAGE_EXTENSIONS.has(ext),
           };
 
-          if (attachment.isImage || ext === 'pdf') {
-            // Store as data URL for images and PDFs
+          if (attachment.isImage || BINARY_EXTENSIONS.has(ext) || EXTRACTABLE_EXTENSIONS.has(ext)) {
+            // Store as data URL for images and binary/extractable documents
             attachment.dataUrl = e.target.result;
             attachment.content = null;
           } else {
@@ -4736,7 +4798,7 @@
 
         reader.onerror = () => reject(reader.error);
 
-        if (IMAGE_EXTENSIONS.has(ext) || ext === 'pdf') {
+        if (IMAGE_EXTENSIONS.has(ext) || BINARY_EXTENSIONS.has(ext) || EXTRACTABLE_EXTENSIONS.has(ext)) {
           reader.readAsDataURL(file);
         } else {
           reader.readAsText(file);

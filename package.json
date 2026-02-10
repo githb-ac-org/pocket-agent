@@ -1,6 +1,6 @@
 {
   "name": "pocket-agent",
-  "version": "2.2.4",
+  "version": "2.2.6",
   "description": "Desktop AI agent with persistent memory powered by Claude Agent SDK",
   "main": "dist/main/index.js",
   "scripts": {
@@ -145,6 +145,7 @@
     "electron-updater": "^6.7.3",
     "grammy": "^1.31.0",
     "node-cron": "^4.2.1",
+    "officeparser": "^6.0.4",
     "openai": "^6.18.0",
     "pdf-parse": "^2.4.5",
     "puppeteer-core": "^24.37.2"
