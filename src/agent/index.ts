@@ -5,6 +5,8 @@ import { loadIdentity } from '../config/identity';
 import { loadInstructions } from '../config/instructions';
 import { SettingsManager } from '../settings';
 import { EventEmitter } from 'events';
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { buildCanUseToolCallback, buildPreToolUseHook, setStatusEmitter } from './safety';
 import { PersistentSDKSession, TurnResult } from './persistent-session';
@@ -249,6 +251,12 @@ export interface AgentConfig {
   tools?: ToolsConfig;
 }
 
+export interface MediaAttachment {
+  type: 'image';
+  filePath: string;       // absolute path on disk
+  mimeType: string;       // e.g. 'image/png'
+}
+
 export interface ProcessResult {
   response: string;
   tokensUsed: number;
@@ -256,6 +264,7 @@ export interface ProcessResult {
   suggestedPrompt?: string;
   contextTokens?: number;
   contextWindow?: number;
+  media?: MediaAttachment[];
 }
 
 /**
@@ -278,6 +287,7 @@ class AgentManagerClass extends EventEmitter {
   private sdkSessionIdBySession: Map<string, string> = new Map();
   private persistentSessions: Map<string, PersistentSDKSession> = new Map();
   private contextUsageBySession: Map<string, { contextTokens: number; contextWindow: number }> = new Map();
+  private pendingMedia: MediaAttachment[] = [];
 
   private constructor() {
     super();
@@ -479,6 +489,7 @@ class AgentManagerClass extends EventEmitter {
 
     this.processingBySession.set(sessionId, true);
     this.lastSuggestedPromptBySession.set(sessionId, undefined);
+    this.pendingMedia = [];
 
     try {
       const existingSession = this.persistentSessions.get(sessionId);
@@ -779,6 +790,7 @@ class AgentManagerClass extends EventEmitter {
         suggestedPrompt: this.lastSuggestedPromptBySession.get(sessionId),
         contextTokens: contextUsage?.contextTokens,
         contextWindow: contextUsage?.contextWindow,
+        media: this.pendingMedia.length > 0 ? this.pendingMedia : undefined,
       };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
@@ -1269,6 +1281,11 @@ Set requires_auth=true for pages needing login.
 For CDP, user must start Chrome with: --remote-debugging-port=9222
 \`\`\`
 
+### Image Display
+When you take screenshots or generate images, the image will be automatically displayed
+in the chat (both desktop and Telegram). You can reference screenshots in your responses
+and the user will see them inline.
+
 ### Native Notifications
 You can send native desktop notifications:
 
@@ -1288,6 +1305,9 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
     if (msg.type === 'assistant') {
       const content = msg.message?.content;
       if (Array.isArray(content)) {
+        // Extract image blocks and save to disk
+        this.extractImageBlocks(content);
+
         const textBlocks = content
           .filter((block: unknown) => (block as { type?: string })?.type === 'text')
           .map((block: unknown) => (block as { text: string }).text);
@@ -1318,6 +1338,100 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
     }
 
     return current;
+  }
+
+  /**
+   * Extract image blocks from SDK assistant message content and save to disk.
+   * Images are accumulated in pendingMedia and included in the final ProcessResult.
+   */
+  private extractImageBlocks(content: unknown[]): void {
+    for (const block of content) {
+      const b = block as {
+        type?: string;
+        source?: { type?: string; media_type?: string; data?: string; url?: string };
+      };
+      if (b.type !== 'image' || !b.source) continue;
+
+      try {
+        const mediaDir = path.join(os.homedir(), 'Documents', 'Pocket-agent', 'media');
+        if (!fs.existsSync(mediaDir)) {
+          fs.mkdirSync(mediaDir, { recursive: true });
+        }
+
+        const mimeType = b.source.media_type || 'image/png';
+        const ext = mimeType.includes('jpeg') || mimeType.includes('jpg') ? '.jpg'
+          : mimeType.includes('gif') ? '.gif'
+          : mimeType.includes('webp') ? '.webp'
+          : '.png';
+
+        if (b.source.type === 'base64' && b.source.data) {
+          // Base64 image — save directly to disk
+          const filename = `img-${Date.now()}-${this.pendingMedia.length}${ext}`;
+          const filePath = path.join(mediaDir, filename);
+          fs.writeFileSync(filePath, Buffer.from(b.source.data, 'base64'));
+
+          this.pendingMedia.push({ type: 'image', filePath, mimeType });
+          console.log(`[AgentManager] Saved image: ${filePath}`);
+        } else if (b.source.type === 'url' && b.source.url) {
+          // URL image — download and save to disk
+          const filename = `img-${Date.now()}-${this.pendingMedia.length}${ext}`;
+          const filePath = path.join(mediaDir, filename);
+
+          // Fire-and-forget download; image will be available for Telegram sync
+          fetch(b.source.url)
+            .then(res => res.ok ? res.arrayBuffer() : Promise.reject(new Error(`HTTP ${res.status}`)))
+            .then(buf => {
+              fs.writeFileSync(filePath, Buffer.from(buf));
+              console.log(`[AgentManager] Downloaded image: ${filePath}`);
+            })
+            .catch(err => console.error('[AgentManager] Failed to download image:', err));
+
+          this.pendingMedia.push({ type: 'image', filePath, mimeType });
+        }
+      } catch (err) {
+        console.error('[AgentManager] Failed to save image block:', err);
+      }
+    }
+  }
+
+  /**
+   * Extract screenshot file paths from tool result blocks.
+   * The browser tool saves full-res screenshots and includes the path in its result JSON.
+   */
+  private extractScreenshotPaths(block: unknown): void {
+    try {
+      const b = block as { content?: unknown };
+      if (!b.content) return;
+
+      if (Array.isArray(b.content)) {
+        // Extract image blocks from tool result content (e.g. computer_use screenshots)
+        this.extractImageBlocks(b.content);
+
+        // Also check text blocks for file paths
+        for (const part of b.content) {
+          const p = part as { type?: string; text?: string };
+          if (p.type === 'text' && p.text) {
+            const match = p.text.match(/saved to (\/[^\s"]+\/screenshot-\d+\.png)/);
+            if (match && fs.existsSync(match[1])) {
+              if (!this.pendingMedia.some(m => m.filePath === match[1])) {
+                this.pendingMedia.push({ type: 'image', filePath: match[1], mimeType: 'image/png' });
+                console.log(`[AgentManager] Found screenshot in tool result: ${match[1]}`);
+              }
+            }
+          }
+        }
+      } else if (typeof b.content === 'string') {
+        const match = b.content.match(/saved to (\/[^\s"]+\/screenshot-\d+\.png)/);
+        if (match && fs.existsSync(match[1])) {
+          if (!this.pendingMedia.some(m => m.filePath === match[1])) {
+            this.pendingMedia.push({ type: 'image', filePath: match[1], mimeType: 'image/png' });
+            console.log(`[AgentManager] Found screenshot in tool result: ${match[1]}`);
+          }
+        }
+      }
+    } catch {
+      // Ignore parsing errors
+    }
   }
 
   /**
@@ -1535,6 +1649,9 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
       if (Array.isArray(content)) {
         for (const block of content) {
           if (block?.type === 'tool_result') {
+            // Extract screenshot paths and images from tool results
+            this.extractScreenshotPaths(block);
+
             // Check if any subagents completed
             if (activeSubagents.size > 0) {
               // Remove one subagent (we don't have exact ID matching, so remove oldest)

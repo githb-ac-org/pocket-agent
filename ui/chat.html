@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:;">
   <title>Pocket Agent</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2298,6 +2298,33 @@
       max-height: 150px;
       border-radius: 6px;
     }
+
+    /* Response media images (from agent screenshots/tools) */
+    .message-media {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .message-media img {
+      max-width: 100%;
+      max-height: 400px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .message-media img:hover {
+      opacity: 0.9;
+    }
+
+    .message img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 8px;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -3197,8 +3224,8 @@
       // Add Telegram indicator + user message
       addTelegramMessage('user', data.userMessage, data.hasAttachment, data.attachmentType);
 
-      // Add the agent's response
-      addMessage('assistant', data.response);
+      // Add the agent's response (with media if present)
+      addMessage('assistant', data.response, true, [], null, true, data.media);
 
       // Show compaction notice if conversation was compacted
       if (data.wasCompacted) {
@@ -3543,7 +3570,7 @@
         // Only update visible UI if still on same session
         if (currentSessionId === sessionId) {
           if (result.success) {
-            addMessage('assistant', result.response);
+            addMessage('assistant', result.response, true, [], null, true, result.media);
 
             // Show compaction notice if conversation was compacted
             if (result.wasCompacted) {
@@ -3684,7 +3711,7 @@
       }
     }
 
-    function addMessage(role, content, animate = true, attachments = [], timestamp = null, showTimestamp = true) {
+    function addMessage(role, content, animate = true, attachments = [], timestamp = null, showTimestamp = true, media = null) {
       const div = document.createElement('div');
       div.className = `message ${role}`;
       if (!animate) div.style.animation = 'none';
@@ -3721,8 +3748,9 @@
         while (contentDiv.firstChild) {
           div.appendChild(contentDiv.firstChild);
         }
-        // Intercept link clicks to open in external browser
+        // Intercept link and image clicks
         div.addEventListener('click', (e) => {
+          // Open links in external browser
           const link = e.target.closest('a[href]');
           if (link) {
             e.preventDefault();
@@ -3730,8 +3758,54 @@
             if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
               window.pocketAgent.openExternal(href);
             }
+            return;
+          }
+          // Open markdown-rendered images in default image viewer
+          if (e.target.tagName === 'IMG' && !e.target.closest('.message-media')) {
+            const src = e.target.getAttribute('src');
+            if (src) {
+              window.pocketAgent.openImage(src);
+            }
           }
         });
+      }
+
+      // Add response media images (from agent screenshots/tools)
+      if (media && media.length > 0) {
+        const mediaDiv = document.createElement('div');
+        mediaDiv.className = 'message-media';
+
+        for (const item of media) {
+          if (item.type === 'image') {
+            const img = document.createElement('img');
+            img.alt = 'Agent image';
+            img.loading = 'lazy';
+
+            // If it's already a data URI, use directly; otherwise load via IPC
+            if (item.dataUri) {
+              img.src = item.dataUri;
+            } else if (item.filePath) {
+              // Load image via IPC to get data URI
+              window.pocketAgent.readMedia(item.filePath).then(dataUri => {
+                if (dataUri) {
+                  img.src = dataUri;
+                }
+              });
+            }
+
+            // Click to open in default image viewer
+            if (item.filePath) {
+              img.title = 'Click to open';
+              img.addEventListener('click', () => {
+                window.pocketAgent.openImage(item.filePath);
+              });
+            }
+
+            mediaDiv.appendChild(img);
+          }
+        }
+
+        div.appendChild(mediaDiv);
       }
 
       // Add footer with copy button and timestamp

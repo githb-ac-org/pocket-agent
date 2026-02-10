@@ -201,6 +201,15 @@ export async function handleDocumentMessage(
     // Send response
     await sendResponse(ctx, result.response);
 
+    // Send media photos if present
+    if (result.media && result.media.length > 0 && ctx.chat?.id) {
+      const { getTelegramBot } = await import('../index');
+      const bot = getTelegramBot();
+      if (bot) {
+        await bot.sendPhotos(ctx.chat.id, result.media);
+      }
+    }
+
     // Notify callback for cross-channel sync
     if (onMessageCallback) {
       const memory = AgentManager.getMemory();
@@ -218,6 +227,7 @@ export async function handleDocumentMessage(
         hasAttachment: true,
         attachmentType: 'document',
         wasCompacted: result.wasCompacted,
+        media: result.media,
       });
     }
 

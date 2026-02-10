@@ -53,6 +53,15 @@ export async function handleTextMessage(
     // Send response, splitting if necessary
     await sendResponse(ctx, result.response);
 
+    // Send media photos if present
+    if (result.media && result.media.length > 0 && ctx.chat?.id) {
+      const { getTelegramBot } = await import('../index');
+      const bot = getTelegramBot();
+      if (bot) {
+        await bot.sendPhotos(ctx.chat.id, result.media);
+      }
+    }
+
     // Notify callback for cross-channel sync (to desktop)
     if (onMessageCallback) {
       const memory = AgentManager.getMemory();
@@ -65,6 +74,7 @@ export async function handleTextMessage(
         chatId,
         sessionId,
         wasCompacted: result.wasCompacted,
+        media: result.media,
       });
     }
 

@@ -1047,7 +1047,7 @@ function setupIPC(): void {
       console.log('[Main] Checking telegram sync - bot exists:', !!telegramBot, 'session:', effectiveSessionId, 'linked chat:', linkedChatId);
       if (telegramBot && linkedChatId) {
         console.log('[Main] Syncing desktop message to Telegram chat:', linkedChatId);
-        telegramBot.syncToChat(message, result.response, linkedChatId).catch((err) => {
+        telegramBot.syncToChat(message, result.response, linkedChatId, result.media).catch((err) => {
           console.error('[Main] Failed to sync desktop message to Telegram:', err);
         });
       }
@@ -1058,6 +1058,7 @@ function setupIPC(): void {
         tokensUsed: result.tokensUsed,
         suggestedPrompt: result.suggestedPrompt,
         wasCompacted: result.wasCompacted,
+        media: result.media,
       };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
@@ -1182,6 +1183,40 @@ function setupIPC(): void {
 
   ipcMain.handle('app:openExternal', async (_, url: string) => {
     await shell.openExternal(url);
+  });
+
+  ipcMain.handle('app:openPath', async (_, filePath: string) => {
+    await shell.openPath(filePath);
+  });
+
+  // Open an image in the default viewer — handles both local paths and URLs
+  ipcMain.handle('app:openImage', async (_, src: string) => {
+    try {
+      if (src.startsWith('http://') || src.startsWith('https://')) {
+        // Remote URL — download to media dir first
+        const mediaDir = path.join(app.getPath('documents'), 'Pocket-agent', 'media');
+        if (!fs.existsSync(mediaDir)) fs.mkdirSync(mediaDir, { recursive: true });
+
+        const res = await fetch(src);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const buf = Buffer.from(await res.arrayBuffer());
+
+        const contentType = res.headers.get('content-type') || '';
+        const ext = contentType.includes('jpeg') || contentType.includes('jpg') ? '.jpg'
+          : contentType.includes('gif') ? '.gif'
+          : contentType.includes('webp') ? '.webp'
+          : '.png';
+
+        const filePath = path.join(mediaDir, `img-${Date.now()}${ext}`);
+        fs.writeFileSync(filePath, buf);
+        await shell.openPath(filePath);
+      } else {
+        // Local file path
+        await shell.openPath(src);
+      }
+    } catch (err) {
+      console.error('[Main] Failed to open image:', err);
+    }
   });
 
   // Customize - Identity
@@ -1458,6 +1493,34 @@ function setupIPC(): void {
     return loadWorkflowCommands();
   });
 
+  // Read media file as data URI (for displaying agent-generated images in chat)
+  ipcMain.handle('agent:readMedia', async (_, filePath: string) => {
+    try {
+      // Security: only allow reading from the Pocket-agent media directory
+      const mediaDir = path.join(app.getPath('documents'), 'Pocket-agent', 'media');
+      const resolvedPath = path.resolve(filePath);
+      if (!resolvedPath.startsWith(mediaDir)) {
+        throw new Error('Access denied: path outside media directory');
+      }
+
+      const buffer = fs.readFileSync(resolvedPath);
+      const ext = path.extname(resolvedPath).toLowerCase();
+      const mimeMap: Record<string, string> = {
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif',
+        '.webp': 'image/webp',
+      };
+      const mimeType = mimeMap[ext] || 'image/png';
+      return `data:${mimeType};base64,${buffer.toString('base64')}`;
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      console.error('[Main] Failed to read media file:', errorMsg);
+      return null;
+    }
+  });
+
   // File attachments
   ipcMain.handle('attachment:save', async (_, name: string, dataUrl: string) => {
     try {
@@ -1624,6 +1687,7 @@ async function initializeAgent(): Promise<void> {
               hasAttachment: data.hasAttachment,
               attachmentType: data.attachmentType,
               wasCompacted: data.wasCompacted,
+              media: data.media,
             });
           }
           // Messages are already saved to SQLite, so they'll appear when user opens chat
