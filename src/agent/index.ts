@@ -187,9 +187,12 @@ function formatAgentError(error: string): string {
     return 'Network error — cannot reach the API. Check your internet connection. [network_error]';
   }
 
-  // Session errors — likely app bug
+  // Session errors — include the underlying reason so the developer can debug
   if (e.includes('session error') || e.includes('session closed') || e.includes('session not alive')) {
-    return reportable('Agent session crashed. Send another message to start a new session. [session_error]');
+    // Extract the underlying error from "Session error: <reason>"
+    const reasonMatch = error.match(/Session error:\s*(.+)/i);
+    const reason = reasonMatch ? reasonMatch[1] : error;
+    return reportable(`Agent session crashed: ${reason} [session_error]`);
   }
 
   // Timeout — could indicate app issue
@@ -735,10 +738,14 @@ class AgentManagerClass extends EventEmitter {
         }
       }
 
-      // === Check for stale session errors and retry without resume ===
-      if (turnResult.errors?.some(e => e.includes('No conversation found with session ID'))) {
+      // === Check for stale/crashed session errors and retry without resume ===
+      const isStaleSession = turnResult.errors?.some(e => e.includes('No conversation found with session ID'));
+      const isSessionCrash = !turnResult.response && turnResult.errors?.some(e =>
+        e.includes('Session error') || e.includes('session closed'));
+      if (isStaleSession || isSessionCrash) {
         const staleId = this.sdkSessionIdBySession.get(sessionId);
-        console.warn(`[AgentManager] Stale SDK session detected (${staleId}), retrying without resume...`);
+        const reason = isStaleSession ? 'stale SDK session' : 'session crash';
+        console.warn(`[AgentManager] ${reason} detected (${staleId}), retrying without resume...`);
 
         // Clear the stale session reference
         this.sdkSessionIdBySession.delete(sessionId);
