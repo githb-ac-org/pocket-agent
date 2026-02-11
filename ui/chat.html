@@ -734,9 +734,41 @@
     }
 
     .message.error {
-      background: rgba(239, 68, 68, 0.1);
-      border: 1px solid rgba(239, 68, 68, 0.3);
+      background: rgba(239, 68, 68, 0.06);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      color: var(--text-primary);
+    }
+
+    .message.error .error-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
       color: var(--error);
+      margin-bottom: 4px;
+    }
+
+    .message.error .error-body {
+      color: var(--text-secondary);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .message.error .error-code {
+      display: inline;
+      font-size: 11px;
+      color: var(--text-muted);
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    }
+
+    .message.error .error-report {
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--text-muted);
+      font-style: italic;
     }
 
     /* Queued message state - greyed out until processing */
@@ -3335,7 +3367,9 @@
               }
             }
 
-            const msgEl = addMessage(msg.role, displayContent, false, [], msg.timestamp);
+            // Render error messages with error style instead of assistant style
+            const renderRole = (msg.role === 'assistant' && msg.metadata?.isError) ? 'error' : msg.role;
+            const msgEl = addMessage(renderRole, displayContent, false, [], msg.timestamp);
             // Add workflow badge
             if (isWorkflowMsg) {
               msgEl.classList.add('from-workflow');
@@ -3774,7 +3808,12 @@
       // Add text content
       if (content) {
         const contentDiv = document.createElement('div');
-        contentDiv.innerHTML = formatContent(content);
+        // Format error messages with structured layout
+        if (role === 'error') {
+          contentDiv.innerHTML = formatErrorContent(content);
+        } else {
+          contentDiv.innerHTML = formatContent(content);
+        }
         // Append children directly to avoid nesting issues
         while (contentDiv.firstChild) {
           div.appendChild(contentDiv.firstChild);
@@ -3921,6 +3960,29 @@
       });
 
       return `${dateStr}, ${timeStr}`;
+    }
+
+    function formatErrorContent(text) {
+      const escaped = escapeHtml(text);
+      // Separate report hint if present
+      const reportHint = 'If this keeps happening, send this error to the developer.';
+      const hasReportHint = escaped.includes(reportHint);
+      const mainText = hasReportHint ? escaped.split(reportHint)[0].trim() : escaped;
+
+      // Extract error code if present: [error_code]
+      const codeMatch = mainText.match(/\[([a-z_]+)\]/);
+      const errorCode = codeMatch ? codeMatch[1] : null;
+      const body = codeMatch ? mainText.replace(/\s*\[[a-z_]+\]/, '').trim() : mainText;
+
+      let html = '<div class="error-label">error</div>';
+      html += `<div class="error-body">${body}</div>`;
+      if (errorCode) {
+        html += `<div class="error-code">${errorCode}</div>`;
+      }
+      if (hasReportHint) {
+        html += `<div class="error-report">${reportHint}</div>`;
+      }
+      return html;
     }
 
     function formatContent(text) {

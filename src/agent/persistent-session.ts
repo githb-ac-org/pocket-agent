@@ -316,6 +316,18 @@ export class PersistentSDKSession extends EventEmitter {
             console.log(`[PersistentSession:${this.sessionId}] Captured SDK session ID: ${this.sdkSessionId}`);
           }
 
+          // Capture SDK assistant-level errors (auth_failed, billing, rate_limit, etc.)
+          if (msg.type === 'assistant') {
+            const assistantMsg = message as { error?: string };
+            if (assistantMsg.error) {
+              if (!this.turnErrors) {
+                this.turnErrors = [];
+              }
+              this.turnErrors.push(assistantMsg.error);
+              console.warn(`[PersistentSession:${this.sessionId}] Assistant error: ${assistantMsg.error}`);
+            }
+          }
+
           // Detect compaction
           if (msg.type === 'system' && msg.subtype === 'compact_boundary') {
             this.wasCompacted = true;
@@ -356,8 +368,13 @@ export class PersistentSDKSession extends EventEmitter {
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`[PersistentSession:${this.sessionId}] Output loop error:`, errMsg);
+      // Surface the crash error so the "Done." fallback can report it
+      if (!this.turnErrors) {
+        this.turnErrors = [];
+      }
+      this.turnErrors.push(`Session error: ${errMsg}`);
     } finally {
-      console.log(`[PersistentSession:${this.sessionId}] Output loop ended`);
+      console.log(`[PersistentSession:${this.sessionId}] Output loop ended (had response: ${this.turnResponse.length > 0}, errors: ${this.turnErrors?.length ?? 0})`);
       this.alive = false;
 
       if (this.turnTimeout) {
@@ -396,6 +413,10 @@ export class PersistentSDKSession extends EventEmitter {
       // Safety net: max timeout for the turn
       this.turnTimeout = setTimeout(() => {
         console.error(`[PersistentSession:${this.sessionId}] Turn timed out after ${TURN_MAX_TIMEOUT}ms`);
+        if (!this.turnErrors) {
+          this.turnErrors = [];
+        }
+        this.turnErrors.push(`Turn timed out after ${TURN_MAX_TIMEOUT / 1000}s`);
         this.completeTurn();
       }, TURN_MAX_TIMEOUT);
     });

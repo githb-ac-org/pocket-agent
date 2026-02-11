@@ -54,7 +54,7 @@ function getProviderForModel(model: string): ProviderType {
  * Configure environment variables for the selected provider
  * This is called before each SDK query to ensure correct routing
  */
-function configureProviderEnvironment(model: string): void {
+async function configureProviderEnvironment(model: string): Promise<void> {
   const provider = getProviderForModel(model);
   const config = PROVIDER_CONFIGS[provider];
 
@@ -100,10 +100,110 @@ function configureProviderEnvironment(model: string): void {
     const anthropicKey = SettingsManager.get('anthropic.apiKey');
     if (anthropicKey) {
       process.env.ANTHROPIC_API_KEY = anthropicKey;
+    } else {
+      // No API key — check for OAuth token
+      const authMethod = SettingsManager.get('auth.method');
+      if (authMethod === 'oauth') {
+        // Refresh token if needed before using it
+        const { ClaudeOAuth } = await import('../auth/oauth');
+        const freshToken = await ClaudeOAuth.getAccessToken();
+        if (freshToken) {
+          process.env.ANTHROPIC_API_KEY = freshToken;
+          console.log('[AgentManager] Using OAuth token for Anthropic auth');
+        } else {
+          throw new Error('OAuth session expired. Please re-authenticate in Settings.');
+        }
+      } else {
+        throw new Error('No API key configured. Please add your key in Settings.');
+      }
     }
 
     console.log('[AgentManager] Provider configured: Anthropic');
   }
+}
+
+/**
+ * Map SDK/API error strings to human-readable messages.
+ * No "Error:" prefix — display layers add their own (red bubble in UI, "Error:" in Telegram).
+ * Covers Anthropic, Moonshot (Kimi), GLM (Z.AI), and common SDK errors.
+ *
+ * Errors that indicate potential app bugs (server, session, timeout, unknown)
+ * get a developer-report hint appended. User-side errors (auth, billing, rate limit,
+ * network, model config) do not.
+ */
+const REPORT_HINT = '\n\nIf this keeps happening, send this error to the developer.';
+
+function reportable(msg: string): string {
+  return msg + REPORT_HINT;
+}
+
+function formatAgentError(error: string): string {
+  const e = error.toLowerCase();
+
+  // Authentication errors (all providers)
+  if (e.includes('authentication_failed') || e.includes('invalid x-api-key') || e.includes('invalid api key')
+    || e.includes('unauthorized') || e.includes('invalid token') || e.includes('token expired')
+    || e.includes('auth') && e.includes('fail')) {
+    return 'Invalid API key. Please check your key in Settings. [authentication_failed]';
+  }
+
+  // Billing / quota errors (all providers)
+  if (e.includes('billing_error') || e.includes('insufficient') || e.includes('credit')
+    || e.includes('payment') || e.includes('quota') || e.includes('exceeded')
+    || e.includes('balance')) {
+    return 'Billing issue — your account may have run out of credits. Check your provider dashboard. [billing_error]';
+  }
+
+  // Rate limiting (all providers — Anthropic 429, Moonshot/GLM rate limits)
+  if (e.includes('rate_limit') || e.includes('too many requests') || e.includes('overloaded')
+    || e.includes('throttl') || e.includes('concurrency') || e.includes('capacity')) {
+    return 'Rate limited — too many requests. Wait a moment and try again. [rate_limit]';
+  }
+
+  // Model / request errors
+  if (e.includes('invalid_request') && !e.includes('key')) {
+    return `Invalid request — ${error} [invalid_request]`;
+  }
+  if (e.includes('max_output_tokens') || e.includes('max tokens') || e.includes('output limit')) {
+    return 'Response exceeded maximum token limit. Try a simpler request. [max_output_tokens]';
+  }
+  if (e.includes('context') && (e.includes('too long') || e.includes('exceed') || e.includes('limit'))) {
+    return 'Message too long for model context window. Try a shorter message or start a new session. [context_overflow]';
+  }
+  if (e.includes('model') && (e.includes('not found') || e.includes('not available') || e.includes('does not exist') || e.includes('not support'))) {
+    return `Model not available — ${error}. Check Settings > Model. [model_not_found]`;
+  }
+
+  // Server errors (all providers)
+  if (e.includes('server_error') || e.includes('internal server') || e.includes('bad gateway')
+    || e.includes('service unavailable') || e.includes('temporarily')) {
+    return reportable('API server error. The provider may be experiencing issues — try again shortly. [server_error]');
+  }
+
+  // Network errors — user-side, no report needed
+  if (e.includes('econnrefused') || e.includes('enotfound') || e.includes('etimedout')
+    || e.includes('econnreset') || e.includes('epipe') || e.includes('fetch failed')
+    || e.includes('network') || e.includes('dns') || e.includes('socket hang up')) {
+    return 'Network error — cannot reach the API. Check your internet connection. [network_error]';
+  }
+
+  // Session errors — likely app bug
+  if (e.includes('session error') || e.includes('session closed') || e.includes('session not alive')) {
+    return reportable('Agent session crashed. Send another message to start a new session. [session_error]');
+  }
+
+  // Timeout — could indicate app issue
+  if (e.includes('timed out') || e.includes('timeout')) {
+    return reportable('Request timed out. Try again or use a simpler prompt. [timeout]');
+  }
+
+  // Permission denied (SDK tool use)
+  if (e.includes('permission') && e.includes('denied')) {
+    return `Permission denied — ${error} [permission_denied]`;
+  }
+
+  // Fallback — unknown error, developer should know
+  return reportable(error);
 }
 
 // Status event types
@@ -713,23 +813,47 @@ class AgentManagerClass extends EventEmitter {
 
       this.emitStatus({ type: 'done', sessionId });
 
-      // If no text response, request a summary via the persistent session
+      // If no text response, try to recover or surface the actual problem
       if (!response) {
+        // Check if the SDK reported errors — throw so they route through the error display path
+        // (red bubble in UI, "Error:" prefix in Telegram)
+        if (turnResult.errors && turnResult.errors.length > 0) {
+          const errorSummary = turnResult.errors.join('; ');
+          console.error(`[AgentManager] Empty response with SDK errors: ${errorSummary}`);
+          throw new Error(formatAgentError(turnResult.errors[0]));
+        }
+
+        // No errors — agent likely did tool-only work, request a summary
         const currentSession = this.persistentSessions.get(sessionId);
         if (currentSession?.isAlive()) {
-          console.log('[AgentManager] No text response, requesting summary...');
+          console.log('[AgentManager] No text response (no errors), requesting summary...');
           this.emitStatus({ type: 'thinking', sessionId, message: 'summarizing...' });
 
           try {
             const summaryResult = await currentSession.send('Briefly summarize what you just did in 1-2 sentences.');
-            response = summaryResult.response || 'Done.';
-          } catch {
-            response = 'Done.';
+            if (summaryResult.response) {
+              response = summaryResult.response;
+            } else if (summaryResult.errors && summaryResult.errors.length > 0) {
+              console.error(`[AgentManager] Summary returned errors: ${summaryResult.errors.join('; ')}`);
+              throw new Error(formatAgentError(summaryResult.errors[0]));
+            } else {
+              console.warn('[AgentManager] Summary also returned empty — no errors, no text');
+              response = 'Task completed (no details available).';
+            }
+          } catch (summaryError) {
+            // Re-throw formatted errors (from above), format raw errors
+            if (summaryError instanceof Error && summaryError.message.includes('[')) {
+              throw summaryError;
+            }
+            const errMsg = summaryError instanceof Error ? summaryError.message : String(summaryError);
+            console.error(`[AgentManager] Summary request failed: ${errMsg}`);
+            throw new Error(formatAgentError(errMsg));
           }
 
           this.emitStatus({ type: 'done', sessionId });
         } else {
-          response = 'Done.';
+          console.warn('[AgentManager] Session not alive for summary — session may have crashed');
+          throw new Error(reportable('Agent session ended unexpectedly. Send another message to start a new session.'));
         }
       }
 
@@ -801,8 +925,9 @@ class AgentManagerClass extends EventEmitter {
       // Log full error object for debugging
       console.error('[AgentManager] Full error:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
 
-      // Only save user message if error is not user-initiated
+      // Save user message and error response so they persist across reloads
       memory.saveMessage('user', userMessage, sessionId);
+      memory.saveMessage('assistant', errorMsg, sessionId, { isError: true });
 
       throw error;
     } finally {
@@ -1026,7 +1151,7 @@ class AgentManagerClass extends EventEmitter {
     const thinkingBudget = THINKING_BUDGETS[thinkingLevel];
 
     // Configure provider environment and capture env vars
-    configureProviderEnvironment(this.model);
+    await configureProviderEnvironment(this.model);
     const env: Record<string, string | undefined> = {
       ...process.env,
       CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
@@ -1301,7 +1426,7 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
   }
 
   private extractFromMessage(message: unknown, current: string): string {
-    const msg = message as { type?: string; message?: { content?: unknown }; output?: string; result?: string };
+    const msg = message as { type?: string; subtype?: string; message?: { content?: unknown }; output?: string; result?: string; errors?: string[] };
     if (msg.type === 'assistant') {
       const content = msg.message?.content;
       if (Array.isArray(content)) {
@@ -1313,6 +1438,8 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
           .map((block: unknown) => (block as { text: string }).text);
         // If no text blocks (tool-only turn), preserve the accumulated response
         if (textBlocks.length === 0) {
+          const blockTypes = content.map((b: unknown) => (b as { type?: string })?.type).join(', ');
+          console.log(`[AgentManager] Assistant message with no text blocks (block types: ${blockTypes})`);
           return current;
         }
         const text = textBlocks.join('\n');
@@ -1321,11 +1448,21 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
         if (suggestion) {
           this.lastSuggestedPromptBySession.set(getCurrentSessionId(), suggestion);
         }
+        if (!cleanedText && text) {
+          console.warn(`[AgentManager] extractSuggestedPrompt stripped entire response (original ${text.length} chars)`);
+        }
         return cleanedText;
+      } else if (content !== undefined) {
+        // content exists but isn't an array — unexpected format
+        console.warn(`[AgentManager] Assistant message content is not an array (type: ${typeof content})`);
       }
     }
 
     if (msg.type === 'result') {
+      // Log error results for diagnostics
+      if (msg.subtype && msg.subtype !== 'success') {
+        console.warn(`[AgentManager] Result subtype: ${msg.subtype}, errors: ${msg.errors?.join('; ') || 'none'}`);
+      }
       const result = msg.output || msg.result;
       if (result) {
         // Extract and strip any trailing "User:" suggested prompts from result
