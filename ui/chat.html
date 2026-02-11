@@ -3065,6 +3065,15 @@
       input.focus();
     }
 
+    function getNextSessionName() {
+      const names = new Set(sessions.map(s => s.name));
+      if (!names.has('New')) return 'New';
+      for (let i = 2; i <= 99; i++) {
+        if (!names.has(`New${i}`)) return `New${i}`;
+      }
+      return `New${Date.now() % 10000}`;
+    }
+
     async function createNewSession() {
       // Check tab limit
       if (sessions.length >= MAX_TABS) {
@@ -3072,7 +3081,7 @@
       }
 
       try {
-        const result = await window.pocketAgent.createSession('New');
+        const result = await window.pocketAgent.createSession(getNextSessionName());
         if (!result.success || !result.session) {
           addMessage('system', result.error || 'Failed to create session');
           return;
