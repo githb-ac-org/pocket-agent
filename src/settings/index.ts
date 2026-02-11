@@ -917,7 +917,7 @@ class SettingsManagerClass {
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          model: 'glm-4.7',
+          model: 'glm-5',
           max_tokens: 10,
           messages: [{ role: 'user', content: 'Hi' }],
         }),
