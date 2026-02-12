@@ -250,6 +250,7 @@
     }
 
     .version-badge {
+      font-family: 'Sora', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
       font-size: 9px;
       font-weight: 600;
       color: #ffffff;
@@ -262,15 +263,35 @@
     }
 
     .model-badge {
+      font-family: 'Sora', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
       font-size: 9px;
       font-weight: 600;
       color: #ffffff;
       background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
-      padding: 2px 8px;
+      padding: 2px 20px 2px 8px;
       border-radius: 4px;
       margin-left: 8px;
       letter-spacing: 0;
       -webkit-text-fill-color: #ffffff;
+      border: none;
+      outline: none;
+      cursor: pointer;
+      appearance: none;
+      -webkit-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath fill='%23ffffff' d='M0 0l4 5 4-5z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 6px center;
+      transition: opacity 0.15s ease;
+    }
+
+    .model-badge:hover {
+      opacity: 0.85;
+    }
+
+    .model-badge option {
+      background: #1a1a2e;
+      color: #ffffff;
+      font-size: 12px;
     }
 
     .update-badge {
@@ -2367,7 +2388,7 @@
   <header>
     <div class="header-left">
       <img src="../assets/tray-icon@2x.png" alt="" class="header-logo">
-      <h1>Pocket Agent<span id="version-badge" class="version-badge"></span><span id="model-badge" class="model-badge"></span><span id="update-badge" class="update-badge" onclick="openSettings('updates')">Update</span></h1>
+      <h1>Pocket Agent<span id="version-badge" class="version-badge"></span><select id="model-badge" class="model-badge"></select><span id="update-badge" class="update-badge" onclick="openSettings('updates')">Update</span></h1>
     </div>
     <div class="header-right">
       <div class="stats" id="stats"></div>
@@ -3427,8 +3448,9 @@
 
     async function updateModelBadge() {
       try {
+        const badge = document.getElementById('model-badge');
         const modelId = await window.pocketAgent.getSetting('agent.model');
-        const modelNames = {
+        const fallbackNames = {
           'claude-opus-4-6': 'OPUS 4.6',
           'claude-sonnet-4-5-20250929': 'SONNET 4.5',
           'claude-haiku-4-5-20251001': 'HAIKU 4.5',
@@ -3436,12 +3458,57 @@
           'glm-5': 'GLM-5',
           'glm-4.7': 'GLM-4.7',
         };
-        const displayName = modelNames[modelId] || modelId.toUpperCase();
-        document.getElementById('model-badge').textContent = displayName;
+
+        let models = [];
+        try {
+          models = await window.pocketAgent.getAvailableModels();
+        } catch (_) {
+          // IPC failed — fall back to single option
+        }
+
+        badge.innerHTML = '';
+
+        if (models.length > 0) {
+          for (const model of models) {
+            const opt = document.createElement('option');
+            opt.value = model.id;
+            opt.textContent = model.name;
+            if (model.id === modelId) opt.selected = true;
+            badge.appendChild(opt);
+          }
+        } else {
+          // Fallback: show current model only
+          const opt = document.createElement('option');
+          opt.value = modelId;
+          opt.textContent = fallbackNames[modelId] || modelId.toUpperCase();
+          opt.selected = true;
+          badge.appendChild(opt);
+        }
       } catch (err) {
         console.error('Failed to load model:', err);
       }
     }
+
+    // Model badge change handler — switch model and auto-reboot
+    document.getElementById('model-badge').addEventListener('change', async (e) => {
+      const newModel = e.target.value;
+      const badge = e.target;
+      try {
+        // Save new model setting
+        await window.pocketAgent.setSetting('agent.model', newModel);
+        // Flash badge to indicate switching
+        badge.style.background = 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)';
+        // Restart agent with new model
+        await window.pocketAgent.restartAgent();
+        // Restore badge color
+        badge.style.background = '';
+        await updateModelBadge();
+      } catch (err) {
+        console.error('Failed to switch model:', err);
+        badge.style.background = '';
+        await updateModelBadge();
+      }
+    });
 
     function handleSendClick() {
       playSendClick();
