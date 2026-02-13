@@ -747,12 +747,23 @@ class AgentManagerClass extends EventEmitter {
       }
 
       // === Check for stale/crashed session errors and retry without resume ===
+      const wasResuming = this.sdkSessionIdBySession.has(sessionId);
+      if (turnResult.errors && turnResult.errors.length > 0) {
+        console.log(`[AgentManager] Turn errors: ${JSON.stringify(turnResult.errors)}, response length: ${turnResult.response.length}, wasResuming: ${wasResuming}`);
+      }
       const isStaleSession = turnResult.errors?.some(e => e.includes('No conversation found with session ID'));
+      const isInvalidThinking = turnResult.errors?.some(e => e.includes('Invalid signature in thinking block'));
+      // "unknown" errors during resume are typically invalid thinking signatures or corrupted sessions.
+      // The SDK may still return error text as "response", so don't require empty response.
+      const isUnknownResumeError = wasResuming && turnResult.errors?.some(e => e === 'unknown');
       const isSessionCrash = !turnResult.response && turnResult.errors?.some(e =>
         e.includes('Session error') || e.includes('session closed'));
-      if (isStaleSession || isSessionCrash) {
+      if (isStaleSession || isInvalidThinking || isUnknownResumeError || isSessionCrash) {
         const staleId = this.sdkSessionIdBySession.get(sessionId);
-        const reason = isStaleSession ? 'stale SDK session' : 'session crash';
+        const reason = isStaleSession ? 'stale SDK session'
+          : isInvalidThinking ? 'invalid thinking signature'
+          : isUnknownResumeError ? 'unknown resume error'
+          : 'session crash';
         console.warn(`[AgentManager] ${reason} detected (${staleId}), retrying without resume...`);
 
         // Clear the stale session reference
