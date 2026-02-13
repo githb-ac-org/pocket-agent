@@ -1547,6 +1547,24 @@ function setupIPC(): void {
     return ClaudeOAuth.isPending();
   });
 
+  ipcMain.handle('auth:validateOAuth', async () => {
+    try {
+      const { ClaudeOAuth } = await import('../auth/oauth');
+      // Timeout after 5 seconds to avoid hanging the UI
+      const result = await Promise.race([
+        ClaudeOAuth.getAccessToken().then(token => ({ valid: token !== null })),
+        new Promise<{ valid: boolean }>(resolve =>
+          setTimeout(() => resolve({ valid: false }), 5000)
+        ),
+      ]);
+      console.log('[OAuth] Validation result:', result.valid ? 'valid' : 'expired/failed');
+      return result;
+    } catch (error) {
+      console.error('[OAuth] Validation error:', error);
+      return { valid: false };
+    }
+  });
+
   // Browser control
   ipcMain.handle('browser:detectInstalled', async () => {
     const { detectInstalledBrowsers } = await import('../browser/launcher');

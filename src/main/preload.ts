@@ -111,6 +111,7 @@ contextBridge.exposeInMainWorld('pocketAgent', {
   completeOAuth: (code: string) => ipcRenderer.invoke('auth:completeOAuth', code),
   cancelOAuth: () => ipcRenderer.invoke('auth:cancelOAuth'),
   isOAuthPending: () => ipcRenderer.invoke('auth:isOAuthPending'),
+  validateOAuth: () => ipcRenderer.invoke('auth:validateOAuth'),
 
   // Commands (Workflows)
   getCommands: () => ipcRenderer.invoke('commands:list'),

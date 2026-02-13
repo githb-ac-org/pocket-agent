@@ -62,6 +62,7 @@ async function configureProviderEnvironment(model: string): Promise<void> {
   // Clear all provider-related env vars first
   delete process.env.ANTHROPIC_BASE_URL;
   delete process.env.ANTHROPIC_AUTH_TOKEN;
+  delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
   if (provider === 'moonshot') {
     // Moonshot requires base URL and uses Bearer token auth
     const moonshotKey = SettingsManager.get('moonshot.apiKey');
@@ -109,7 +110,13 @@ async function configureProviderEnvironment(model: string): Promise<void> {
         const { ClaudeOAuth } = await import('../auth/oauth');
         const freshToken = await ClaudeOAuth.getAccessToken();
         if (freshToken) {
-          process.env.ANTHROPIC_API_KEY = freshToken;
+          // OAuth tokens require Bearer auth, not x-api-key.
+          // CLAUDE_CODE_OAUTH_TOKEN tells the SDK to use OAuth mode:
+          // apiKey=null (no x-api-key header), authToken=token (Authorization: Bearer).
+          // ANTHROPIC_API_KEY must NOT be set — it would be sent as x-api-key and rejected.
+          process.env.CLAUDE_CODE_OAUTH_TOKEN = freshToken;
+          delete process.env.ANTHROPIC_API_KEY;
+          delete process.env.ANTHROPIC_AUTH_TOKEN;
           console.log('[AgentManager] Using OAuth token for Anthropic auth');
         } else {
           throw new Error('OAuth session expired. Please re-authenticate in Settings.');

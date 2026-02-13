@@ -2092,8 +2092,9 @@
       const isConnected = (authMethod === 'oauth' && hasOAuth) || hasApiKey || hasMoonshotKey || hasGlmKey;
 
       if (authMethod === 'oauth' && hasOAuth) {
-        statusBadge.className = 'auth-badge oauth';
-        statusBadge.textContent = 'Connected';
+        // Show checking state while validating token
+        statusBadge.className = 'auth-badge loading';
+        statusBadge.textContent = 'checking...';
         authBtn.textContent = 'Sign Out';
         authBtn.className = 'logout-btn';
         // Hide Anthropic API key row when OAuth is active
@@ -2105,6 +2106,20 @@
           authApiKeySection.style.opacity = '0.4';
           authApiKeySection.style.pointerEvents = 'none';
         }
+
+        // Validate token in background (attempts refresh if expired)
+        window.pocketAgent.validateOAuth().then(result => {
+          if (result.valid) {
+            statusBadge.className = 'auth-badge oauth';
+            statusBadge.textContent = 'Connected';
+          } else {
+            statusBadge.className = 'auth-badge none';
+            statusBadge.textContent = 'Session expired';
+          }
+        }).catch(() => {
+          statusBadge.className = 'auth-badge none';
+          statusBadge.textContent = 'Session expired';
+        });
       } else {
         statusBadge.className = 'auth-badge none';
         statusBadge.textContent = '';
