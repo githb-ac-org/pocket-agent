@@ -316,15 +316,32 @@ export class PersistentSDKSession extends EventEmitter {
             console.log(`[PersistentSession:${this.sessionId}] Captured SDK session ID: ${this.sdkSessionId}`);
           }
 
-          // Capture SDK assistant-level errors (auth_failed, billing, rate_limit, etc.)
+          // Capture SDK assistant-level errors and per-call context usage
           if (msg.type === 'assistant') {
-            const assistantMsg = message as { error?: string };
+            const assistantMsg = message as {
+              error?: string;
+              message?: {
+                usage?: {
+                  input_tokens?: number;
+                  cache_read_input_tokens?: number;
+                  cache_creation_input_tokens?: number;
+                };
+              };
+            };
             if (assistantMsg.error) {
               if (!this.turnErrors) {
                 this.turnErrors = [];
               }
               this.turnErrors.push(assistantMsg.error);
               console.warn(`[PersistentSession:${this.sessionId}] Assistant error: ${assistantMsg.error}`);
+            }
+            // Track per-API-call usage (not cumulative) for accurate context window display
+            const callUsage = assistantMsg.message?.usage;
+            if (callUsage?.input_tokens !== undefined) {
+              this.contextTokens =
+                (callUsage.input_tokens ?? 0) +
+                (callUsage.cache_read_input_tokens ?? 0) +
+                (callUsage.cache_creation_input_tokens ?? 0);
             }
           }
 
@@ -342,19 +359,12 @@ export class PersistentSDKSession extends EventEmitter {
               console.warn(`[PersistentSession:${this.sessionId}] Result errors:`, errResult.errors);
             }
 
-            // Extract context window usage from SDK result
+            // Extract context window max from SDK result (modelUsage has the max window size)
             const resultMsg = message as {
-              usage?: { input_tokens?: number; cache_read_input_tokens?: number };
-              modelUsage?: Record<string, { contextWindow?: number; inputTokens?: number; cacheReadInputTokens?: number }>;
+              modelUsage?: Record<string, { contextWindow?: number }>;
             };
 
-            if (resultMsg.usage?.input_tokens !== undefined) {
-              // Total context = fresh tokens + cached tokens (both count toward the context window)
-              const cached = resultMsg.usage.cache_read_input_tokens ?? 0;
-              this.contextTokens = resultMsg.usage.input_tokens + cached;
-            }
             if (resultMsg.modelUsage) {
-              // Get contextWindow from first model in modelUsage
               const firstModel = Object.values(resultMsg.modelUsage)[0];
               if (firstModel?.contextWindow) {
                 this.contextWindow = firstModel.contextWindow;
