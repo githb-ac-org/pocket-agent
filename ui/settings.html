@@ -2721,6 +2721,11 @@
         case 'not-available':
           statusEl.className = 'status success';
           statusEl.textContent = 'Up to date';
+          if (status.error) {
+            // Transient note (e.g. release still building)
+            infoBox.style.display = 'flex';
+            infoText.textContent = status.error;
+          }
           break;
 
         case 'downloading':
