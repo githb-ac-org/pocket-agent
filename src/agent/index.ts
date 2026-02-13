@@ -279,11 +279,16 @@ type UserPromptSubmitHookCallback = (input: any, toolUseID: string | undefined, 
   };
 }>;
 
+// Thinking config type (replaces deprecated maxThinkingTokens)
+type ThinkingConfig = { type: 'adaptive' } | { type: 'enabled'; budgetTokens: number } | { type: 'disabled' };
+
 type SDKOptions = {
   model?: string;
   cwd?: string;
   maxTurns?: number;
-  maxThinkingTokens?: number;
+  maxThinkingTokens?: number;  // deprecated — kept for non-Anthropic providers
+  thinking?: ThinkingConfig;
+  effort?: 'low' | 'medium' | 'high' | 'max';
   abortController?: AbortController;
   tools?: string[] | { type: 'preset'; preset: 'claude_code' };
   allowedTools?: string[];
@@ -302,12 +307,15 @@ type SDKOptions = {
   };
 };
 
-// Thinking level to token budget mapping
-const THINKING_BUDGETS: Record<string, number | undefined> = {
-  'none': 0,
-  'minimal': 2048,
-  'normal': 10000,
-  'extended': 32000,
+// Thinking level to config mapping.
+// For Opus 4.6: the CLI always forces adaptive thinking regardless of budget tokens,
+// so the `effort` parameter is the proper way to control thinking depth.
+// For other models: budget tokens are enforced via the `thinking` option.
+const THINKING_CONFIGS: Record<string, { thinking: ThinkingConfig; effort?: 'low' | 'medium' | 'high' }> = {
+  'none':     { thinking: { type: 'disabled' } },
+  'minimal':  { thinking: { type: 'enabled', budgetTokens: 2048 },  effort: 'low' },
+  'normal':   { thinking: { type: 'enabled', budgetTokens: 10000 }, effort: 'medium' },
+  'extended':  { thinking: { type: 'adaptive' },                    effort: 'high' },
 };
 
 // Image content for multimodal messages
@@ -651,7 +659,7 @@ class AgentManagerClass extends EventEmitter {
         // Build options with dynamic context
         const options = await this.buildPersistentOptions(memory, sessionId, sdkSessionId);
 
-        console.log('[AgentManager] Calling query() with model:', options.model, 'thinking:', options.maxThinkingTokens || 'default');
+        console.log('[AgentManager] Calling query() with model:', options.model, 'thinking:', JSON.stringify(options.thinking) || 'default', 'effort:', options.effort || 'default');
         this.emitStatus({ type: 'thinking', sessionId, message: '*stretches paws* thinking...' });
 
         // Create persistent session
@@ -1172,9 +1180,9 @@ class AgentManagerClass extends EventEmitter {
       staticParts.push(capabilities);
     }
 
-    // Get thinking level and convert to token budget
+    // Get thinking level config
     const thinkingLevel = SettingsManager.get('agent.thinkingLevel') || 'normal';
-    const thinkingBudget = THINKING_BUDGETS[thinkingLevel];
+    const thinkingEntry = THINKING_CONFIGS[thinkingLevel] || THINKING_CONFIGS['normal'];
 
     // Configure provider environment and capture env vars
     await configureProviderEnvironment(this.model);
@@ -1188,7 +1196,8 @@ class AgentManagerClass extends EventEmitter {
       model: this.model,
       cwd: this.workspace,
       maxTurns: 100,
-      ...(thinkingBudget !== undefined && thinkingBudget > 0 && { maxThinkingTokens: thinkingBudget }),
+      thinking: thinkingEntry.thinking,
+      effort: thinkingEntry.effort,
       tools: { type: 'preset', preset: 'claude_code' },
       settingSources: ['project'],
       canUseTool: buildCanUseToolCallback(),
