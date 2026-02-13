@@ -766,30 +766,39 @@ class AgentManagerClass extends EventEmitter {
       const isUnknownResumeError = wasResuming && turnResult.errors?.some(e => e === 'unknown');
       const isSessionCrash = !turnResult.response && turnResult.errors?.some(e =>
         e.includes('Session error') || e.includes('session closed'));
-      if (isStaleSession || isInvalidThinking || isUnknownResumeError || isSessionCrash) {
+      // OAuth token expired mid-session — the subprocess can't refresh it, so we must
+      // kill the session, refresh the token, and retry with a new subprocess.
+      const isAuthFailed = turnResult.errors?.some(e => e.includes('authentication_failed'));
+      if (isStaleSession || isInvalidThinking || isUnknownResumeError || isSessionCrash || isAuthFailed) {
         const staleId = this.sdkSessionIdBySession.get(sessionId);
         const reason = isStaleSession ? 'stale SDK session'
           : isInvalidThinking ? 'invalid thinking signature'
           : isUnknownResumeError ? 'unknown resume error'
+          : isAuthFailed ? 'OAuth token expired'
           : 'session crash';
-        console.warn(`[AgentManager] ${reason} detected (${staleId}), retrying without resume...`);
+        console.warn(`[AgentManager] ${reason} detected (${staleId}), retrying...`);
 
-        // Clear the stale session reference
-        this.sdkSessionIdBySession.delete(sessionId);
-        memory.clearSdkSessionId(sessionId);
+        // For auth failures, keep the SDK session ID so we can resume with a fresh token.
+        // For other errors, clear the session to start fresh.
+        if (!isAuthFailed) {
+          this.sdkSessionIdBySession.delete(sessionId);
+          memory.clearSdkSessionId(sessionId);
+        }
 
-        // Close the dead session
+        // Close the dead session (subprocess has stale token or corrupted state)
         const deadSession = this.persistentSessions.get(sessionId);
         if (deadSession) {
           deadSession.close();
           this.persistentSessions.delete(sessionId);
         }
 
-        // Retry with a fresh session (no resume)
+        // Retry: buildPersistentOptions will refresh the OAuth token via configureProviderEnvironment.
+        // For auth failures, resume the same SDK session (context is valid, just token expired).
         const queryFn = await loadSDK();
         if (!queryFn) throw new Error('Failed to load SDK');
 
-        const freshOptions = await this.buildPersistentOptions(memory, sessionId, undefined);
+        const resumeId = isAuthFailed ? staleId : undefined;
+        const freshOptions = await this.buildPersistentOptions(memory, sessionId, resumeId);
         const freshSession = new PersistentSDKSession(
           sessionId,
           (msg) => this.processStatusFromMessage(msg),
@@ -1180,9 +1189,13 @@ class AgentManagerClass extends EventEmitter {
       staticParts.push(capabilities);
     }
 
-    // Get thinking level config
+    // Get thinking level config — only Anthropic models support thinking/effort.
+    // Non-Anthropic providers (Kimi, GLM) use Anthropic-compatible APIs but may not
+    // handle thinking parameters correctly, causing all output to go to thinking blocks.
+    const provider = getProviderForModel(this.model);
     const thinkingLevel = SettingsManager.get('agent.thinkingLevel') || 'normal';
     const thinkingEntry = THINKING_CONFIGS[thinkingLevel] || THINKING_CONFIGS['normal'];
+    const isAnthropicModel = provider === 'anthropic';
 
     // Configure provider environment and capture env vars
     await configureProviderEnvironment(this.model);
@@ -1196,8 +1209,8 @@ class AgentManagerClass extends EventEmitter {
       model: this.model,
       cwd: this.workspace,
       maxTurns: 100,
-      thinking: thinkingEntry.thinking,
-      effort: thinkingEntry.effort,
+      ...(isAnthropicModel && { thinking: thinkingEntry.thinking }),
+      ...(isAnthropicModel && thinkingEntry.effort && { effort: thinkingEntry.effort }),
       tools: { type: 'preset', preset: 'claude_code' },
       settingSources: ['project'],
       canUseTool: buildCanUseToolCallback(),
