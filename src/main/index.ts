@@ -288,6 +288,7 @@ let factsGraphWindow: BrowserWindow | null = null;
 let customizeWindow: BrowserWindow | null = null;
 let factsWindow: BrowserWindow | null = null;
 let soulWindow: BrowserWindow | null = null;
+let dailyLogsWindow: BrowserWindow | null = null;
 let splashWindow: BrowserWindow | null = null;
 
 /**
@@ -1023,6 +1024,58 @@ function openFactsWindow(): void {
   });
 }
 
+function openDailyLogsWindow(): void {
+  if (dailyLogsWindow && !dailyLogsWindow.isDestroyed()) {
+    dailyLogsWindow.focus();
+    return;
+  }
+
+  const savedBoundsJson = SettingsManager.get('window.dailyLogsBounds');
+  let windowOptions: Electron.BrowserWindowConstructorOptions = {
+    width: 700,
+    height: 550,
+    title: 'Daily Logs - Pocket Agent',
+    backgroundColor: '#0a0a0b',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+    show: false,
+  };
+
+  if (savedBoundsJson) {
+    try {
+      const savedBounds = JSON.parse(savedBoundsJson);
+      if (savedBounds.x !== undefined) windowOptions.x = savedBounds.x;
+      if (savedBounds.y !== undefined) windowOptions.y = savedBounds.y;
+      if (savedBounds.width) windowOptions.width = savedBounds.width;
+      if (savedBounds.height) windowOptions.height = savedBounds.height;
+    } catch { /* ignore */ }
+  }
+
+  dailyLogsWindow = new BrowserWindow(windowOptions);
+
+  dailyLogsWindow.loadFile(path.join(__dirname, '../../ui/daily-logs.html'));
+
+  dailyLogsWindow.once('ready-to-show', () => {
+    dailyLogsWindow?.show();
+  });
+
+  const saveBounds = () => {
+    if (dailyLogsWindow && !dailyLogsWindow.isDestroyed()) {
+      SettingsManager.set('window.dailyLogsBounds', JSON.stringify(dailyLogsWindow.getBounds()));
+    }
+  };
+  dailyLogsWindow.on('moved', saveBounds);
+  dailyLogsWindow.on('resized', saveBounds);
+  dailyLogsWindow.on('close', saveBounds);
+
+  dailyLogsWindow.on('closed', () => {
+    dailyLogsWindow = null;
+  });
+}
+
 function openSoulWindow(): void {
   if (soulWindow && !soulWindow.isDestroyed()) {
     soulWindow.focus();
@@ -1257,6 +1310,14 @@ function setupIPC(): void {
 
   ipcMain.handle('app:openFacts', async () => {
     openFactsWindow();
+  });
+
+  ipcMain.handle('app:openDailyLogs', async () => {
+    openDailyLogsWindow();
+  });
+
+  ipcMain.handle('dailyLogs:list', async () => {
+    return AgentManager.getDailyLogsSince(3);
   });
 
   ipcMain.handle('app:openSoul', async () => {

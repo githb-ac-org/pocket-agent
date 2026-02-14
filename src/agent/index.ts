@@ -1,4 +1,4 @@
-import { MemoryManager, Message } from '../memory';
+import { MemoryManager, Message, DailyLog } from '../memory';
 import { buildMCPServers, buildSdkMcpServers, setMemoryManager, setSoulMemoryManager, ToolsConfig, validateToolsConfig, getCurrentSessionId } from '../tools';
 import { closeBrowserManager } from '../browser';
 import { loadIdentity } from '../config/identity';
@@ -2194,6 +2194,18 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
 
   getAllFacts(): Array<{ id: number; category: string; subject: string; content: string }> {
     return this.memory?.getAllFacts() || [];
+  }
+
+  getAllDailyLogs(): DailyLog[] {
+    return this.memory?.getAllDailyLogs() || [];
+  }
+
+  getRecentDailyLogs(days: number = 3): DailyLog[] {
+    return this.memory?.getRecentDailyLogs(days) || [];
+  }
+
+  getDailyLogsSince(days: number = 3): DailyLog[] {
+    return this.memory?.getDailyLogsSince(days) || [];
   }
 
   getRecentMessages(limit: number = 10, sessionId: string = 'default'): Message[] {
