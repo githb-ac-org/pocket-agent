@@ -64,6 +64,8 @@ describe('CdpTier', () => {
       createCDPSession: vi.fn(async () => ({
         send: vi.fn(async () => undefined),
         on: vi.fn(),
+        once: vi.fn(),
+        removeAllListeners: vi.fn(),
       })),
       $: vi.fn(async () => ({
         uploadFile: vi.fn(async () => undefined),
@@ -77,6 +79,7 @@ describe('CdpTier', () => {
       newPage: vi.fn(async () => mockPage as Page),
       disconnect: vi.fn(),
       on: vi.fn(),
+      once: vi.fn(),
     };
 
     // Mock puppeteer.connect
@@ -611,6 +614,7 @@ describe('Edge Cases', () => {
         connected: true,
         pages: vi.fn(async () => [mockPage]),
         on: vi.fn(),
+        once: vi.fn(),
         disconnect: vi.fn(),
       };
 
@@ -648,6 +652,7 @@ describe('Edge Cases', () => {
         },
         pages: vi.fn(async () => [mockPage]),
         on: vi.fn(),
+        once: vi.fn(),
         disconnect: vi.fn(),
       };
 
