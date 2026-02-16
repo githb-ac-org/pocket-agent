@@ -518,10 +518,9 @@
       padding: 4px 8px;
       background: rgba(239, 68, 68, 0.15);
       color: var(--error);
-      border-radius: 6px;
+      border-radius: 16px;
       font-size: 10px;
-      font-weight: 600;
-      text-transform: uppercase;
+      font-weight: 500;
       white-space: nowrap;
       cursor: help;
       position: relative;
@@ -1166,66 +1165,6 @@
             </div>
           </div>
 
-          <div class="key-row">
-            <div class="key-info">
-              <span class="key-name">Gemini</span>
-              <a href="https://aistudio.google.com/apikey" target="_blank" class="key-link">aistudio.google.com</a>
-            </div>
-            <div class="key-input">
-              <input type="password" id="gemini.apiKey" placeholder="AI...">
-              <button class="delete-btn" id="gemini.apiKey-delete" onclick="playNormalClick(); deleteKey('gemini.apiKey')"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
-              <button onclick="playNormalClick(); saveKey('gemini.apiKey')">Save</button>
-            </div>
-          </div>
-
-          <div class="key-row">
-            <div class="key-info">
-              <span class="key-name">Google Places</span>
-              <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="key-link">cloud.google.com</a>
-            </div>
-            <div class="key-input">
-              <input type="password" id="google.placesApiKey" placeholder="AIza...">
-              <button class="delete-btn" id="google.placesApiKey-delete" onclick="playNormalClick(); deleteKey('google.placesApiKey')"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
-              <button onclick="playNormalClick(); saveKey('google.placesApiKey')">Save</button>
-            </div>
-          </div>
-
-          <div class="key-row">
-            <div class="key-info">
-              <span class="key-name">Notion</span>
-              <a href="https://www.notion.so/my-integrations" target="_blank" class="key-link">notion.so/integrations</a>
-            </div>
-            <div class="key-input">
-              <input type="password" id="notion.apiKey" placeholder="secret_...">
-              <button class="delete-btn" id="notion.apiKey-delete" onclick="playNormalClick(); deleteKey('notion.apiKey')"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
-              <button onclick="playNormalClick(); saveKey('notion.apiKey')">Save</button>
-            </div>
-          </div>
-
-          <div class="key-row">
-            <div class="key-info">
-              <span class="key-name">Trello</span>
-              <a href="https://trello.com/power-ups/admin" target="_blank" class="key-link">trello.com/power-ups</a>
-            </div>
-            <div class="key-input">
-              <input type="password" id="trello.apiKey" placeholder="API Key">
-              <input type="password" id="trello.token" placeholder="Token" style="margin-left: 4px;">
-              <button class="delete-btn" id="trello-delete" onclick="playNormalClick(); deleteTrelloKeys()"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
-              <button onclick="playNormalClick(); saveTrelloKeys()">Save</button>
-            </div>
-          </div>
-
-          <div class="key-row">
-            <div class="key-info">
-              <span class="key-name">ElevenLabs</span>
-              <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" class="key-link">elevenlabs.io</a>
-            </div>
-            <div class="key-input">
-              <input type="password" id="elevenlabs.apiKey" placeholder="Your API key">
-              <button class="delete-btn" id="elevenlabs.apiKey-delete" onclick="playNormalClick(); deleteKey('elevenlabs.apiKey')"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
-              <button onclick="playNormalClick(); saveKey('elevenlabs.apiKey')">Save</button>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -1723,9 +1662,7 @@
     function setupAutoSave() {
       // Exclude API key inputs, auth inputs, and fields with manual save buttons from auto-save
       const excludedIds = [
-        'anthropic.apiKey', 'openai.apiKey', 'gemini.apiKey',
-        'google.placesApiKey', 'notion.apiKey', 'trello.apiKey',
-        'trello.token', 'elevenlabs.apiKey', 'auth-api-key', 'oauth-code',
+        'anthropic.apiKey', 'openai.apiKey', 'auth-api-key', 'oauth-code',
         'telegram.allowedUserIds', 'telegram.defaultChatId'
       ];
 
@@ -1769,22 +1706,6 @@
       'openai.apiKey': {
         pattern: /^sk-[A-Za-z0-9_-]{40,}$/,
         hint: 'OpenAI keys start with "sk-"'
-      },
-      'gemini.apiKey': {
-        pattern: /^AIza[A-Za-z0-9_-]{35}$/,
-        hint: 'Gemini keys start with "AIza" and are 39 characters'
-      },
-      'google.placesApiKey': {
-        pattern: /^AIza[A-Za-z0-9_-]{35}$/,
-        hint: 'Google Places keys start with "AIza" and are 39 characters'
-      },
-      'notion.apiKey': {
-        pattern: /^secret_[A-Za-z0-9]{43}$/,
-        hint: 'Notion keys start with "secret_"'
-      },
-      'elevenlabs.apiKey': {
-        pattern: /^[a-f0-9]{32}$/i,
-        hint: 'ElevenLabs keys are 32 hex characters'
       },
       'moonshot.apiKey': {
         pattern: /^sk-[A-Za-z0-9_-]{40,}$/,
@@ -1845,8 +1766,7 @@
     // Update delete button visibility based on stored keys
     function updateDeleteButtons() {
       const keyIds = [
-        'anthropic.apiKey', 'openai.apiKey', 'gemini.apiKey',
-        'google.placesApiKey', 'notion.apiKey', 'elevenlabs.apiKey',
+        'anthropic.apiKey', 'openai.apiKey',
         'moonshot.apiKey', 'glm.apiKey', 'telegram.botToken'
       ];
 
@@ -1865,13 +1785,6 @@
         authDeleteBtn.classList.toggle('visible', hasKey);
       }
 
-      // Special case for Trello (has both apiKey and token)
-      const trelloDeleteBtn = document.getElementById('trello-delete');
-      if (trelloDeleteBtn) {
-        const hasKey = (settings['trello.apiKey'] && settings['trello.apiKey'].trim() !== '') ||
-                       (settings['trello.token'] && settings['trello.token'].trim() !== '');
-        trelloDeleteBtn.classList.toggle('visible', hasKey);
-      }
     }
 
     async function deleteKey(keyId, inputId = null) {
@@ -1911,67 +1824,6 @@
       }
     }
 
-    async function deleteTrelloKeys() {
-      try {
-        await window.pocketAgent.setSetting('trello.apiKey', '');
-        await window.pocketAgent.setSetting('trello.token', '');
-        settings['trello.apiKey'] = '';
-        settings['trello.token'] = '';
-
-        // Clear inputs
-        document.getElementById('trello.apiKey').value = '';
-        document.getElementById('trello.token').value = '';
-
-        // Hide delete button
-        const deleteBtn = document.getElementById('trello-delete');
-        if (deleteBtn) {
-          deleteBtn.classList.remove('visible');
-        }
-
-        showToast('Trello keys removed!', 'success');
-      } catch (err) {
-        console.error('Failed to delete Trello keys:', err);
-        showToast('Oops, couldn\'t delete that', 'error');
-      }
-    }
-
-    async function saveTrelloKeys() {
-      const apiKey = document.getElementById('trello.apiKey').value.trim();
-      const token = document.getElementById('trello.token').value.trim();
-
-      if (!apiKey || !token) {
-        showToast('Need both key & token!', 'error');
-        return;
-      }
-
-      // Validate Trello API key (32 hex characters)
-      if (!/^[a-f0-9]{32}$/.test(apiKey)) {
-        showToast('Trello API key should be 32 hex characters', 'error');
-        return;
-      }
-
-      // Validate Trello token (64 hex characters)
-      if (!/^[a-f0-9]{64}$/.test(token)) {
-        showToast('Trello token should be 64 hex characters', 'error');
-        return;
-      }
-
-      try {
-        await window.pocketAgent.setSetting('trello.apiKey', apiKey);
-        await window.pocketAgent.setSetting('trello.token', token);
-        settings['trello.apiKey'] = apiKey;
-        settings['trello.token'] = token;
-        showToast('Got it!', 'success');
-
-        // Show delete button
-        const deleteBtn = document.getElementById('trello-delete');
-        if (deleteBtn) {
-          deleteBtn.classList.add('visible');
-        }
-      } catch (err) {
-        console.error('Failed to save Trello keys:', err);
-        showToast('Save hiccup, try again?', 'error');
-      }
     }
 
     async function saveTelegramSetting(inputId) {

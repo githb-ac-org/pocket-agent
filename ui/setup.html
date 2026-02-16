@@ -55,17 +55,29 @@
     }
 
     .logo {
-      width: 64px;
-      height: 64px;
-      background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
-      border-radius: 18px;
+      width: 72px;
+      height: 54px;
+      background: transparent;
       display: flex;
       align-items: center;
       justify-content: center;
       margin-bottom: 16px;
       flex-shrink: 0;
       animation: logoIn 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-      box-shadow: 0 8px 24px rgba(168, 85, 247, 0.3);
+      position: relative;
+    }
+
+    .logo::before {
+      content: '';
+      position: absolute;
+      width: 3px;
+      height: 3px;
+      top: 0;
+      left: 0;
+      transform: scale(3);
+      transform-origin: top left;
+      animation: pixelcat 0.6s steps(1) infinite;
+      image-rendering: pixelated;
     }
 
     @keyframes logoIn {
@@ -73,10 +85,79 @@
       to { opacity: 1; transform: scale(1) translateY(0); }
     }
 
-    .logo svg {
-      width: 32px;
-      height: 32px;
-      color: white;
+    @keyframes pixelcat {
+      /* Frame 1: Cat walking - legs apart */
+      0%, 25% {
+        box-shadow:
+          /* Ears */
+          3px 0 0 var(--accent), 9px 0 0 var(--accent),
+          /* Head */
+          3px 3px 0 var(--accent), 6px 3px 0 var(--accent), 9px 3px 0 var(--accent),
+          0 6px 0 var(--accent), 3px 6px 0 var(--accent), 6px 6px 0 var(--accent), 9px 6px 0 var(--accent), 12px 6px 0 var(--accent),
+          /* Eyes */
+          3px 6px 0 #fff, 9px 6px 0 #fff,
+          /* Body */
+          3px 9px 0 var(--accent), 6px 9px 0 var(--accent), 9px 9px 0 var(--accent), 12px 9px 0 var(--accent), 15px 9px 0 var(--accent),
+          3px 12px 0 var(--accent), 6px 12px 0 var(--accent), 9px 12px 0 var(--accent), 12px 12px 0 var(--accent),
+          /* Tail up */
+          18px 6px 0 var(--accent), 21px 3px 0 var(--accent),
+          /* Legs - apart */
+          3px 15px 0 var(--accent), 12px 15px 0 var(--accent);
+      }
+      /* Frame 2: Cat walking - legs together */
+      25.01%, 50% {
+        box-shadow:
+          /* Ears */
+          3px 0 0 var(--accent), 9px 0 0 var(--accent),
+          /* Head */
+          3px 3px 0 var(--accent), 6px 3px 0 var(--accent), 9px 3px 0 var(--accent),
+          0 6px 0 var(--accent), 3px 6px 0 var(--accent), 6px 6px 0 var(--accent), 9px 6px 0 var(--accent), 12px 6px 0 var(--accent),
+          /* Eyes */
+          3px 6px 0 #fff, 9px 6px 0 #fff,
+          /* Body */
+          3px 9px 0 var(--accent), 6px 9px 0 var(--accent), 9px 9px 0 var(--accent), 12px 9px 0 var(--accent), 15px 9px 0 var(--accent),
+          3px 12px 0 var(--accent), 6px 12px 0 var(--accent), 9px 12px 0 var(--accent), 12px 12px 0 var(--accent),
+          /* Tail middle */
+          18px 9px 0 var(--accent), 21px 6px 0 var(--accent),
+          /* Legs - together */
+          6px 15px 0 var(--accent), 9px 15px 0 var(--accent);
+      }
+      /* Frame 3: Cat walking - legs crossed */
+      50.01%, 75% {
+        box-shadow:
+          /* Ears */
+          3px 0 0 var(--accent), 9px 0 0 var(--accent),
+          /* Head */
+          3px 3px 0 var(--accent), 6px 3px 0 var(--accent), 9px 3px 0 var(--accent),
+          0 6px 0 var(--accent), 3px 6px 0 var(--accent), 6px 6px 0 var(--accent), 9px 6px 0 var(--accent), 12px 6px 0 var(--accent),
+          /* Eyes */
+          3px 6px 0 #fff, 9px 6px 0 #fff,
+          /* Body */
+          3px 9px 0 var(--accent), 6px 9px 0 var(--accent), 9px 9px 0 var(--accent), 12px 9px 0 var(--accent), 15px 9px 0 var(--accent),
+          3px 12px 0 var(--accent), 6px 12px 0 var(--accent), 9px 12px 0 var(--accent), 12px 12px 0 var(--accent),
+          /* Tail down */
+          18px 12px 0 var(--accent), 21px 9px 0 var(--accent),
+          /* Legs - reversed */
+          12px 15px 0 var(--accent), 3px 15px 0 var(--accent);
+      }
+      /* Frame 4: Cat walking - legs wide */
+      75.01%, 100% {
+        box-shadow:
+          /* Ears */
+          3px 0 0 var(--accent), 9px 0 0 var(--accent),
+          /* Head */
+          3px 3px 0 var(--accent), 6px 3px 0 var(--accent), 9px 3px 0 var(--accent),
+          0 6px 0 var(--accent), 3px 6px 0 var(--accent), 6px 6px 0 var(--accent), 9px 6px 0 var(--accent), 12px 6px 0 var(--accent),
+          /* Eyes */
+          3px 6px 0 #fff, 9px 6px 0 #fff,
+          /* Body */
+          3px 9px 0 var(--accent), 6px 9px 0 var(--accent), 9px 9px 0 var(--accent), 12px 9px 0 var(--accent), 15px 9px 0 var(--accent),
+          3px 12px 0 var(--accent), 6px 12px 0 var(--accent), 9px 12px 0 var(--accent), 12px 12px 0 var(--accent),
+          /* Tail up */
+          18px 6px 0 var(--accent), 21px 3px 0 var(--accent),
+          /* Legs - wide */
+          0 15px 0 var(--accent), 15px 15px 0 var(--accent);
+      }
     }
 
     h1 {
@@ -201,10 +282,9 @@
       padding: 4px 8px;
       background: var(--success);
       color: white;
-      border-radius: 6px;
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
+      border-radius: 16px;
+      font-size: 10px;
+      font-weight: 500;
       white-space: nowrap;
     }
 
@@ -213,6 +293,19 @@
       color: var(--error);
       cursor: help;
       position: relative;
+    }
+
+    .auth-option-badge.risk .risk-info {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 1px solid var(--error);
+      font-size: 9px;
+      font-weight: 700;
+      line-height: 1;
     }
 
     .risk-tooltip {
@@ -554,22 +647,18 @@
 </head>
 <body>
   <div class="onboarding">
-    <div class="logo">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-      </svg>
-    </div>
+    <div class="logo"></div>
 
     <h1>Pocket Agent</h1>
-    <p class="subtitle">your AI bestie with perfect memory ✨</p>
+    <p class="subtitle">i'm Franky, your new 24/7 assistant</p>
 
-    <!-- Step 0: Keychain Initialization (macOS) -->
+    <!-- Step 0: Secure Storage Initialization -->
     <div class="step active" id="step-keychain">
       <div id="keychain-status"></div>
 
       <div class="status info">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        <span>Pocket Agent uses your Mac's Keychain to securely store API keys. You may be prompted for your Mac password.</span>
+        <span id="keychain-info-text">Pocket Agent uses your system's secure storage to protect API keys.</span>
       </div>
 
       <div class="button-row">
@@ -599,6 +688,7 @@
             <span class="auth-option-badge">Best Choice</span>
             <span class="auth-option-badge risk">
               Use at own risk
+              <span class="risk-info">i</span>
               <span class="risk-tooltip">Anthropic may restrict accounts using unofficial OAuth integrations. This is not an officially supported auth method. Use at your own risk.</span>
             </span>
           </div>
@@ -610,9 +700,13 @@
           </div>
           <div class="auth-option-text">
             <h3>Use API Key</h3>
-            <p>Enter your Anthropic API key</p>
+            <p>Enter your Anthropic, Kimi, or GLM API key</p>
           </div>
         </div>
+      </div>
+
+      <div class="skip-link">
+        <a onclick="playNormalClick(); showStep('step-keychain')">back to secure storage</a>
       </div>
     </div>
 
@@ -662,16 +756,16 @@
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
           <h4>bonus: add more AI providers</h4>
         </div>
-        <div class="optional-content" id="optional-openai-oauth">
-          <div class="form-group">
-            <label>OpenAI API Key</label>
-            <input type="password" id="openai-key-oauth" placeholder="sk-...">
-            <p class="hint">Enables semantic memory search. Get from <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com</a></p>
-          </div>
+        <div class="optional-content" id="optional-extra-oauth">
           <div class="form-group">
             <label>Kimi (Moonshot) API Key</label>
             <input type="password" id="kimi-key-oauth" placeholder="sk-...">
-            <p class="hint">Alternative AI provider. Get from <a href="https://platform.moonshot.ai/" target="_blank">platform.moonshot.ai</a></p>
+            <p class="hint">Get from <a href="https://platform.moonshot.ai/" target="_blank">platform.moonshot.ai</a></p>
+          </div>
+          <div class="form-group">
+            <label>GLM (Z.AI) API Key</label>
+            <input type="password" id="glm-key-oauth" placeholder="...">
+            <p class="hint">Get from <a href="https://z.ai/manage-apikey/apikey-list" target="_blank">z.ai</a></p>
           </div>
         </div>
       </div>
@@ -681,10 +775,27 @@
     <div class="step" id="step-api">
       <div id="api-status"></div>
 
+      <div class="status info" style="margin-bottom: 16px;">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <span>Enter at least one key to get started. Add more for access to additional models.</span>
+      </div>
+
       <div class="form-group">
         <label>Anthropic API Key</label>
         <input type="password" id="anthropic-key" placeholder="sk-ant-..." autofocus>
-        <p class="hint">Get your API key from <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com</a></p>
+        <p class="hint">Get from <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com</a></p>
+      </div>
+
+      <div class="form-group">
+        <label>Kimi (Moonshot) API Key</label>
+        <input type="password" id="kimi-key-api" placeholder="sk-...">
+        <p class="hint">Get from <a href="https://platform.moonshot.ai/" target="_blank">platform.moonshot.ai</a></p>
+      </div>
+
+      <div class="form-group">
+        <label>GLM (Z.AI) API Key</label>
+        <input type="password" id="glm-key-api" placeholder="...">
+        <p class="hint">Get from <a href="https://z.ai/manage-apikey/apikey-list" target="_blank">z.ai</a></p>
       </div>
 
       <div class="button-row">
@@ -693,25 +804,6 @@
           Continue
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
         </button>
-      </div>
-
-      <div class="optional-section">
-        <div class="optional-header" onclick="playNormalClick(); toggleOptional()">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-          <h4>bonus: add more AI providers</h4>
-        </div>
-        <div class="optional-content" id="optional-openai-api">
-          <div class="form-group">
-            <label>OpenAI API Key</label>
-            <input type="password" id="openai-key-api" placeholder="sk-...">
-            <p class="hint">Enables semantic memory search. Get from <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com</a></p>
-          </div>
-          <div class="form-group">
-            <label>Kimi (Moonshot) API Key</label>
-            <input type="password" id="kimi-key-api" placeholder="sk-...">
-            <p class="hint">Alternative AI provider. Get from <a href="https://platform.moonshot.ai/" target="_blank">platform.moonshot.ai</a></p>
-          </div>
-        </div>
       </div>
     </div>
 
@@ -723,7 +815,7 @@
 
       <div class="success-text">
         <h2>you're good to go! 🎉</h2>
-        <p>double-click the tray icon to start chatting</p>
+        <p id="success-hint">double-click the tray icon to start chatting</p>
       </div>
 
       <div class="button-row" style="margin-top: 24px;">
@@ -756,6 +848,34 @@
     let selectedAuth = null;
     let keychainInitialized = false;
 
+    // Platform-specific text
+    const platform = window.pocketAgent.getPlatform();
+    const platformText = (() => {
+      if (platform === 'darwin') {
+        return {
+          storageInfo: "Pocket Agent uses your Mac's Keychain to securely store API keys. You may be prompted for your Mac password.",
+          storageFallback: 'Could not access Keychain. Keys will be stored unencrypted.',
+          trayHint: 'double-click the tray icon to start chatting',
+        };
+      } else if (platform === 'win32') {
+        return {
+          storageInfo: "Pocket Agent uses Windows Credential Store to securely store API keys.",
+          storageFallback: 'Could not access Credential Store. Keys will be stored unencrypted.',
+          trayHint: 'double-click the system tray icon to start chatting',
+        };
+      } else {
+        return {
+          storageInfo: "Pocket Agent uses your system keyring to securely store API keys. You may be prompted for your keyring password.",
+          storageFallback: 'Could not access system keyring. Keys will be stored unencrypted.',
+          trayHint: 'click the tray icon to start chatting',
+        };
+      }
+    })();
+
+    // Apply platform-specific text
+    document.getElementById('keychain-info-text').textContent = platformText.storageInfo;
+    document.getElementById('success-hint').textContent = platformText.trayHint;
+
     async function initKeychain() {
       const btn = document.getElementById('keychain-btn');
       const statusDiv = document.getElementById('keychain-status');
@@ -779,7 +899,7 @@
           statusDiv.innerHTML = `
             <div class="status error">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-              ${result.error || 'Could not access Keychain. Keys will be stored unencrypted.'}
+              ${result.error || platformText.storageFallback}
             </div>
           `;
           btn.disabled = false;
@@ -894,16 +1014,16 @@
         const result = await window.pocketAgent.completeOAuth(code);
 
         if (result.success) {
-          // Save OpenAI key if provided
-          const openaiKey = document.getElementById('openai-key-oauth').value.trim();
-          if (openaiKey) {
-            await window.pocketAgent.setSetting('openai.apiKey', openaiKey);
-          }
-
           // Save Kimi key if provided
           const kimiKey = document.getElementById('kimi-key-oauth').value.trim();
           if (kimiKey) {
             await window.pocketAgent.setSetting('moonshot.apiKey', kimiKey);
+          }
+
+          // Save GLM key if provided
+          const glmKey = document.getElementById('glm-key-oauth').value.trim();
+          if (glmKey) {
+            await window.pocketAgent.setSetting('glm.apiKey', glmKey);
           }
 
           showStep('step-success');
@@ -941,51 +1061,29 @@
       showStep('step-auth');
     }
 
-    // Key format validators
-    const keyValidators = {
-      anthropic: {
-        pattern: /^sk-ant-[A-Za-z0-9_-]{90,}$/,
-        hint: 'Anthropic keys start with "sk-ant-"'
-      },
-      openai: {
-        pattern: /^sk-[A-Za-z0-9_-]{40,}$/,
-        hint: 'OpenAI keys start with "sk-"'
-      }
-    };
-
     async function validateAndSave() {
       const anthropicKey = document.getElementById('anthropic-key').value.trim();
-      const openaiKey = document.getElementById('openai-key-api').value.trim();
+      const kimiKey = document.getElementById('kimi-key-api').value.trim();
+      const glmKey = document.getElementById('glm-key-api').value.trim();
       const statusDiv = document.getElementById('api-status');
       const btn = document.getElementById('api-btn');
 
-      if (!anthropicKey) {
+      if (!anthropicKey && !kimiKey && !glmKey) {
         statusDiv.innerHTML = `
           <div class="status error">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-            Please enter your Anthropic API key
+            Please enter at least one API key
           </div>
         `;
         return;
       }
 
-      // Validate Anthropic key format
-      if (!keyValidators.anthropic.pattern.test(anthropicKey)) {
+      // Validate Anthropic key format if provided
+      if (anthropicKey && !/^sk-ant-[A-Za-z0-9_-]{90,}$/.test(anthropicKey)) {
         statusDiv.innerHTML = `
           <div class="status error">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-            ${keyValidators.anthropic.hint}
-          </div>
-        `;
-        return;
-      }
-
-      // Validate OpenAI key format if provided
-      if (openaiKey && !keyValidators.openai.pattern.test(openaiKey)) {
-        statusDiv.innerHTML = `
-          <div class="status error">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-            ${keyValidators.openai.hint}
+            Anthropic keys start with "sk-ant-"
           </div>
         `;
         return;
@@ -996,32 +1094,33 @@
       statusDiv.innerHTML = '';
 
       try {
-        const result = await window.pocketAgent.validateAnthropicKey(anthropicKey);
-
-        if (!result.valid) {
-          statusDiv.innerHTML = `
-            <div class="status error">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-              ${result.error || 'Invalid API key'}
-            </div>
-          `;
-          btn.disabled = false;
-          btn.innerHTML = 'Continue <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>';
-          return;
+        // Validate Anthropic key if provided
+        if (anthropicKey) {
+          const result = await window.pocketAgent.validateAnthropicKey(anthropicKey);
+          if (!result.valid) {
+            statusDiv.innerHTML = `
+              <div class="status error">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                ${result.error || 'Invalid Anthropic API key'}
+              </div>
+            `;
+            btn.disabled = false;
+            btn.innerHTML = 'Continue <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>';
+            return;
+          }
         }
 
         // Save keys
-        await window.pocketAgent.setSetting('anthropic.apiKey', anthropicKey);
         await window.pocketAgent.setSetting('auth.method', 'api_key');
 
-        if (openaiKey) {
-          await window.pocketAgent.setSetting('openai.apiKey', openaiKey);
+        if (anthropicKey) {
+          await window.pocketAgent.setSetting('anthropic.apiKey', anthropicKey);
         }
-
-        // Save Kimi key if provided
-        const kimiKey = document.getElementById('kimi-key-api').value.trim();
         if (kimiKey) {
           await window.pocketAgent.setSetting('moonshot.apiKey', kimiKey);
+        }
+        if (glmKey) {
+          await window.pocketAgent.setSetting('glm.apiKey', glmKey);
         }
 
         showStep('step-success');
