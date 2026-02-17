@@ -24,6 +24,8 @@ import {
   iOSSessionsHandler,
   iOSStatusForwarder,
 } from './types';
+import { loadWorkflowCommands } from '../../config/commands-loader';
+import { SettingsManager } from '../../settings';
 
 const PAIRING_CODE_LENGTH = 6;
 const PAIRING_CODE_EXPIRY_MS = 5 * 60 * 1000;
@@ -64,6 +66,32 @@ export class iOSRelayClient {
   constructor(relayUrl: string, instanceId: string) {
     this.relayUrl = relayUrl.replace(/\/$/, '');
     this.instanceId = instanceId;
+    this.loadPairedDevices();
+  }
+
+  private loadPairedDevices(): void {
+    try {
+      const raw = SettingsManager.get('ios.pairedDevices');
+      if (!raw) return;
+      const devices: Array<{ token: string; deviceId: string; deviceName: string }> = JSON.parse(raw);
+      for (const d of devices) {
+        this.authTokens.set(d.token, { deviceId: d.deviceId, deviceName: d.deviceName });
+      }
+      if (devices.length > 0) {
+        console.log(`[iOS Relay] Loaded ${devices.length} paired device(s)`);
+      }
+    } catch {
+      // corrupt data, ignore
+    }
+  }
+
+  private savePairedDevices(): void {
+    const devices = Array.from(this.authTokens.entries()).map(([token, info]) => ({
+      token,
+      deviceId: info.deviceId,
+      deviceName: info.deviceName,
+    }));
+    SettingsManager.set('ios.pairedDevices', JSON.stringify(devices));
   }
 
   setMessageHandler(handler: iOSMessageHandler): void {
@@ -383,6 +411,7 @@ export class iOSRelayClient {
     this.sendToRelay(relayClientId, result);
 
     console.log(`[iOS Relay] Device paired: ${deviceName} (${deviceId})`);
+    this.savePairedDevices();
 
     // Subscribe to status events
     this.subscribeClientStatus(virtualClient);
@@ -406,10 +435,20 @@ export class iOSRelayClient {
           this.subscribeClientStatus(client);
         }
         break;
+      case 'workflows:list':
+        this.handleWorkflowsList(client);
+        break;
       case 'ping':
         this.sendToRelay(client.relayClientId, { type: 'pong' });
         break;
     }
+  }
+
+  private handleWorkflowsList(client: VirtualClient): void {
+    const commands = loadWorkflowCommands();
+    const workflows = commands.map(c => ({ name: c.name, description: c.description }));
+    console.log(`[iOS Relay] Sending ${workflows.length} workflows to ${client.device.deviceName}:`, workflows.map(w => w.name));
+    this.sendToRelay(client.relayClientId, { type: 'workflows', workflows });
   }
 
   private async handleChatMessage(client: VirtualClient, message: ClientChatMessage): Promise<void> {

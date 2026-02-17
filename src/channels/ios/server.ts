@@ -25,6 +25,8 @@ import {
   iOSSessionsHandler,
   iOSStatusForwarder,
 } from './types';
+import { loadWorkflowCommands } from '../../config/commands-loader';
+import { SettingsManager } from '../../settings';
 
 const DEFAULT_PORT = 7888;
 const PAIRING_CODE_LENGTH = 6;
@@ -49,6 +51,32 @@ export class iOSWebSocketServer {
 
   constructor(port?: number) {
     this.port = port || DEFAULT_PORT;
+    this.loadPairedDevices();
+  }
+
+  private loadPairedDevices(): void {
+    try {
+      const raw = SettingsManager.get('ios.pairedDevices');
+      if (!raw) return;
+      const devices: Array<{ token: string; deviceId: string; deviceName: string }> = JSON.parse(raw);
+      for (const d of devices) {
+        this.authTokens.set(d.token, { deviceId: d.deviceId, deviceName: d.deviceName });
+      }
+      if (devices.length > 0) {
+        console.log(`[iOS] Loaded ${devices.length} paired device(s)`);
+      }
+    } catch {
+      // corrupt data, ignore
+    }
+  }
+
+  private savePairedDevices(): void {
+    const devices = Array.from(this.authTokens.entries()).map(([token, info]) => ({
+      token,
+      deviceId: info.deviceId,
+      deviceName: info.deviceName,
+    }));
+    SettingsManager.set('ios.pairedDevices', JSON.stringify(devices));
   }
 
   /**
@@ -277,6 +305,7 @@ export class iOSWebSocketServer {
 
     // Store persistent auth
     this.authTokens.set(authToken, { deviceId, deviceName });
+    this.savePairedDevices();
 
     // Remove used pairing code
     this.pairingCodes.delete(pairingCode);
@@ -333,6 +362,13 @@ export class iOSWebSocketServer {
               client.device.sessionId = (message as { sessionId: string }).sessionId;
             }
             break;
+
+          case 'workflows:list': {
+            const commands = loadWorkflowCommands();
+            const workflows = commands.map(c => ({ name: c.name, description: c.description }));
+            ws.send(JSON.stringify({ type: 'workflows', workflows }));
+            break;
+          }
 
           case 'ping':
             ws.send(JSON.stringify({ type: 'pong' }));

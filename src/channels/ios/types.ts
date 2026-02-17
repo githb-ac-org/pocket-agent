@@ -5,7 +5,7 @@
 // === Messages from iOS → Desktop ===
 
 export interface ClientMessage {
-  type: 'message' | 'pair' | 'ping' | 'sessions:list' | 'sessions:switch';
+  type: 'message' | 'pair' | 'ping' | 'sessions:list' | 'sessions:switch' | 'workflows:list';
   id?: string;
 }
 
