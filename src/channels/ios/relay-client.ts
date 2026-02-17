@@ -22,6 +22,7 @@ import {
   ConnectedDevice,
   iOSMessageHandler,
   iOSSessionsHandler,
+  iOSHistoryHandler,
   iOSStatusForwarder,
 } from './types';
 import { loadWorkflowCommands } from '../../config/commands-loader';
@@ -59,6 +60,7 @@ export class iOSRelayClient {
 
   private onMessage: iOSMessageHandler | null = null;
   private onGetSessions: iOSSessionsHandler | null = null;
+  private onGetHistory: iOSHistoryHandler | null = null;
   private onStatusSubscribe: iOSStatusForwarder | null = null;
 
   private _isRunning = false;
@@ -100,6 +102,10 @@ export class iOSRelayClient {
 
   setSessionsHandler(handler: iOSSessionsHandler): void {
     this.onGetSessions = handler;
+  }
+
+  setHistoryHandler(handler: iOSHistoryHandler): void {
+    this.onGetHistory = handler;
   }
 
   setStatusForwarder(forwarder: iOSStatusForwarder): void {
@@ -435,6 +441,9 @@ export class iOSRelayClient {
           this.subscribeClientStatus(client);
         }
         break;
+      case 'sessions:history':
+        this.handleSessionsHistory(client, message);
+        break;
       case 'workflows:list':
         this.handleWorkflowsList(client);
         break;
@@ -449,6 +458,13 @@ export class iOSRelayClient {
     const workflows = commands.map(c => ({ name: c.name, description: c.description }));
     console.log(`[iOS Relay] Sending ${workflows.length} workflows to ${client.device.deviceName}:`, workflows.map(w => w.name));
     this.sendToRelay(client.relayClientId, { type: 'workflows', workflows });
+  }
+
+  private handleSessionsHistory(client: VirtualClient, message: ClientMessage): void {
+    const sessionId = ('sessionId' in message ? (message as { sessionId: string }).sessionId : client.device.sessionId) || 'default';
+    const limit = ('limit' in message ? (message as { limit: number }).limit : 100) || 100;
+    const messages = this.onGetHistory?.(sessionId, limit) || [];
+    this.sendToRelay(client.relayClientId, { type: 'history', sessionId, messages });
   }
 
   private async handleChatMessage(client: VirtualClient, message: ClientChatMessage): Promise<void> {

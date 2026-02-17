@@ -1320,6 +1320,13 @@ function setupIPC(): void {
               id: s.id, name: s.name, updatedAt: s.updated_at || new Date().toISOString(),
             }));
           });
+          iosChannel.setHistoryHandler((sessionId, limit) => {
+            const messages = AgentManager.getRecentMessages(limit, sessionId);
+            return messages.map((m) => ({
+              role: m.role, content: m.content, timestamp: m.timestamp,
+              metadata: m.metadata,
+            }));
+          });
           iosChannel.setStatusForwarder((sessionId, handler) => {
             const statusHandler = (status: { type: string; sessionId?: string; toolName?: string; toolInput?: string; message?: string }) => {
               if (status.sessionId && status.sessionId !== sessionId) return;
@@ -2019,6 +2026,17 @@ async function initializeAgent(): Promise<void> {
             id: s.id,
             name: s.name,
             updatedAt: s.updated_at || new Date().toISOString(),
+          }));
+        });
+
+        // Handle history requests from iOS
+        iosChannel.setHistoryHandler((sessionId, limit) => {
+          const messages = AgentManager.getRecentMessages(limit, sessionId);
+          return messages.map((m) => ({
+            role: m.role,
+            content: m.content,
+            timestamp: m.timestamp,
+            metadata: m.metadata,
           }));
         });
 

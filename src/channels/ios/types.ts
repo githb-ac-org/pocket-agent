@@ -5,7 +5,7 @@
 // === Messages from iOS → Desktop ===
 
 export interface ClientMessage {
-  type: 'message' | 'pair' | 'ping' | 'sessions:list' | 'sessions:switch' | 'workflows:list';
+  type: 'message' | 'pair' | 'ping' | 'sessions:list' | 'sessions:switch' | 'sessions:history' | 'workflows:list';
   id?: string;
 }
 
@@ -58,6 +58,17 @@ export interface ServerSessionsMessage {
   activeSessionId: string;
 }
 
+export interface ServerHistoryMessage {
+  type: 'history';
+  sessionId: string;
+  messages: Array<{
+    role: string;
+    content: string;
+    timestamp: string;
+    metadata?: Record<string, unknown>;
+  }>;
+}
+
 export interface ServerErrorMessage {
   type: 'error';
   message: string;
@@ -95,6 +106,13 @@ export type iOSMessageHandler = (
 ) => Promise<{ response: string; tokensUsed?: number; media?: Array<{ type: string; filePath: string; mimeType: string }> }>;
 
 export type iOSSessionsHandler = () => Array<{ id: string; name: string; updatedAt: string }>;
+
+export type iOSHistoryHandler = (sessionId: string, limit: number) => Array<{
+  role: string;
+  content: string;
+  timestamp: string;
+  metadata?: Record<string, unknown>;
+}>;
 
 export type iOSStatusForwarder = (
   sessionId: string,

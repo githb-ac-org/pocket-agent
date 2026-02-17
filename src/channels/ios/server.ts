@@ -23,6 +23,7 @@ import {
   ConnectedDevice,
   iOSMessageHandler,
   iOSSessionsHandler,
+  iOSHistoryHandler,
   iOSStatusForwarder,
 } from './types';
 import { loadWorkflowCommands } from '../../config/commands-loader';
@@ -47,6 +48,7 @@ export class iOSWebSocketServer {
 
   private onMessage: iOSMessageHandler | null = null;
   private onGetSessions: iOSSessionsHandler | null = null;
+  private onGetHistory: iOSHistoryHandler | null = null;
   private onStatusSubscribe: iOSStatusForwarder | null = null;
 
   constructor(port?: number) {
@@ -91,6 +93,13 @@ export class iOSWebSocketServer {
    */
   setSessionsHandler(handler: iOSSessionsHandler): void {
     this.onGetSessions = handler;
+  }
+
+  /**
+   * Set handler for history requests
+   */
+  setHistoryHandler(handler: iOSHistoryHandler): void {
+    this.onGetHistory = handler;
   }
 
   /**
@@ -362,6 +371,14 @@ export class iOSWebSocketServer {
               client.device.sessionId = (message as { sessionId: string }).sessionId;
             }
             break;
+
+          case 'sessions:history': {
+            const histSessionId = ('sessionId' in message ? (message as { sessionId: string }).sessionId : client.device.sessionId) || 'default';
+            const histLimit = ('limit' in message ? (message as { limit: number }).limit : 100) || 100;
+            const histMessages = this.onGetHistory?.(histSessionId, histLimit) || [];
+            ws.send(JSON.stringify({ type: 'history', sessionId: histSessionId, messages: histMessages }));
+            break;
+          }
 
           case 'workflows:list': {
             const commands = loadWorkflowCommands();
