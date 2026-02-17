@@ -870,6 +870,31 @@
       fill: #ffffff;
     }
 
+    /* iOS message badge */
+    .message.from-ios {
+      position: relative;
+    }
+
+    .message.from-ios .ios-badge {
+      position: absolute;
+      top: -8px;
+      right: 8px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 9px;
+      color: #ffffff;
+      background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .message.from-ios .ios-badge svg {
+      width: 10px;
+      height: 10px;
+      fill: #ffffff;
+    }
+
     /* Workflow badge */
     .message.from-workflow {
       position: relative;
@@ -2848,6 +2873,12 @@
       });
       console.log('[Chat] Telegram message listener set up');
 
+      // Listen for iOS messages (cross-channel sync)
+      window.pocketAgent.onIOSMessage((data) => {
+        console.log('[Chat] Received iOS message:', data);
+        handleIOSMessage(data);
+      });
+
       // Listen for session changes (e.g., Telegram link/unlink)
       window.pocketAgent.onSessionsChanged(() => {
         console.log('[Chat] Sessions changed, reloading...');
@@ -3389,6 +3420,62 @@
       return wrapper;
     }
 
+    function handleIOSMessage(data) {
+      // Only show message if it's for the current session
+      if (data.sessionId && data.sessionId !== currentSessionId) {
+        console.log(`[Chat] iOS message for session ${data.sessionId}, current is ${currentSessionId} - skipping display`);
+        return;
+      }
+
+      // Clear empty state if present
+      const emptyState = messagesDiv.querySelector('.empty-state');
+      if (emptyState) emptyState.remove();
+
+      // Add iOS indicator + user message
+      addIOSMessage('user', data.userMessage);
+
+      // Add the agent's response (with media if present)
+      addMessage('assistant', data.response, true, [], null, true, data.media);
+
+      // Update stats and scroll
+      updateStats();
+      scrollToBottom();
+    }
+
+    function addIOSMessage(role, content) {
+      const wrapper = document.createElement('div');
+      wrapper.className = `message ${role} from-ios`;
+
+      // iOS badge with phone icon
+      const badge = document.createElement('div');
+      badge.className = 'ios-badge';
+      badge.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg> Mobile`;
+      wrapper.appendChild(badge);
+
+      const contentDiv = document.createElement('div');
+      contentDiv.className = 'message-content';
+      contentDiv.innerHTML = formatContent(content);
+      contentDiv.addEventListener('click', (e) => {
+        const link = e.target.closest('a[href]');
+        if (link) {
+          e.preventDefault();
+          const href = link.getAttribute('href');
+          if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
+            window.pocketAgent.openExternal(href);
+          }
+        }
+      });
+      wrapper.appendChild(contentDiv);
+
+      const timestampDiv = document.createElement('div');
+      timestampDiv.className = 'message-timestamp';
+      timestampDiv.textContent = formatTimestamp(new Date());
+      wrapper.appendChild(timestampDiv);
+
+      messagesDiv.appendChild(wrapper);
+      return wrapper;
+    }
+
     async function loadHistory() {
       try {
         const history = await window.pocketAgent.getHistory(100, currentSessionId);
@@ -3440,6 +3527,14 @@
               badge.className = 'telegram-badge';
               const attachmentLabel = getAttachmentLabel(msg.metadata.hasAttachment, msg.metadata.attachmentType);
               badge.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>${attachmentLabel}`;
+              msgEl.insertBefore(badge, msgEl.firstChild);
+            }
+            // Add iOS badge if message came from mobile
+            if (msg.metadata?.source === 'ios') {
+              msgEl.classList.add('from-ios');
+              const badge = document.createElement('div');
+              badge.className = 'ios-badge';
+              badge.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg> Mobile`;
               msgEl.insertBefore(badge, msgEl.firstChild);
             }
           }

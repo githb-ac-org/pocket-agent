@@ -931,6 +931,8 @@ class AgentManagerClass extends EventEmitter {
           const hasAttachment = attachmentInfo?.hasAttachment ?? (images && images.length > 0);
           const attachmentType = attachmentInfo?.attachmentType ?? (images && images.length > 0 ? 'photo' : undefined);
           metadata = { source: 'telegram', hasAttachment, attachmentType };
+        } else if (channel === 'ios') {
+          metadata = { source: 'ios' };
         }
 
         const userMsgId = memory.saveMessage('user', messageToSave, sessionId, metadata);

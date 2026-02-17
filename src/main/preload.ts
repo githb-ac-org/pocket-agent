@@ -24,6 +24,11 @@ contextBridge.exposeInMainWorld('pocketAgent', {
     ipcRenderer.on('telegram:message', listener);
     return () => ipcRenderer.removeListener('telegram:message', listener);
   },
+  onIOSMessage: (callback: (data: { userMessage: string; response: string; sessionId: string; deviceId: string; media?: Array<{ type: string; filePath: string; mimeType: string }> }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: { userMessage: string; response: string; sessionId: string; deviceId: string; media?: Array<{ type: string; filePath: string; mimeType: string }> }) => callback(data);
+    ipcRenderer.on('ios:message', listener);
+    return () => ipcRenderer.removeListener('ios:message', listener);
+  },
   onSessionsChanged: (callback: () => void) => {
     const listener = () => callback();
     ipcRenderer.on('sessions:changed', listener);
@@ -136,6 +141,12 @@ contextBridge.exposeInMainWorld('pocketAgent', {
   launchBrowser: (browserId: string, port?: number) => ipcRenderer.invoke('browser:launch', browserId, port),
   testBrowserConnection: (cdpUrl?: string) => ipcRenderer.invoke('browser:testConnection', cdpUrl),
 
+  // iOS mobile companion
+  getIOSPairingCode: (regenerate?: boolean) => ipcRenderer.invoke('ios:pairing-code', regenerate),
+  getIOSDevices: () => ipcRenderer.invoke('ios:devices'),
+  getIOSInfo: () => ipcRenderer.invoke('ios:info'),
+  toggleIOS: (enabled: boolean) => ipcRenderer.invoke('ios:toggle', enabled),
+
   // Shell commands
   runCommand: (command: string) => ipcRenderer.invoke('shell:runCommand', command),
 
@@ -172,6 +183,7 @@ declare global {
       readMedia: (filePath: string) => Promise<string | null>;
       onSchedulerMessage: (callback: (data: { jobName: string; prompt: string; response: string; sessionId: string }) => void) => () => void;
       onTelegramMessage: (callback: (data: { userMessage: string; response: string; chatId: number; sessionId: string; hasAttachment?: boolean; attachmentType?: 'photo' | 'voice' | 'audio'; wasCompacted?: boolean; media?: Array<{ type: string; filePath: string; mimeType: string }> }) => void) => () => void;
+      onIOSMessage: (callback: (data: { userMessage: string; response: string; sessionId: string; deviceId: string; media?: Array<{ type: string; filePath: string; mimeType: string }> }) => void) => () => void;
       onSessionsChanged: (callback: () => void) => () => void;
       onModelChanged: (callback: (model: string) => void) => () => void;
       getHistory: (limit?: number, sessionId?: string) => Promise<Array<{ role: string; content: string; timestamp: string; metadata?: { source?: string; jobName?: string } }>>;

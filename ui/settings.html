@@ -1020,6 +1020,10 @@
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
         Telegram
       </div>
+      <div class="nav-item" data-section="ios">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="3"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+        Mobile
+      </div>
       <div class="nav-item" data-section="memory">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         Memory
@@ -1207,6 +1211,50 @@
             <div class="key-input">
               <input type="text" id="telegram.defaultChatId" placeholder="e.g. -100123456789">
               <button onclick="playNormalClick(); saveTelegramSetting('telegram.defaultChatId')">Save</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- iOS Mobile Section -->
+      <section id="ios" class="section">
+        <h2 class="section-title">Mobile Companion</h2>
+        <p class="section-desc">Connect the Pocket Agent iOS app for on-the-go access.</p>
+
+        <div class="settings-grid">
+          <div class="setting-row">
+            <label>Enable Mobile Connection</label>
+            <div class="toggle" id="ios.enabled-toggle" onclick="playNormalClick(); toggleiOS()"></div>
+          </div>
+        </div>
+
+        <div id="ios-config" style="margin-top: 10px;">
+          <!-- Instance ID -->
+          <div id="ios-instance-section" style="margin-top: 8px;">
+            <h3 class="subsection-title" style="margin: 0 0 8px 0; font-size: 14px; font-weight: 600; color: var(--text-secondary);">Instance ID</h3>
+            <p style="color: var(--text-muted); font-size: 11px; margin-bottom: 10px;">Enter this in the iOS app to identify your desktop. Click to copy.</p>
+            <div style="background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 20px; text-align: center;">
+              <div id="ios-instance-id" style="font-family: 'Courier New', monospace; font-size: 32px; font-weight: 700; letter-spacing: 8px; color: var(--text); padding: 8px 0; cursor: pointer; transition: all 0.2s ease; user-select: all;" onclick="playNormalClick(); copyInstanceId()" title="Click to copy">--------</div>
+            </div>
+          </div>
+
+          <!-- Pairing Code -->
+          <div id="ios-pairing" style="margin-top: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <h3 class="subsection-title" style="margin: 0; font-size: 14px; font-weight: 600; color: var(--text-secondary);">Pairing Code</h3>
+              <button onclick="playNormalClick(); refreshPairingCode(true)" style="padding: 4px 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-secondary); font-size: 11px; cursor: pointer; transition: all 0.2s ease;">New Code</button>
+            </div>
+            <p style="color: var(--text-muted); font-size: 11px; margin: 6px 0 10px 0;">One-time code to pair a new device. Click to copy. Expires in 5 minutes.</p>
+            <div style="background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 20px; text-align: center;">
+              <div id="ios-pairing-code" style="font-family: 'Courier New', monospace; font-size: 32px; font-weight: 700; letter-spacing: 8px; color: var(--accent); padding: 8px 0; cursor: pointer; transition: all 0.2s ease; user-select: all;" onclick="playNormalClick(); copyPairingCode()" title="Click to copy">------</div>
+            </div>
+          </div>
+
+          <!-- Connected devices -->
+          <div style="margin-top: 16px;">
+            <h3 class="subsection-title" style="margin-bottom: 12px; font-size: 14px; font-weight: 600; color: var(--text-secondary);">Connected Devices</h3>
+            <div id="ios-devices" style="background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 16px;">
+              <p style="color: var(--text-muted); font-size: 13px; text-align: center;">No devices connected</p>
             </div>
           </div>
         </div>
@@ -1577,6 +1625,12 @@
       telegramToggle.classList.toggle('active', telegramEnabled);
       document.getElementById('telegram-config').style.opacity = telegramEnabled ? '1' : '0.5';
 
+      // iOS Mobile toggle
+      const iosToggle = document.getElementById('ios.enabled-toggle');
+      const iosEnabled = settings['ios.enabled'] === 'true';
+      iosToggle.classList.toggle('active', iosEnabled);
+      document.getElementById('ios-config').style.opacity = iosEnabled ? '1' : '0.5';
+
       // Browser toggle
       const browserToggle = document.getElementById('browser.enabled-toggle');
       const browserEnabled = settings['browser.enabled'] === 'true';
@@ -1656,6 +1710,13 @@
         targetNav.classList.add('active');
         sections.forEach(s => s.classList.remove('active'));
         targetSection.classList.add('active');
+      }
+
+      // Refresh iOS data when switching to the Mobile tab
+      if (sectionId === 'ios') {
+        refreshIOSInfo();
+        refreshPairingCode();
+        refreshConnectedDevices();
       }
     }
 
@@ -1821,6 +1882,128 @@
       } catch (err) {
         console.error('Failed to delete key:', err);
         showToast('Oops, couldn\'t delete that', 'error');
+      }
+    }
+
+    async function saveSetting(inputId) {
+      const input = document.getElementById(inputId);
+      const value = input.value.trim();
+
+      try {
+        await window.pocketAgent.setSetting(inputId, value);
+        settings[inputId] = value;
+        showToast('Saved!', 'success');
+        activateReboot();
+      } catch (err) {
+        console.error('Failed to save setting:', err);
+        showToast('Save failed, try again?', 'error');
+      }
+    }
+
+    async function toggleiOS() {
+      const currentValue = settings['ios.enabled'] === 'true';
+      const newValue = !currentValue;
+
+      try {
+        await window.pocketAgent.setSetting('ios.enabled', newValue.toString());
+        settings['ios.enabled'] = newValue.toString();
+        updateToggles();
+
+        // Start/stop the server immediately
+        const result = await window.pocketAgent.toggleIOS(newValue);
+        if (result.success) {
+          showToast(newValue ? 'Mobile connection started!' : 'Mobile connection stopped', 'success');
+          if (newValue) {
+            setTimeout(() => {
+              refreshIOSInfo();
+              refreshPairingCode();
+              refreshConnectedDevices();
+            }, 500);
+          }
+        } else {
+          showToast('Failed: ' + (result.error || 'Unknown error'), 'error');
+        }
+      } catch (err) {
+        console.error('Failed to toggle iOS:', err);
+        showToast('Failed to toggle mobile connection', 'error');
+      }
+    }
+
+    async function copyPairingCode() {
+      const codeEl = document.getElementById('ios-pairing-code');
+      const code = codeEl.textContent;
+      if (!code || code === '------') return;
+
+      try {
+        await navigator.clipboard.writeText(code);
+        codeEl.style.transform = 'scale(1.05)';
+        codeEl.style.color = 'var(--success)';
+        showToast('Pairing code copied');
+        setTimeout(() => { codeEl.style.transform = 'scale(1)'; codeEl.style.color = 'var(--accent)'; }, 500);
+      } catch (err) {
+        showToast('Failed to copy', 'error');
+      }
+    }
+
+    async function copyInstanceId() {
+      const id = document.getElementById('ios-instance-id').textContent;
+      if (!id || id === '--------') return;
+      try {
+        await navigator.clipboard.writeText(id);
+        const el = document.getElementById('ios-instance-id');
+        el.style.transform = 'scale(1.05)';
+        el.style.color = 'var(--success)';
+        setTimeout(() => { el.style.transform = 'scale(1)'; el.style.color = 'var(--text)'; }, 500);
+        showToast('Instance ID copied');
+      } catch (err) {
+        showToast('Failed to copy', 'error');
+      }
+    }
+
+    async function refreshPairingCode(regenerate) {
+      try {
+        const result = await window.pocketAgent.getIOSPairingCode(!!regenerate);
+        if (result && result.code) {
+          document.getElementById('ios-pairing-code').textContent = result.code;
+          if (result.instanceId) {
+            document.getElementById('ios-instance-id').textContent = result.instanceId;
+          }
+        } else {
+          document.getElementById('ios-pairing-code').textContent = '------';
+        }
+      } catch (err) {
+        console.error('Failed to get pairing code:', err);
+        document.getElementById('ios-pairing-code').textContent = '------';
+      }
+    }
+
+    async function refreshIOSInfo() {
+      try {
+        const info = await window.pocketAgent.getIOSInfo();
+        if (info && info.instanceId) {
+          document.getElementById('ios-instance-id').textContent = info.instanceId;
+        }
+      } catch (err) {
+        console.error('Failed to get iOS info:', err);
+      }
+    }
+
+    async function refreshConnectedDevices() {
+      try {
+        const devices = await window.pocketAgent.getIOSDevices();
+        const container = document.getElementById('ios-devices');
+        if (devices && devices.length > 0) {
+          container.innerHTML = devices.map(d =>
+            '<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border);">' +
+            '<span style="color: var(--text-primary); font-size: 13px;">' + (d.deviceName || 'Unknown Device') + '</span>' +
+            '<span style="color: var(--text-muted); font-size: 12px;">' + (d.sessionId || 'default') + '</span>' +
+            '</div>'
+          ).join('');
+        } else {
+          container.innerHTML = '<p style="color: var(--text-muted); font-size: 13px; text-align: center;">No devices connected</p>';
+        }
+      } catch (err) {
+        // iOS channel not running
       }
     }
 

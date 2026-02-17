@@ -7,6 +7,8 @@ import { AgentManager } from '../agent';
 import { MemoryManager } from '../memory';
 import { createScheduler, CronScheduler } from '../scheduler';
 import { createTelegramBot, TelegramBot } from '../channels/telegram';
+import { createiOSChannel, destroyiOSChannel, iOSChannel } from '../channels/ios';
+import type { ConnectedDevice, ClientChatMessage } from '../channels/ios/types';
 import { SettingsManager } from '../settings';
 import { loadIdentity, saveIdentity, getIdentityPath, DEFAULT_IDENTITY } from '../config/identity';
 import { loadInstructions, saveInstructions, getInstructionsPath, DEFAULT_INSTRUCTIONS } from '../config/instructions';
@@ -280,6 +282,7 @@ let tray: Tray | null = null;
 let memory: MemoryManager | null = null;
 let scheduler: CronScheduler | null = null;
 let telegramBot: TelegramBot | null = null;
+let iosChannel: iOSChannel | null = null;
 let chatWindow: BrowserWindow | null = null;
 let cronWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
@@ -1263,6 +1266,84 @@ function setupIPC(): void {
     return { success: stopped };
   });
 
+  // iOS mobile companion
+  ipcMain.handle('ios:pairing-code', async (_, regenerate?: boolean) => {
+    if (!iosChannel) return { error: 'iOS channel not enabled' };
+    if (regenerate) {
+      iosChannel.regeneratePairingCode();
+    }
+    return {
+      code: iosChannel.getPairingCode(),
+      instanceId: iosChannel.getInstanceId(),
+      mode: iosChannel.getMode(),
+    };
+  });
+
+  ipcMain.handle('ios:devices', async () => {
+    if (!iosChannel) return [];
+    return iosChannel.getConnectedDevices();
+  });
+
+  ipcMain.handle('ios:info', async () => {
+    if (!iosChannel) return { enabled: false };
+    return {
+      enabled: true,
+      instanceId: iosChannel.getInstanceId(),
+      mode: iosChannel.getMode(),
+      relayUrl: iosChannel.getRelayUrl(),
+    };
+  });
+
+  ipcMain.handle('ios:toggle', async (_, enabled: boolean) => {
+    try {
+      if (enabled && !iosChannel) {
+        iosChannel = createiOSChannel();
+        if (iosChannel) {
+          // Wire up handlers (same as initialization)
+          iosChannel.setMessageHandler(async (client: { device: ConnectedDevice }, message: ClientChatMessage) => {
+            const result = await AgentManager.processMessage(message.text, 'ios', message.sessionId);
+            if (chatWindow && !chatWindow.isDestroyed()) {
+              chatWindow.webContents.send('ios:message', {
+                userMessage: message.text, response: result.response,
+                sessionId: message.sessionId, deviceId: client.device.deviceId,
+              });
+            }
+            const linkedChatId = memory?.getChatForSession(message.sessionId);
+            if (telegramBot && linkedChatId) {
+              telegramBot.syncToChat(message.text, result.response, linkedChatId, result.media).catch(() => {});
+            }
+            return { response: result.response, tokensUsed: result.tokensUsed, media: result.media };
+          });
+          iosChannel.setSessionsHandler(() => {
+            const sessions = memory?.getSessions() || [];
+            return sessions.map((s: { id: string; name: string; updated_at?: string }) => ({
+              id: s.id, name: s.name, updatedAt: s.updated_at || new Date().toISOString(),
+            }));
+          });
+          iosChannel.setStatusForwarder((sessionId, handler) => {
+            const statusHandler = (status: { type: string; sessionId?: string; toolName?: string; toolInput?: string; message?: string }) => {
+              if (status.sessionId && status.sessionId !== sessionId) return;
+              handler({ type: 'status', status: status.type, sessionId: status.sessionId || sessionId, message: status.message, toolName: status.toolName, toolInput: status.toolInput });
+            };
+            AgentManager.on('status', statusHandler);
+            return () => AgentManager.off('status', statusHandler);
+          });
+          await iosChannel.start();
+          console.log(`[Main] iOS channel started (${iosChannel.getMode()} mode)`);
+        }
+      } else if (!enabled && iosChannel) {
+        await iosChannel.stop();
+        destroyiOSChannel();
+        iosChannel = null;
+        console.log('[Main] iOS channel stopped');
+      }
+      return { success: true };
+    } catch (error) {
+      console.error('[Main] iOS toggle error:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+
   // Facts
   ipcMain.handle('facts:list', async () => {
     return AgentManager.getAllFacts();
@@ -1890,11 +1971,97 @@ async function initializeAgent(): Promise<void> {
     }
   }
 
+  // Initialize iOS channel (WebSocket server for mobile companion app)
+  const iosEnabled = SettingsManager.getBoolean('ios.enabled');
+  console.log('[Main] iOS channel enabled:', iosEnabled);
+  if (iosEnabled) {
+    try {
+      iosChannel = createiOSChannel();
+
+      if (iosChannel) {
+        // Handle incoming messages from iOS → Agent
+        iosChannel.setMessageHandler(async (client: { device: ConnectedDevice }, message: ClientChatMessage) => {
+          const result = await AgentManager.processMessage(
+            message.text,
+            'ios',
+            message.sessionId
+          );
+
+          // Sync to desktop UI
+          if (chatWindow && !chatWindow.isDestroyed()) {
+            chatWindow.webContents.send('ios:message', {
+              userMessage: message.text,
+              response: result.response,
+              sessionId: message.sessionId,
+              deviceId: client.device.deviceId,
+            });
+          }
+
+          // Sync to Telegram if linked
+          const linkedChatId = memory?.getChatForSession(message.sessionId);
+          if (telegramBot && linkedChatId) {
+            telegramBot.syncToChat(message.text, result.response, linkedChatId, result.media).catch((err) => {
+              console.error('[Main] Failed to sync iOS message to Telegram:', err);
+            });
+          }
+
+          return {
+            response: result.response,
+            tokensUsed: result.tokensUsed,
+            media: result.media,
+          };
+        });
+
+        // Handle session list requests
+        iosChannel.setSessionsHandler(() => {
+          const sessions = memory?.getSessions() || [];
+          return sessions.map((s: { id: string; name: string; updated_at?: string }) => ({
+            id: s.id,
+            name: s.name,
+            updatedAt: s.updated_at || new Date().toISOString(),
+          }));
+        });
+
+        // Forward agent status events to connected iOS clients
+        iosChannel.setStatusForwarder((sessionId, handler) => {
+          const statusHandler = (status: { type: string; sessionId?: string; toolName?: string; toolInput?: string; message?: string }) => {
+            if (status.sessionId && status.sessionId !== sessionId) return;
+            handler({
+              type: 'status',
+              status: status.type,
+              sessionId: status.sessionId || sessionId,
+              message: status.message,
+              toolName: status.toolName,
+              toolInput: status.toolInput,
+            });
+          };
+
+          AgentManager.on('status', statusHandler);
+          return () => AgentManager.off('status', statusHandler);
+        });
+
+        await iosChannel.start();
+        const mode = iosChannel.getMode();
+        if (mode === 'relay') {
+          console.log(`[Main] iOS channel started (relay, instance: ${iosChannel.getInstanceId()})`);
+        } else {
+          console.log(`[Main] iOS channel started (local, port: ${iosChannel.getPort()})`);
+        }
+      }
+    } catch (error) {
+      console.error('[Main] iOS channel failed:', error);
+    }
+  }
+
   console.log('[Main] Pocket Agent initialized');
   updateTrayMenu();
 }
 
 async function stopAgent(): Promise<void> {
+  if (iosChannel) {
+    await iosChannel.stop();
+    iosChannel = null;
+  }
   if (telegramBot) {
     await telegramBot.stop();
     telegramBot = null;

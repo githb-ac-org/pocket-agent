@@ -213,6 +213,44 @@ export const SETTINGS_SCHEMA: SettingDefinition[] = [
     type: 'string',
   },
 
+  // iOS mobile companion settings
+  {
+    key: 'ios.enabled',
+    defaultValue: 'false',
+    encrypted: false,
+    category: 'ios',
+    label: 'Enable Mobile Connection',
+    description: 'Connect to relay for iOS companion app',
+    type: 'boolean',
+  },
+  {
+    key: 'ios.instanceId',
+    defaultValue: '',
+    encrypted: false,
+    category: 'ios',
+    label: 'Instance ID',
+    description: 'Unique ID for your desktop instance (auto-generated)',
+    type: 'string',
+  },
+  {
+    key: 'ios.relayUrl',
+    defaultValue: 'wss://pocket-agent-relay.buzzbeamaustralia.workers.dev',
+    encrypted: false,
+    category: 'ios',
+    label: 'Relay URL',
+    description: 'WebSocket relay server URL',
+    type: 'string',
+  },
+  {
+    key: 'ios.port',
+    defaultValue: '7888',
+    encrypted: false,
+    category: 'ios',
+    label: 'Local Port',
+    description: 'WebSocket server port for local connections (set relay URL to "local" to use)',
+    type: 'string',
+  },
+
   // Memory settings
   {
     key: 'memory.embeddingProvider',
