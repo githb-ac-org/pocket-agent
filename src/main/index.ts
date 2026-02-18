@@ -9,6 +9,7 @@ import { createScheduler, CronScheduler } from '../scheduler';
 import { createTelegramBot, TelegramBot } from '../channels/telegram';
 import { createiOSChannel, destroyiOSChannel, iOSChannel } from '../channels/ios';
 import type { ConnectedDevice, ClientChatMessage } from '../channels/ios/types';
+import { transcribeAudio } from '../utils/transcribe';
 import { SettingsManager } from '../settings';
 import { loadIdentity, saveIdentity, getIdentityPath, DEFAULT_IDENTITY } from '../config/identity';
 import { loadInstructions, saveInstructions, getInstructionsPath, DEFAULT_INSTRUCTIONS } from '../config/instructions';
@@ -1306,16 +1307,28 @@ function setupIPC(): void {
         if (iosChannel) {
           // Wire up handlers (same as initialization)
           iosChannel.setMessageHandler(async (client: { device: ConnectedDevice }, message: ClientChatMessage) => {
-            const result = await AgentManager.processMessage(message.text, 'ios', message.sessionId);
+            let messageText = message.text;
+            if (message.audio?.data) {
+              console.log(`[Main] iOS voice note received (${message.audio.duration}s, ${Math.round(message.audio.data.length / 1024)}KB base64)`);
+              const audioBuffer = Buffer.from(message.audio.data, 'base64');
+              const transcription = await transcribeAudio(audioBuffer, message.audio.format || 'm4a');
+              if (transcription.success && transcription.text) {
+                messageText = transcription.text;
+                console.log(`[Main] Transcribed: "${messageText.substring(0, 80)}..."`);
+              } else {
+                console.warn('[Main] Voice transcription failed:', transcription.error);
+              }
+            }
+            const result = await AgentManager.processMessage(messageText, 'ios', message.sessionId);
             if (chatWindow && !chatWindow.isDestroyed()) {
               chatWindow.webContents.send('ios:message', {
-                userMessage: message.text, response: result.response,
+                userMessage: messageText, response: result.response,
                 sessionId: message.sessionId, deviceId: client.device.deviceId,
               });
             }
             const linkedChatId = memory?.getChatForSession(message.sessionId);
             if (telegramBot && linkedChatId) {
-              telegramBot.syncToChat(message.text, result.response, linkedChatId, result.media).catch(() => {});
+              telegramBot.syncToChat(messageText, result.response, linkedChatId, result.media).catch(() => {});
             }
             return { response: result.response, tokensUsed: result.tokensUsed, media: result.media };
           });
@@ -2063,8 +2076,21 @@ async function initializeAgent(): Promise<void> {
       if (iosChannel) {
         // Handle incoming messages from iOS → Agent
         iosChannel.setMessageHandler(async (client: { device: ConnectedDevice }, message: ClientChatMessage) => {
+          // Transcribe audio if present (voice note from iOS)
+          let messageText = message.text;
+          if (message.audio?.data) {
+            const audioBuffer = Buffer.from(message.audio.data, 'base64');
+            const transcription = await transcribeAudio(audioBuffer, message.audio.format || 'm4a');
+            if (transcription.success && transcription.text) {
+              messageText = transcription.text;
+              console.log(`[Main] Transcribed iOS voice note (${message.audio.duration}s): "${messageText.substring(0, 80)}..."`);
+            } else {
+              console.warn('[Main] Voice transcription failed:', transcription.error);
+            }
+          }
+
           const result = await AgentManager.processMessage(
-            message.text,
+            messageText,
             'ios',
             message.sessionId
           );
@@ -2072,7 +2098,7 @@ async function initializeAgent(): Promise<void> {
           // Sync to desktop UI
           if (chatWindow && !chatWindow.isDestroyed()) {
             chatWindow.webContents.send('ios:message', {
-              userMessage: message.text,
+              userMessage: messageText,
               response: result.response,
               sessionId: message.sessionId,
               deviceId: client.device.deviceId,
@@ -2082,7 +2108,7 @@ async function initializeAgent(): Promise<void> {
           // Sync to Telegram if linked
           const linkedChatId = memory?.getChatForSession(message.sessionId);
           if (telegramBot && linkedChatId) {
-            telegramBot.syncToChat(message.text, result.response, linkedChatId, result.media).catch((err) => {
+            telegramBot.syncToChat(messageText, result.response, linkedChatId, result.media).catch((err) => {
               console.error('[Main] Failed to sync iOS message to Telegram:', err);
             });
           }

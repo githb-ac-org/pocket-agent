@@ -17,6 +17,11 @@ export interface ClientChatMessage extends ClientMessage {
     data: string;
     mediaType: string;
   }>;
+  audio?: {
+    data: string; // base64 encoded audio
+    format: string; // 'm4a', 'ogg', etc.
+    duration: number; // seconds
+  };
 }
 
 export interface ClientPairMessage extends ClientMessage {
