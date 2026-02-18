@@ -5,7 +5,7 @@
 // === Messages from iOS → Desktop ===
 
 export interface ClientMessage {
-  type: 'message' | 'pair' | 'ping' | 'sessions:list' | 'sessions:switch' | 'sessions:history' | 'workflows:list';
+  type: 'message' | 'pair' | 'ping' | 'sessions:list' | 'sessions:switch' | 'sessions:history' | 'workflows:list' | 'models:list' | 'models:switch';
   id?: string;
 }
 
@@ -118,3 +118,21 @@ export type iOSStatusForwarder = (
   sessionId: string,
   handler: (status: ServerStatusMessage) => void
 ) => () => void;
+
+// === Model types ===
+
+export interface ModelInfo {
+  id: string;
+  name: string;
+  provider: string;
+}
+
+export interface ServerModelsMessage {
+  type: 'models';
+  models: ModelInfo[];
+  activeModelId: string;
+}
+
+export type iOSModelsHandler = () => { models: ModelInfo[]; activeModelId: string };
+
+export type iOSModelSwitchHandler = (modelId: string) => void;

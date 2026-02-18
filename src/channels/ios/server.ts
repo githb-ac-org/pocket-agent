@@ -25,6 +25,8 @@ import {
   iOSSessionsHandler,
   iOSHistoryHandler,
   iOSStatusForwarder,
+  iOSModelsHandler,
+  iOSModelSwitchHandler,
 } from './types';
 import { loadWorkflowCommands } from '../../config/commands-loader';
 import { SettingsManager } from '../../settings';
@@ -50,6 +52,8 @@ export class iOSWebSocketServer {
   private onGetSessions: iOSSessionsHandler | null = null;
   private onGetHistory: iOSHistoryHandler | null = null;
   private onStatusSubscribe: iOSStatusForwarder | null = null;
+  private onGetModels: iOSModelsHandler | null = null;
+  private onSwitchModel: iOSModelSwitchHandler | null = null;
 
   constructor(port?: number) {
     this.port = port || DEFAULT_PORT;
@@ -107,6 +111,14 @@ export class iOSWebSocketServer {
    */
   setStatusForwarder(forwarder: iOSStatusForwarder): void {
     this.onStatusSubscribe = forwarder;
+  }
+
+  setModelsHandler(handler: iOSModelsHandler): void {
+    this.onGetModels = handler;
+  }
+
+  setModelSwitchHandler(handler: iOSModelSwitchHandler): void {
+    this.onSwitchModel = handler;
   }
 
   /**
@@ -384,6 +396,22 @@ export class iOSWebSocketServer {
             const commands = loadWorkflowCommands();
             const workflows = commands.map(c => ({ name: c.name, description: c.description }));
             ws.send(JSON.stringify({ type: 'workflows', workflows }));
+            break;
+          }
+
+          case 'models:list': {
+            const modelsResult = this.onGetModels?.() || { models: [], activeModelId: '' };
+            ws.send(JSON.stringify({ type: 'models', ...modelsResult }));
+            break;
+          }
+
+          case 'models:switch': {
+            if ('modelId' in message) {
+              this.onSwitchModel?.((message as { modelId: string }).modelId);
+              // Send updated model list back
+              const updatedModels = this.onGetModels?.() || { models: [], activeModelId: '' };
+              ws.send(JSON.stringify({ type: 'models', ...updatedModels }));
+            }
             break;
           }
 

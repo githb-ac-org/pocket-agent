@@ -24,6 +24,8 @@ import {
   iOSSessionsHandler,
   iOSHistoryHandler,
   iOSStatusForwarder,
+  iOSModelsHandler,
+  iOSModelSwitchHandler,
 } from './types';
 import { loadWorkflowCommands } from '../../config/commands-loader';
 import { SettingsManager } from '../../settings';
@@ -62,6 +64,8 @@ export class iOSRelayClient {
   private onGetSessions: iOSSessionsHandler | null = null;
   private onGetHistory: iOSHistoryHandler | null = null;
   private onStatusSubscribe: iOSStatusForwarder | null = null;
+  private onGetModels: iOSModelsHandler | null = null;
+  private onSwitchModel: iOSModelSwitchHandler | null = null;
 
   private _isRunning = false;
 
@@ -110,6 +114,14 @@ export class iOSRelayClient {
 
   setStatusForwarder(forwarder: iOSStatusForwarder): void {
     this.onStatusSubscribe = forwarder;
+  }
+
+  setModelsHandler(handler: iOSModelsHandler): void {
+    this.onGetModels = handler;
+  }
+
+  setModelSwitchHandler(handler: iOSModelSwitchHandler): void {
+    this.onSwitchModel = handler;
   }
 
   generatePairingCode(): string {
@@ -447,6 +459,16 @@ export class iOSRelayClient {
       case 'workflows:list':
         this.handleWorkflowsList(client);
         break;
+      case 'models:list':
+        this.handleModelsList(client);
+        break;
+      case 'models:switch':
+        if ('modelId' in message) {
+          this.onSwitchModel?.((message as { modelId: string }).modelId);
+          // Send updated model list back
+          this.handleModelsList(client);
+        }
+        break;
       case 'ping':
         this.sendToRelay(client.relayClientId, { type: 'pong' });
         break;
@@ -458,6 +480,11 @@ export class iOSRelayClient {
     const workflows = commands.map(c => ({ name: c.name, description: c.description }));
     console.log(`[iOS Relay] Sending ${workflows.length} workflows to ${client.device.deviceName}:`, workflows.map(w => w.name));
     this.sendToRelay(client.relayClientId, { type: 'workflows', workflows });
+  }
+
+  private handleModelsList(client: VirtualClient): void {
+    const result = this.onGetModels?.() || { models: [], activeModelId: '' };
+    this.sendToRelay(client.relayClientId, { type: 'models', ...result });
   }
 
   private handleSessionsHistory(client: VirtualClient, message: ClientMessage): void {

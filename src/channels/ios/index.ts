@@ -10,7 +10,7 @@ import crypto from 'crypto';
 import { BaseChannel } from '../index';
 import { iOSWebSocketServer } from './server';
 import { iOSRelayClient } from './relay-client';
-import { iOSMessageCallback, ConnectedDevice, iOSMessageHandler, iOSSessionsHandler, iOSHistoryHandler, iOSStatusForwarder } from './types';
+import { iOSMessageCallback, ConnectedDevice, iOSMessageHandler, iOSSessionsHandler, iOSHistoryHandler, iOSStatusForwarder, iOSModelsHandler, iOSModelSwitchHandler } from './types';
 import { SettingsManager } from '../../settings';
 
 export type { iOSMessageCallback, ConnectedDevice };
@@ -68,6 +68,14 @@ export class iOSChannel extends BaseChannel {
 
   setStatusForwarder(forwarder: iOSStatusForwarder): void {
     this.backend.setStatusForwarder(forwarder);
+  }
+
+  setModelsHandler(handler: iOSModelsHandler): void {
+    this.backend.setModelsHandler(handler);
+  }
+
+  setModelSwitchHandler(handler: iOSModelSwitchHandler): void {
+    this.backend.setModelSwitchHandler(handler);
   }
 
   getPairingCode(): string {

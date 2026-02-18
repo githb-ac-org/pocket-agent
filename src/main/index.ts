@@ -1335,6 +1335,34 @@ function setupIPC(): void {
             AgentManager.on('status', statusHandler);
             return () => AgentManager.off('status', statusHandler);
           });
+          iosChannel.setModelsHandler(() => {
+            const models: Array<{ id: string; name: string; provider: string }> = [];
+            const authMethod = SettingsManager.get('auth.method');
+            const hasOAuth = authMethod === 'oauth' && SettingsManager.get('auth.oauthToken');
+            const hasAnthropicKey = SettingsManager.get('anthropic.apiKey');
+            if (hasOAuth || hasAnthropicKey) {
+              models.push(
+                { id: 'claude-opus-4-6', name: 'Opus 4.6', provider: 'anthropic' },
+                { id: 'claude-sonnet-4-6', name: 'Sonnet 4.6', provider: 'anthropic' },
+                { id: 'claude-haiku-4-5-20251001', name: 'Haiku 4.5', provider: 'anthropic' }
+              );
+            }
+            const hasMoonshotKey = SettingsManager.get('moonshot.apiKey');
+            if (hasMoonshotKey) {
+              models.push({ id: 'kimi-k2.5', name: 'Kimi K2.5', provider: 'moonshot' });
+            }
+            const hasGlmKey = SettingsManager.get('glm.apiKey');
+            if (hasGlmKey) {
+              models.push(
+                { id: 'glm-5', name: 'GLM 5', provider: 'glm' },
+                { id: 'glm-4.7', name: 'GLM 4.7', provider: 'glm' }
+              );
+            }
+            return { models, activeModelId: AgentManager.getModel() };
+          });
+          iosChannel.setModelSwitchHandler((modelId: string) => {
+            AgentManager.setModel(modelId);
+          });
           await iosChannel.start();
           console.log(`[Main] iOS channel started (${iosChannel.getMode()} mode)`);
         }
@@ -2056,6 +2084,37 @@ async function initializeAgent(): Promise<void> {
 
           AgentManager.on('status', statusHandler);
           return () => AgentManager.off('status', statusHandler);
+        });
+
+        // Handle model list/switch requests from iOS
+        iosChannel.setModelsHandler(() => {
+          const models: Array<{ id: string; name: string; provider: string }> = [];
+          const authMethod = SettingsManager.get('auth.method');
+          const hasOAuth = authMethod === 'oauth' && SettingsManager.get('auth.oauthToken');
+          const hasAnthropicKey = SettingsManager.get('anthropic.apiKey');
+          if (hasOAuth || hasAnthropicKey) {
+            models.push(
+              { id: 'claude-opus-4-6', name: 'Opus 4.6', provider: 'anthropic' },
+              { id: 'claude-sonnet-4-6', name: 'Sonnet 4.6', provider: 'anthropic' },
+              { id: 'claude-haiku-4-5-20251001', name: 'Haiku 4.5', provider: 'anthropic' }
+            );
+          }
+          const hasMoonshotKey = SettingsManager.get('moonshot.apiKey');
+          if (hasMoonshotKey) {
+            models.push({ id: 'kimi-k2.5', name: 'Kimi K2.5', provider: 'moonshot' });
+          }
+          const hasGlmKey = SettingsManager.get('glm.apiKey');
+          if (hasGlmKey) {
+            models.push(
+              { id: 'glm-5', name: 'GLM 5', provider: 'glm' },
+              { id: 'glm-4.7', name: 'GLM 4.7', provider: 'glm' }
+            );
+          }
+          return { models, activeModelId: AgentManager.getModel() };
+        });
+
+        iosChannel.setModelSwitchHandler((modelId: string) => {
+          AgentManager.setModel(modelId);
         });
 
         await iosChannel.start();
