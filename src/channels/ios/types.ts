@@ -69,6 +69,15 @@ export interface ServerHistoryMessage {
   }>;
 }
 
+export interface ServerSyncMessage {
+  type: 'sync';
+  userMessage: string;
+  response: string;
+  sessionId: string;
+  tokensUsed?: number;
+  media?: Array<{ type: string; filePath: string; mimeType: string }>;
+}
+
 export interface ServerErrorMessage {
   type: 'error';
   message: string;

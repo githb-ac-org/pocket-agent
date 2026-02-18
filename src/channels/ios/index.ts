@@ -116,11 +116,13 @@ export class iOSChannel extends BaseChannel {
     this.backend.broadcast(message);
   }
 
-  syncFromDesktop(userMessage: string, response: string, sessionId: string): void {
+  syncFromDesktop(userMessage: string, response: string, sessionId: string, media?: Array<{ type: string; filePath: string; mimeType: string }>): void {
     this.backend.broadcast({
-      type: 'response',
-      text: `[Desktop]\n\nYou: ${userMessage}\n\nAssistant: ${response}`,
+      type: 'sync',
+      userMessage,
+      response,
       sessionId,
+      media,
     });
   }
 

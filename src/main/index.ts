@@ -1198,6 +1198,11 @@ function setupIPC(): void {
         });
       }
 
+      // Sync to iOS (Desktop -> iOS)
+      if (iosChannel) {
+        iosChannel.syncFromDesktop(message, result.response, effectiveSessionId, result.media);
+      }
+
       return {
         success: true,
         response: result.response,
