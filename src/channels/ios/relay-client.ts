@@ -477,7 +477,7 @@ export class iOSRelayClient {
 
   private handleWorkflowsList(client: VirtualClient): void {
     const commands = loadWorkflowCommands();
-    const workflows = commands.map(c => ({ name: c.name, description: c.description }));
+    const workflows = commands.map(c => ({ name: c.name, description: c.description, content: c.content }));
     console.log(`[iOS Relay] Sending ${workflows.length} workflows to ${client.device.deviceName}:`, workflows.map(w => w.name));
     this.sendToRelay(client.relayClientId, { type: 'workflows', workflows });
   }

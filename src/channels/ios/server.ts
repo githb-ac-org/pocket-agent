@@ -394,7 +394,7 @@ export class iOSWebSocketServer {
 
           case 'workflows:list': {
             const commands = loadWorkflowCommands();
-            const workflows = commands.map(c => ({ name: c.name, description: c.description }));
+            const workflows = commands.map(c => ({ name: c.name, description: c.description, content: c.content }));
             ws.send(JSON.stringify({ type: 'workflows', workflows }));
             break;
           }
