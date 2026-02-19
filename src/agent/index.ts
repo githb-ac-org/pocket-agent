@@ -219,11 +219,13 @@ function formatAgentError(error: string): string {
 
 // Status event types
 export type AgentStatus = {
-  type: 'thinking' | 'tool_start' | 'tool_end' | 'tool_blocked' | 'responding' | 'done' | 'subagent_start' | 'subagent_update' | 'subagent_end' | 'queued' | 'queue_processing' | 'teammate_start' | 'teammate_idle' | 'teammate_message' | 'task_completed' | 'background_task_start' | 'background_task_output' | 'background_task_end';
+  type: 'thinking' | 'tool_start' | 'tool_end' | 'tool_blocked' | 'responding' | 'done' | 'subagent_start' | 'subagent_update' | 'subagent_end' | 'queued' | 'queue_processing' | 'teammate_start' | 'teammate_idle' | 'teammate_message' | 'task_completed' | 'background_task_start' | 'background_task_output' | 'background_task_end' | 'partial_text';
   sessionId?: string;
   toolName?: string;
   toolInput?: string;
   message?: string;
+  // Partial text preview (streamed as agent composes)
+  partialText?: string;
   // Subagent tracking
   agentId?: string;
   agentType?: string;
@@ -407,6 +409,22 @@ class AgentManagerClass extends EventEmitter {
   private persistentSessions: Map<string, PersistentSDKSession> = new Map();
   private contextUsageBySession: Map<string, { contextTokens: number; contextWindow: number }> = new Map();
   private pendingMedia: MediaAttachment[] = [];
+  private stoppedByUserSession: Set<string> = new Set();
+  private sdkToolTimers: Map<string, { timer: ReturnType<typeof setTimeout>; sessionId: string }> = new Map();
+
+  // Per-tool timeouts for SDK built-in tools (MCP tools have their own via wrapToolHandler)
+  private static readonly SDK_TOOL_TIMEOUTS: Record<string, number> = {
+    Bash: 120_000,      // 2 min — commands can be long-running
+    Read: 15_000,
+    Write: 15_000,
+    Edit: 15_000,
+    Glob: 15_000,
+    Grep: 30_000,       // large codebases
+    WebSearch: 30_000,
+    WebFetch: 45_000,
+    Task: 300_000,      // 5 min — subagent work
+  };
+  private static readonly SDK_TOOL_DEFAULT_TIMEOUT = 60_000; // 1 min default
 
   private constructor() {
     super();
@@ -607,6 +625,7 @@ class AgentManagerClass extends EventEmitter {
     const memory = this.memory; // Local reference for TypeScript narrowing
 
     this.processingBySession.set(sessionId, true);
+    this.stoppedByUserSession.delete(sessionId);
     this.lastSuggestedPromptBySession.set(sessionId, undefined);
     this.pendingMedia = [];
 
@@ -678,6 +697,13 @@ class AgentManagerClass extends EventEmitter {
         // Listen for session closure
         session.on('closed', () => {
           console.log(`[AgentManager] Persistent session closed: ${sessionId}`);
+          // Clear SDK tool timeout timers belonging to this session
+          for (const [id, entry] of this.sdkToolTimers.entries()) {
+            if (entry.sessionId === sessionId) {
+              clearTimeout(entry.timer);
+              this.sdkToolTimers.delete(id);
+            }
+          }
         });
 
         this.persistentSessions.set(sessionId, session);
@@ -737,6 +763,13 @@ class AgentManagerClass extends EventEmitter {
 
             freshSession.on('closed', () => {
               console.log(`[AgentManager] Persistent session closed: ${sessionId}`);
+              // Clear SDK tool timeout timers belonging to this session
+              for (const [id, entry] of this.sdkToolTimers.entries()) {
+                if (entry.sessionId === sessionId) {
+                  clearTimeout(entry.timer);
+                  this.sdkToolTimers.delete(id);
+                }
+              }
             });
 
             this.persistentSessions.set(sessionId, freshSession);
@@ -812,6 +845,13 @@ class AgentManagerClass extends EventEmitter {
 
         freshSession.on('closed', () => {
           console.log(`[AgentManager] Persistent session closed: ${sessionId}`);
+          // Clear SDK tool timeout timers belonging to this session
+          for (const [id, entry] of this.sdkToolTimers.entries()) {
+            if (entry.sessionId === sessionId) {
+              clearTimeout(entry.timer);
+              this.sdkToolTimers.delete(id);
+            }
+          }
         });
 
         this.persistentSessions.set(sessionId, freshSession);
@@ -844,11 +884,19 @@ class AgentManagerClass extends EventEmitter {
       // === Process turn result (same for both paths) ===
 
       // If the request was aborted (user pressed stop), bail out cleanly
-      const wasAborted = turnResult.errors?.some(e => e.includes('aborted') || e.includes('interrupted'));
+      const wasAborted = this.stoppedByUserSession.has(sessionId)
+        || turnResult.errors?.some(e => e.includes('aborted') || e.includes('interrupted'));
       if (wasAborted) {
+        this.stoppedByUserSession.delete(sessionId);
         this.emitStatus({ type: 'done', sessionId });
         this.processingBySession.set(sessionId, false);
-        return { response: '', tokensUsed: 0, wasCompacted: false };
+        const partialResponse = turnResult.response?.trim() || '';
+        return {
+          response: partialResponse,
+          tokensUsed: 0,
+          wasCompacted: false,
+          suggestedPrompt: partialResponse ? this.lastSuggestedPromptBySession.get(sessionId) : undefined,
+        };
       }
 
       let response = turnResult.response;
@@ -1038,6 +1086,18 @@ class AgentManagerClass extends EventEmitter {
    * Also clears any queued messages for that session.
    */
   stopQuery(sessionId?: string, clearQueuedMessages: boolean = true): boolean {
+    // Clear SDK tool timeout timers for the session being stopped
+    const targetSessionId = sessionId
+      || [...this.processingBySession.entries()].find(([, v]) => v)?.[0];
+    if (targetSessionId) {
+      for (const [id, entry] of this.sdkToolTimers.entries()) {
+        if (entry.sessionId === targetSessionId) {
+          clearTimeout(entry.timer);
+          this.sdkToolTimers.delete(id);
+        }
+      }
+    }
+
     if (sessionId) {
       // Clear the queue first
       if (clearQueuedMessages) {
@@ -1047,6 +1107,7 @@ class AgentManagerClass extends EventEmitter {
       const session = this.persistentSessions.get(sessionId);
       if (session?.isAlive() && this.processingBySession.get(sessionId)) {
         console.log(`[AgentManager] Interrupting persistent session ${sessionId} (bg tasks survive)...`);
+        this.stoppedByUserSession.add(sessionId);
         session.interrupt().catch(err => {
           console.error(`[AgentManager] Interrupt failed for ${sessionId}:`, err);
         });
@@ -1057,6 +1118,7 @@ class AgentManagerClass extends EventEmitter {
       const abortController = this.abortControllersBySession.get(sessionId);
       if (this.processingBySession.get(sessionId) && abortController) {
         console.log(`[AgentManager] Stopping query for session ${sessionId} via abort...`);
+        this.stoppedByUserSession.add(sessionId);
         abortController.abort();
         return true;
       }
@@ -1073,6 +1135,7 @@ class AgentManagerClass extends EventEmitter {
         const session = this.persistentSessions.get(sid);
         if (session?.isAlive()) {
           console.log(`[AgentManager] Interrupting persistent session ${sid}...`);
+          this.stoppedByUserSession.add(sid);
           session.interrupt().catch(err => {
             console.error(`[AgentManager] Interrupt failed for ${sid}:`, err);
           });
@@ -1082,6 +1145,7 @@ class AgentManagerClass extends EventEmitter {
         const abortController = this.abortControllersBySession.get(sid);
         if (abortController) {
           console.log(`[AgentManager] Stopping query for session ${sid} via abort...`);
+          this.stoppedByUserSession.add(sid);
           abortController.abort();
           return true;
         }
@@ -1518,7 +1582,8 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
         if (!cleanedText && text) {
           console.warn(`[AgentManager] extractSuggestedPrompt stripped entire response (original ${text.length} chars)`);
         }
-        return cleanedText;
+        // Accumulate text across multi-message turns (e.g. text → tool → text)
+        return current ? current + '\n\n' + cleanedText : cleanedText;
       } else if (content !== undefined) {
         // content exists but isn't an array — unexpected format
         console.warn(`[AgentManager] Assistant message content is not an array (type: ${typeof content})`);
@@ -1537,7 +1602,9 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
         if (suggestion) {
           this.lastSuggestedPromptBySession.set(getCurrentSessionId(), suggestion);
         }
-        return cleanedText;
+        // If we've already accumulated text from assistant messages, keep it
+        // (SDK result.output only contains the last assistant message's text)
+        return current || cleanedText;
       }
     }
 
@@ -1726,6 +1793,22 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
     if (msg.type === 'assistant') {
       const content = msg.message?.content;
       if (Array.isArray(content)) {
+        // Emit partial text for visibility while agent is composing
+        const textBlocks = content
+          .filter((block: unknown) => (block as { type?: string })?.type === 'text')
+          .map((block: unknown) => (block as { text: string }).text);
+        if (textBlocks.length > 0) {
+          const partialText = textBlocks.join('\n').trim();
+          if (partialText) {
+            this.emitStatus({
+              type: 'partial_text',
+              sessionId,
+              partialText,
+              message: 'composing...',
+            });
+          }
+        }
+
         for (const block of content) {
           if (block?.type === 'tool_use') {
             const rawName = block.name as string;
@@ -1842,6 +1925,22 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
                 message: `batting at ${toolName}...`,
               });
             }
+
+            // Start timeout timer for SDK built-in tools (MCP tools have their own via wrapToolHandler)
+            if (!rawName.startsWith('mcp__')) {
+              const timeoutMs = AgentManagerClass.SDK_TOOL_TIMEOUTS[rawName]
+                ?? AgentManagerClass.SDK_TOOL_DEFAULT_TIMEOUT;
+              const timer = setTimeout(() => {
+                console.error(`[AgentManager] SDK tool ${rawName} (${toolUseId}) timed out after ${timeoutMs}ms`);
+                this.sdkToolTimers.delete(toolUseId);
+                const session = this.persistentSessions.get(sessionId);
+                if (session?.isAlive() && this.processingBySession.get(sessionId)) {
+                  session.interrupt().catch(err =>
+                    console.error(`[AgentManager] Timeout interrupt failed:`, err));
+                }
+              }, timeoutMs);
+              this.sdkToolTimers.set(toolUseId, { timer, sessionId });
+            }
           }
         }
       }
@@ -1853,6 +1952,16 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
       if (Array.isArray(content)) {
         for (const block of content) {
           if (block?.type === 'tool_result') {
+            // Clear SDK tool timeout timer if this result matches one
+            const resultToolUseId = (block as { tool_use_id?: string }).tool_use_id;
+            if (resultToolUseId) {
+              const entry = this.sdkToolTimers.get(resultToolUseId);
+              if (entry) {
+                clearTimeout(entry.timer);
+                this.sdkToolTimers.delete(resultToolUseId);
+              }
+            }
+
             // Extract screenshot paths and images from tool results
             this.extractScreenshotPaths(block);
 

@@ -559,6 +559,9 @@ export class iOSRelayClient {
     client.statusUnsubscribe = this.onStatusSubscribe(
       client.device.sessionId,
       (status: ServerStatusMessage) => {
+        if (status.status === 'partial_text') {
+          console.log(`[iOS-RelayClient] Sending partial_text via relay, partialText length: ${status.partialText?.length || 0}`);
+        }
         this.sendToRelay(client.relayClientId, status);
       }
     );

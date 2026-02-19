@@ -1329,7 +1329,7 @@ function setupIPC(): void {
               }
             }
             const result = await AgentManager.processMessage(messageText, 'ios', message.sessionId);
-            if (chatWindow && !chatWindow.isDestroyed()) {
+            if (chatWindow && !chatWindow.isDestroyed() && result.response) {
               chatWindow.webContents.send('ios:message', {
                 userMessage: messageText, response: result.response,
                 sessionId: message.sessionId, deviceId: client.device.deviceId,
@@ -1355,9 +1355,12 @@ function setupIPC(): void {
             }));
           });
           iosChannel.setStatusForwarder((sessionId, handler) => {
-            const statusHandler = (status: { type: string; sessionId?: string; toolName?: string; toolInput?: string; message?: string }) => {
+            const statusHandler = (status: { type: string; sessionId?: string; toolName?: string; toolInput?: string; message?: string; partialText?: string }) => {
               if (status.sessionId && status.sessionId !== sessionId) return;
-              handler({ type: 'status', status: status.type, sessionId: status.sessionId || sessionId, message: status.message, toolName: status.toolName, toolInput: status.toolInput });
+              if (status.type === 'partial_text') {
+                console.log(`[iOS-Relay-Debug] Forwarding partial_text to iOS, partialText length: ${status.partialText?.length || 0}`);
+              }
+              handler({ type: 'status', status: status.type, sessionId: status.sessionId || sessionId, message: status.message, toolName: status.toolName, toolInput: status.toolInput, partialText: status.partialText });
             };
             AgentManager.on('status', statusHandler);
             return () => AgentManager.off('status', statusHandler);
@@ -2107,8 +2110,8 @@ async function initializeAgent(): Promise<void> {
             message.sessionId
           );
 
-          // Sync to desktop UI
-          if (chatWindow && !chatWindow.isDestroyed()) {
+          // Sync to desktop UI (skip if response is empty, e.g. aborted)
+          if (chatWindow && !chatWindow.isDestroyed() && result.response) {
             chatWindow.webContents.send('ios:message', {
               userMessage: messageText,
               response: result.response,
@@ -2155,8 +2158,11 @@ async function initializeAgent(): Promise<void> {
 
         // Forward agent status events to connected iOS clients
         iosChannel.setStatusForwarder((sessionId, handler) => {
-          const statusHandler = (status: { type: string; sessionId?: string; toolName?: string; toolInput?: string; message?: string }) => {
+          const statusHandler = (status: { type: string; sessionId?: string; toolName?: string; toolInput?: string; message?: string; partialText?: string }) => {
             if (status.sessionId && status.sessionId !== sessionId) return;
+            if (status.type === 'partial_text') {
+              console.log(`[iOS-Relay-Debug] Forwarding partial_text to iOS (relay), partialText length: ${status.partialText?.length || 0}`);
+            }
             handler({
               type: 'status',
               status: status.type,
@@ -2164,6 +2170,7 @@ async function initializeAgent(): Promise<void> {
               message: status.message,
               toolName: status.toolName,
               toolInput: status.toolInput,
+              partialText: status.partialText,
             });
           };
 

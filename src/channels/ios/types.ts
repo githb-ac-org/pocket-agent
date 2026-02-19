@@ -39,6 +39,7 @@ export interface ServerStatusMessage {
   message?: string;
   toolName?: string;
   toolInput?: string;
+  partialText?: string;
 }
 
 export interface ServerResponseMessage {
