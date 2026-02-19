@@ -27,6 +27,7 @@ import {
   iOSStatusForwarder,
   iOSModelsHandler,
   iOSModelSwitchHandler,
+  iOSStopHandler,
 } from './types';
 import { loadWorkflowCommands } from '../../config/commands-loader';
 import { SettingsManager } from '../../settings';
@@ -54,6 +55,7 @@ export class iOSWebSocketServer {
   private onStatusSubscribe: iOSStatusForwarder | null = null;
   private onGetModels: iOSModelsHandler | null = null;
   private onSwitchModel: iOSModelSwitchHandler | null = null;
+  private onStop: iOSStopHandler | null = null;
 
   constructor(port?: number) {
     this.port = port || DEFAULT_PORT;
@@ -119,6 +121,10 @@ export class iOSWebSocketServer {
 
   setModelSwitchHandler(handler: iOSModelSwitchHandler): void {
     this.onSwitchModel = handler;
+  }
+
+  setStopHandler(handler: iOSStopHandler): void {
+    this.onStop = handler;
   }
 
   /**
@@ -414,6 +420,18 @@ export class iOSWebSocketServer {
             break;
           }
 
+          case 'stop':
+            if (client.device.sessionId && this.onStop) {
+              this.onStop(client.device.sessionId);
+              // Immediately confirm stop so iOS clears the processing state
+              ws.send(JSON.stringify({
+                type: 'status',
+                status: 'done',
+                sessionId: client.device.sessionId,
+              }));
+            }
+            break;
+
           case 'ping':
             ws.send(JSON.stringify({ type: 'pong' }));
             break;
@@ -464,6 +482,8 @@ export class iOSWebSocketServer {
 
     try {
       const result = await this.onMessage(client, message);
+      // Skip sending empty responses (e.g. from abort/stop)
+      if (!result.response) return;
 
       const response: ServerResponseMessage = {
         type: 'response',
@@ -474,9 +494,13 @@ export class iOSWebSocketServer {
       };
       client.ws.send(JSON.stringify(response));
     } catch (error) {
+      // Don't send abort errors — these are intentional stops from the user
+      const msg = error instanceof Error ? error.message : '';
+      if (msg.includes('aborted') || msg.includes('interrupted')) return;
+
       const errorMsg: ServerErrorMessage = {
         type: 'error',
-        message: error instanceof Error ? error.message : 'Failed to process message',
+        message: msg || 'Failed to process message',
       };
       client.ws.send(JSON.stringify(errorMsg));
     }

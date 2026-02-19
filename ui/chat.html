@@ -3828,7 +3828,9 @@
 
         // Only update visible UI if still on same session
         if (currentSessionId === sessionId) {
-          if (result.success) {
+          if (result.stopped) {
+            // Query was stopped/aborted — nothing to display
+          } else if (result.success) {
             addMessage('assistant', result.response, true, [], null, true, result.media);
 
             // Show compaction notice if conversation was compacted

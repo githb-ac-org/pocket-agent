@@ -842,6 +842,15 @@ class AgentManagerClass extends EventEmitter {
       }
 
       // === Process turn result (same for both paths) ===
+
+      // If the request was aborted (user pressed stop), bail out cleanly
+      const wasAborted = turnResult.errors?.some(e => e.includes('aborted') || e.includes('interrupted'));
+      if (wasAborted) {
+        this.emitStatus({ type: 'done', sessionId });
+        this.processingBySession.set(sessionId, false);
+        return { response: '', tokensUsed: 0, wasCompacted: false };
+      }
+
       let response = turnResult.response;
       const wasCompacted = turnResult.wasCompacted;
 
@@ -963,6 +972,14 @@ class AgentManagerClass extends EventEmitter {
       };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+
+      // Abort/interrupt errors are intentional (user pressed stop) — don't treat as failures
+      if (errorMsg.includes('aborted') || errorMsg.includes('interrupted')) {
+        console.log(`[AgentManager] Query aborted for session ${sessionId}`);
+        this.emitStatus({ type: 'done', sessionId });
+        return { response: '', tokensUsed: 0, wasCompacted: false };
+      }
+
       console.error('[AgentManager] Query failed:', errorMsg);
       if (error instanceof Error && error.stack) {
         console.error('[AgentManager] Stack trace:', error.stack);

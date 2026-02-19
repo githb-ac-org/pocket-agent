@@ -26,6 +26,7 @@ import {
   iOSStatusForwarder,
   iOSModelsHandler,
   iOSModelSwitchHandler,
+  iOSStopHandler,
 } from './types';
 import { loadWorkflowCommands } from '../../config/commands-loader';
 import { SettingsManager } from '../../settings';
@@ -66,6 +67,7 @@ export class iOSRelayClient {
   private onStatusSubscribe: iOSStatusForwarder | null = null;
   private onGetModels: iOSModelsHandler | null = null;
   private onSwitchModel: iOSModelSwitchHandler | null = null;
+  private onStop: iOSStopHandler | null = null;
 
   private _isRunning = false;
 
@@ -122,6 +124,10 @@ export class iOSRelayClient {
 
   setModelSwitchHandler(handler: iOSModelSwitchHandler): void {
     this.onSwitchModel = handler;
+  }
+
+  setStopHandler(handler: iOSStopHandler): void {
+    this.onStop = handler;
   }
 
   generatePairingCode(): string {
@@ -469,6 +475,17 @@ export class iOSRelayClient {
           this.handleModelsList(client);
         }
         break;
+      case 'stop':
+        if (client.device.sessionId && this.onStop) {
+          this.onStop(client.device.sessionId);
+          // Immediately confirm stop so iOS clears the processing state
+          this.sendToRelay(client.relayClientId, {
+            type: 'status',
+            status: 'done',
+            sessionId: client.device.sessionId,
+          });
+        }
+        break;
       case 'ping':
         this.sendToRelay(client.relayClientId, { type: 'pong' });
         break;
@@ -503,6 +520,8 @@ export class iOSRelayClient {
 
     try {
       const result = await this.onMessage({ device: client.device }, message);
+      // Skip sending empty responses (e.g. from abort/stop)
+      if (!result.response) return;
       const response: ServerResponseMessage = {
         type: 'response',
         text: result.response,
@@ -512,9 +531,13 @@ export class iOSRelayClient {
       };
       this.sendToRelay(client.relayClientId, response);
     } catch (error) {
+      // Don't send abort errors to iOS — these are intentional stops from the user
+      const msg = error instanceof Error ? error.message : '';
+      if (msg.includes('aborted') || msg.includes('interrupted')) return;
+
       const errorMsg: ServerErrorMessage = {
         type: 'error',
-        message: error instanceof Error ? error.message : 'Failed to process message',
+        message: msg || 'Failed to process message',
       };
       this.sendToRelay(client.relayClientId, errorMsg);
     }

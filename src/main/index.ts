@@ -1192,16 +1192,21 @@ function setupIPC(): void {
       // Sync to Telegram (Desktop -> Telegram) - only to the linked chat for this session
       const linkedChatId = memory?.getChatForSession(effectiveSessionId);
       console.log('[Main] Checking telegram sync - bot exists:', !!telegramBot, 'session:', effectiveSessionId, 'linked chat:', linkedChatId);
-      if (telegramBot && linkedChatId) {
+      if (telegramBot && linkedChatId && result.response) {
         console.log('[Main] Syncing desktop message to Telegram chat:', linkedChatId);
         telegramBot.syncToChat(message, result.response, linkedChatId, result.media).catch((err) => {
           console.error('[Main] Failed to sync desktop message to Telegram:', err);
         });
       }
 
-      // Sync to iOS (Desktop -> iOS)
-      if (iosChannel) {
+      // Sync to iOS (Desktop -> iOS) — skip if response is empty (e.g. aborted)
+      if (iosChannel && result.response) {
         iosChannel.syncFromDesktop(message, result.response, effectiveSessionId, result.media);
+      }
+
+      // If response is empty (e.g. aborted/stopped), signal stop instead of empty bubble
+      if (!result.response) {
+        return { success: true, stopped: true };
       }
 
       return {
@@ -1269,6 +1274,10 @@ function setupIPC(): void {
 
   ipcMain.handle('agent:stop', async (_, sessionId?: string) => {
     const stopped = AgentManager.stopQuery(sessionId);
+    // Broadcast done status directly to iOS so it clears the thinking indicator
+    if (stopped && sessionId && iosChannel) {
+      iosChannel.broadcast({ type: 'status', status: 'done', sessionId });
+    }
     return { success: stopped };
   });
 
@@ -1380,6 +1389,9 @@ function setupIPC(): void {
           });
           iosChannel.setModelSwitchHandler((modelId: string) => {
             AgentManager.setModel(modelId);
+          });
+          iosChannel.setStopHandler((sessionId: string) => {
+            return AgentManager.stopQuery(sessionId);
           });
           await iosChannel.start();
           console.log(`[Main] iOS channel started (${iosChannel.getMode()} mode)`);
@@ -2188,6 +2200,9 @@ async function initializeAgent(): Promise<void> {
 
         iosChannel.setModelSwitchHandler((modelId: string) => {
           AgentManager.setModel(modelId);
+        });
+        iosChannel.setStopHandler((sessionId: string) => {
+          return AgentManager.stopQuery(sessionId);
         });
 
         await iosChannel.start();
