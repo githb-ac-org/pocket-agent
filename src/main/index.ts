@@ -1328,7 +1328,17 @@ function setupIPC(): void {
                 console.warn('[Main] Voice transcription failed:', transcription.error);
               }
             }
+            // Forward status events to desktop UI during iOS-initiated queries
+            const iosSessionId = message.sessionId;
+            const desktopStatusHandler = (status: { type: string; sessionId?: string }) => {
+              if (status.sessionId && status.sessionId !== iosSessionId) return;
+              if (chatWindow && !chatWindow.isDestroyed()) {
+                chatWindow.webContents.send('agent:status', status);
+              }
+            };
+            AgentManager.on('status', desktopStatusHandler);
             const result = await AgentManager.processMessage(messageText, 'ios', message.sessionId);
+            AgentManager.off('status', desktopStatusHandler);
             if (chatWindow && !chatWindow.isDestroyed() && result.response) {
               chatWindow.webContents.send('ios:message', {
                 userMessage: messageText, response: result.response,
@@ -1355,12 +1365,27 @@ function setupIPC(): void {
             }));
           });
           iosChannel.setStatusForwarder((sessionId, handler) => {
-            const statusHandler = (status: { type: string; sessionId?: string; toolName?: string; toolInput?: string; message?: string; partialText?: string }) => {
+            const statusHandler = (status: Record<string, unknown>) => {
               if (status.sessionId && status.sessionId !== sessionId) return;
-              if (status.type === 'partial_text') {
-                console.log(`[iOS-Relay-Debug] Forwarding partial_text to iOS, partialText length: ${status.partialText?.length || 0}`);
-              }
-              handler({ type: 'status', status: status.type, sessionId: status.sessionId || sessionId, message: status.message, toolName: status.toolName, toolInput: status.toolInput, partialText: status.partialText });
+              handler({
+                type: 'status',
+                status: status.type as string,
+                sessionId: (status.sessionId as string) || sessionId,
+                message: status.message as string | undefined,
+                toolName: status.toolName as string | undefined,
+                toolInput: status.toolInput as string | undefined,
+                partialText: status.partialText as string | undefined,
+                agentCount: status.agentCount as number | undefined,
+                teammateName: status.teammateName as string | undefined,
+                taskSubject: status.taskSubject as string | undefined,
+                queuePosition: status.queuePosition as number | undefined,
+                queuedMessage: status.queuedMessage as string | undefined,
+                blockedReason: status.blockedReason as string | undefined,
+                isPocketCli: status.isPocketCli as boolean | undefined,
+                backgroundTaskId: status.backgroundTaskId as string | undefined,
+                backgroundTaskDescription: status.backgroundTaskDescription as string | undefined,
+                backgroundTaskCount: status.backgroundTaskCount as number | undefined,
+              });
             };
             AgentManager.on('status', statusHandler);
             return () => AgentManager.off('status', statusHandler);
@@ -2104,11 +2129,23 @@ async function initializeAgent(): Promise<void> {
             }
           }
 
+          // Forward status events to desktop UI during iOS-initiated queries
+          const iosSessionId = message.sessionId;
+          const desktopStatusHandler = (status: { type: string; sessionId?: string }) => {
+            if (status.sessionId && status.sessionId !== iosSessionId) return;
+            if (chatWindow && !chatWindow.isDestroyed()) {
+              chatWindow.webContents.send('agent:status', status);
+            }
+          };
+          AgentManager.on('status', desktopStatusHandler);
+
           const result = await AgentManager.processMessage(
             messageText,
             'ios',
             message.sessionId
           );
+
+          AgentManager.off('status', desktopStatusHandler);
 
           // Sync to desktop UI (skip if response is empty, e.g. aborted)
           if (chatWindow && !chatWindow.isDestroyed() && result.response) {
@@ -2158,19 +2195,26 @@ async function initializeAgent(): Promise<void> {
 
         // Forward agent status events to connected iOS clients
         iosChannel.setStatusForwarder((sessionId, handler) => {
-          const statusHandler = (status: { type: string; sessionId?: string; toolName?: string; toolInput?: string; message?: string; partialText?: string }) => {
+          const statusHandler = (status: Record<string, unknown>) => {
             if (status.sessionId && status.sessionId !== sessionId) return;
-            if (status.type === 'partial_text') {
-              console.log(`[iOS-Relay-Debug] Forwarding partial_text to iOS (relay), partialText length: ${status.partialText?.length || 0}`);
-            }
             handler({
               type: 'status',
-              status: status.type,
-              sessionId: status.sessionId || sessionId,
-              message: status.message,
-              toolName: status.toolName,
-              toolInput: status.toolInput,
-              partialText: status.partialText,
+              status: status.type as string,
+              sessionId: (status.sessionId as string) || sessionId,
+              message: status.message as string | undefined,
+              toolName: status.toolName as string | undefined,
+              toolInput: status.toolInput as string | undefined,
+              partialText: status.partialText as string | undefined,
+              agentCount: status.agentCount as number | undefined,
+              teammateName: status.teammateName as string | undefined,
+              taskSubject: status.taskSubject as string | undefined,
+              queuePosition: status.queuePosition as number | undefined,
+              queuedMessage: status.queuedMessage as string | undefined,
+              blockedReason: status.blockedReason as string | undefined,
+              isPocketCli: status.isPocketCli as boolean | undefined,
+              backgroundTaskId: status.backgroundTaskId as string | undefined,
+              backgroundTaskDescription: status.backgroundTaskDescription as string | undefined,
+              backgroundTaskCount: status.backgroundTaskCount as number | undefined,
             });
           };
 

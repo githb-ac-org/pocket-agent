@@ -55,6 +55,8 @@ export class iOSRelayClient {
   private clients: Map<string, VirtualClient> = new Map();
   // Auth tokens → device info (persistent across reconnects)
   private authTokens: Map<string, { deviceId: string; deviceName: string; relayClientId?: string }> = new Map();
+  // Reverse map: relay client ID → auth token (tracks all IDs per device)
+  private relayIdToToken: Map<string, string> = new Map();
   // Pairing codes
   private pairingCodes: Map<string, { createdAt: number }> = new Map();
   private activePairingCode: string | null = null;
@@ -311,21 +313,29 @@ export class iOSRelayClient {
       if (relayEvent === 'client_connected' && from) {
         const token: string | undefined = data.token;
         if (token && this.authTokens.has(token)) {
+          // Track this relay ID → token mapping
+          this.relayIdToToken.set(from, token);
           // Re-authenticate: map new relayClientId to existing device
           const deviceInfo = this.authTokens.get(token)!;
           deviceInfo.relayClientId = from;
-          const virtualClient: VirtualClient = {
-            relayClientId: from,
-            device: {
-              deviceId: deviceInfo.deviceId,
-              deviceName: deviceInfo.deviceName,
-              connectedAt: new Date(),
-              sessionId: 'default',
-            },
-            authToken: token,
-          };
-          this.clients.set(token, virtualClient);
-          this.subscribeClientStatus(virtualClient);
+          // Reuse existing client if present (preserve session), otherwise create new
+          const existing = this.clients.get(token);
+          if (existing) {
+            existing.relayClientId = from;
+          } else {
+            const virtualClient: VirtualClient = {
+              relayClientId: from,
+              device: {
+                deviceId: deviceInfo.deviceId,
+                deviceName: deviceInfo.deviceName,
+                connectedAt: new Date(),
+                sessionId: 'default',
+              },
+              authToken: token,
+            };
+            this.clients.set(token, virtualClient);
+            this.subscribeClientStatus(virtualClient);
+          }
           console.log(`[iOS Relay] Device reconnected: ${deviceInfo.deviceName}`);
         } else {
           this.pendingClients.add(from);
@@ -373,11 +383,23 @@ export class iOSRelayClient {
         return client;
       }
     }
+    // Fallback: check reverse map for older relay IDs belonging to the same device
+    const token = this.relayIdToToken.get(relayClientId);
+    if (token) {
+      const client = this.clients.get(token);
+      if (client) {
+        // Update to the relay ID that's actually sending — this is the live connection
+        client.relayClientId = relayClientId;
+        return client;
+      }
+    }
     return undefined;
   }
 
   private handleClientDisconnect(relayClientId: string): void {
     this.pendingClients.delete(relayClientId);
+    this.relayIdToToken.delete(relayClientId);
+    // Only disconnect if this is the client's current relay ID (not a stale one)
     for (const [token, client] of this.clients.entries()) {
       if (client.relayClientId === relayClientId) {
         console.log(`[iOS Relay] Device disconnected: ${client.device.deviceName}`);
@@ -423,6 +445,7 @@ export class iOSRelayClient {
       authToken,
     };
     this.clients.set(authToken, virtualClient);
+    this.relayIdToToken.set(relayClientId, authToken);
     this.pendingClients.delete(relayClientId);
 
     // Send success
@@ -518,6 +541,15 @@ export class iOSRelayClient {
       return;
     }
 
+    // Keep status subscription in sync with the session being used
+    if (message.sessionId && message.sessionId !== client.device.sessionId) {
+      client.device.sessionId = message.sessionId;
+      if (client.statusUnsubscribe) {
+        client.statusUnsubscribe();
+      }
+      this.subscribeClientStatus(client);
+    }
+
     try {
       const result = await this.onMessage({ device: client.device }, message);
       // Skip sending empty responses (e.g. from abort/stop)
@@ -559,9 +591,6 @@ export class iOSRelayClient {
     client.statusUnsubscribe = this.onStatusSubscribe(
       client.device.sessionId,
       (status: ServerStatusMessage) => {
-        if (status.status === 'partial_text') {
-          console.log(`[iOS-RelayClient] Sending partial_text via relay, partialText length: ${status.partialText?.length || 0}`);
-        }
         this.sendToRelay(client.relayClientId, status);
       }
     );

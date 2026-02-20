@@ -40,6 +40,16 @@ export interface ServerStatusMessage {
   toolName?: string;
   toolInput?: string;
   partialText?: string;
+  agentCount?: number;
+  teammateName?: string;
+  taskSubject?: string;
+  queuePosition?: number;
+  queuedMessage?: string;
+  blockedReason?: string;
+  isPocketCli?: boolean;
+  backgroundTaskId?: string;
+  backgroundTaskDescription?: string;
+  backgroundTaskCount?: number;
 }
 
 export interface ServerResponseMessage {

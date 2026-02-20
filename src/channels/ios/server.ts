@@ -459,9 +459,6 @@ export class iOSWebSocketServer {
       statusUnsubscribe = this.onStatusSubscribe(
         client.device.sessionId,
         (status: ServerStatusMessage) => {
-          if (status.status === 'partial_text') {
-            console.log(`[iOS-Server] Sending partial_text via local WS, partialText length: ${status.partialText?.length || 0}`);
-          }
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify(status));
           }

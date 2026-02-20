@@ -2743,6 +2743,16 @@
     let isLoadingBySession = new Map(); // Track loading state per session
     let pendingAttachmentsBySession = new Map(); // Track attachments per session
     let statusCleanupBySession = new Map(); // Track status listeners per session
+
+    // Ensure a status listener exists for a session (called on session load + send)
+    function ensureStatusListener(sessionId) {
+      if (!statusCleanupBySession.has(sessionId)) {
+        const statusCleanup = window.pocketAgent.onStatus((status) => {
+          updateStatusIndicator(status, sessionId);
+        });
+        statusCleanupBySession.set(sessionId, statusCleanup);
+      }
+    }
     let statusElBySession = new Map(); // Track status elements per session
     let streamingBubbleBySession = new Map(); // Track live-updating assistant bubble per session
     let toolCountBySession = new Map(); // Track tool call count per session
@@ -2865,6 +2875,7 @@
 
       // Load sessions first, then load history for active session
       await loadSessions();
+      ensureStatusListener(currentSessionId);
       await loadHistory();
       updateStats();
       input.focus();
@@ -3070,6 +3081,7 @@
       // Switch to new session
       currentSessionId = sessionId;
       localStorage.setItem('currentSessionId', currentSessionId);
+      ensureStatusListener(sessionId);
       renderTabs();
       messagesDiv.innerHTML = '';
       updateBackgroundTasksUI();
@@ -3785,14 +3797,7 @@
       }
 
       // Set up status listener for this session (only if not already set up)
-      if (!statusCleanupBySession.has(sessionId)) {
-        const statusCleanup = window.pocketAgent.onStatus((status) => {
-          // Backend already filters events by session, so always update
-          // the correct session's indicator (even if user switched tabs)
-          updateStatusIndicator(status, sessionId);
-        });
-        statusCleanupBySession.set(sessionId, statusCleanup);
-      }
+      ensureStatusListener(sessionId);
 
       try {
         // This will resolve when the message is actually processed (not when queued)
@@ -4306,6 +4311,27 @@
     function updateStatusIndicator(status, sessionId) {
       // Use sessionId if provided, otherwise fall back to current session
       const targetSession = sessionId || currentSessionId;
+
+      // Handle background tasks before status element check — they use a separate UI area
+      if (status.type === 'background_task_start') {
+        if (status.backgroundTaskId) {
+          addBackgroundTask(
+            status.sessionId || targetSession,
+            status.backgroundTaskId,
+            status.toolName || 'task',
+            status.backgroundTaskDescription || 'background task'
+          );
+        }
+        return;
+      } else if (status.type === 'background_task_output') {
+        return;
+      } else if (status.type === 'background_task_end') {
+        if (status.backgroundTaskId) {
+          removeBackgroundTask(status.sessionId || targetSession, status.backgroundTaskId);
+        }
+        return;
+      }
+
       const statusEl = statusElBySession.get(targetSession);
       if (!statusEl) return;
 
@@ -4462,24 +4488,6 @@
         } else {
           detailEl.textContent = '';
           detailEl.style.display = 'none';
-        }
-      } else if (status.type === 'background_task_start') {
-        // Background task spawned
-        if (status.backgroundTaskId) {
-          addBackgroundTask(
-            status.sessionId || currentSessionId,
-            status.backgroundTaskId,
-            status.toolName || 'task',
-            status.backgroundTaskDescription || 'background task'
-          );
-        }
-        // Don't change the main status indicator — background tasks are passive
-      } else if (status.type === 'background_task_output') {
-        // Checking on a background task — no special UI action needed
-      } else if (status.type === 'background_task_end') {
-        // Background task completed/stopped/failed — remove from UI
-        if (status.backgroundTaskId) {
-          removeBackgroundTask(status.sessionId || currentSessionId, status.backgroundTaskId);
         }
       } else if (status.type === 'partial_text') {
         // Show live-updating assistant bubble with composed text
