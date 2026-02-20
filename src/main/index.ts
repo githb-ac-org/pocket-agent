@@ -1996,13 +1996,43 @@ async function initializeAgent(): Promise<void> {
     },
   };
 
+  // Resolve model — ensure the selected model has a matching API key.
+  // If not (e.g. default is claude-* but only a Kimi/GLM key exists), fall back.
+  let model = SettingsManager.get('agent.model') || 'claude-opus-4-6';
+  const hasAnthropicKey = !!SettingsManager.get('anthropic.apiKey');
+  const hasOAuth = SettingsManager.get('auth.method') === 'oauth' && !!SettingsManager.get('auth.oauthToken');
+  const hasMoonshotKey = !!SettingsManager.get('moonshot.apiKey');
+  const hasGlmKey = !!SettingsManager.get('glm.apiKey');
+
+  const isAnthropicModel = model.startsWith('claude-');
+  const isMoonshotModel = model.startsWith('kimi-');
+  const isGlmModel = model.startsWith('glm-');
+
+  const needsFallback =
+    (isAnthropicModel && !hasAnthropicKey && !hasOAuth) ||
+    (isMoonshotModel && !hasMoonshotKey) ||
+    (isGlmModel && !hasGlmKey);
+
+  if (needsFallback) {
+    const oldModel = model;
+    if (hasAnthropicKey || hasOAuth) {
+      model = 'claude-opus-4-6';
+    } else if (hasMoonshotKey) {
+      model = 'kimi-k2.5';
+    } else if (hasGlmKey) {
+      model = 'glm-4.7';
+    }
+    console.log(`[Main] Model/key mismatch: ${oldModel} has no key, falling back to ${model}`);
+    SettingsManager.set('agent.model', model);
+  }
+
   // Initialize agent with tools config
   AgentManager.initialize({
     memory,
     projectRoot,
     workspace,  // Isolated working directory for agent file operations
     dataDir: app.getPath('userData'),
-    model: SettingsManager.get('agent.model'),
+    model,
     tools: toolsConfig,
   });
 

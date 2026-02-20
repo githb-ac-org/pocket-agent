@@ -1123,6 +1123,19 @@
           await window.pocketAgent.setSetting('glm.apiKey', glmKey);
         }
 
+        // Auto-select a model matching the first available provider key
+        // so the agent doesn't start with a mismatched default model
+        const currentModel = await window.pocketAgent.getSetting('agent.model');
+        const isAnthropicModel = !currentModel || currentModel.startsWith('claude-');
+        if (isAnthropicModel && !anthropicKey) {
+          // Default model is Anthropic but user didn't provide an Anthropic key
+          if (kimiKey) {
+            await window.pocketAgent.setSetting('agent.model', 'kimi-k2.5');
+          } else if (glmKey) {
+            await window.pocketAgent.setSetting('agent.model', 'glm-4.7');
+          }
+        }
+
         showStep('step-success');
 
       } catch (err) {

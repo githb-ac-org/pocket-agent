@@ -549,6 +549,91 @@ describe('AgentManager', () => {
     });
   });
 
+  // ============ MODEL/KEY RESOLUTION ============
+
+  describe('Model/Key Resolution', () => {
+    /**
+     * Mirrors the model/key mismatch detection logic in initializeAgent() (src/main/index.ts).
+     * If the configured model requires a provider key that isn't available, falls back to a
+     * model whose provider has a key.
+     */
+    function resolveModel(
+      configuredModel: string,
+      keys: { anthropic?: string; moonshot?: string; glm?: string; oauth?: boolean }
+    ): string {
+      let model = configuredModel || 'claude-opus-4-6';
+      const hasAnthropicKey = !!keys.anthropic;
+      const hasOAuth = !!keys.oauth;
+      const hasMoonshotKey = !!keys.moonshot;
+      const hasGlmKey = !!keys.glm;
+
+      const isAnthropicModel = model.startsWith('claude-');
+      const isMoonshotModel = model.startsWith('kimi-');
+      const isGlmModel = model.startsWith('glm-');
+
+      const needsFallback =
+        (isAnthropicModel && !hasAnthropicKey && !hasOAuth) ||
+        (isMoonshotModel && !hasMoonshotKey) ||
+        (isGlmModel && !hasGlmKey);
+
+      if (needsFallback) {
+        if (hasAnthropicKey || hasOAuth) {
+          model = 'claude-opus-4-6';
+        } else if (hasMoonshotKey) {
+          model = 'kimi-k2.5';
+        } else if (hasGlmKey) {
+          model = 'glm-4.7';
+        }
+      }
+
+      return model;
+    }
+
+    it('should keep Anthropic model when Anthropic key exists', () => {
+      expect(resolveModel('claude-opus-4-6', { anthropic: 'sk-key' })).toBe('claude-opus-4-6');
+    });
+
+    it('should keep Anthropic model when OAuth is active', () => {
+      expect(resolveModel('claude-sonnet-4-6', { oauth: true })).toBe('claude-sonnet-4-6');
+    });
+
+    it('should fall back to Kimi when only Moonshot key exists and model is Anthropic', () => {
+      expect(resolveModel('claude-opus-4-6', { moonshot: 'kimi-key' })).toBe('kimi-k2.5');
+    });
+
+    it('should fall back to GLM when only GLM key exists and model is Anthropic', () => {
+      expect(resolveModel('claude-opus-4-6', { glm: 'glm-key' })).toBe('glm-4.7');
+    });
+
+    it('should prefer Anthropic fallback when both Anthropic and Moonshot keys exist', () => {
+      expect(resolveModel('glm-5', { anthropic: 'sk-key', moonshot: 'kimi-key' })).toBe('claude-opus-4-6');
+    });
+
+    it('should keep Kimi model when Moonshot key exists', () => {
+      expect(resolveModel('kimi-k2.5', { moonshot: 'kimi-key' })).toBe('kimi-k2.5');
+    });
+
+    it('should keep GLM model when GLM key exists', () => {
+      expect(resolveModel('glm-4.7', { glm: 'glm-key' })).toBe('glm-4.7');
+    });
+
+    it('should fall back from Kimi to Anthropic when no Moonshot key', () => {
+      expect(resolveModel('kimi-k2.5', { anthropic: 'sk-key' })).toBe('claude-opus-4-6');
+    });
+
+    it('should fall back from GLM to Moonshot when only Moonshot key exists', () => {
+      expect(resolveModel('glm-5', { moonshot: 'kimi-key' })).toBe('kimi-k2.5');
+    });
+
+    it('should default to claude-opus-4-6 when model is empty', () => {
+      expect(resolveModel('', { anthropic: 'sk-key' })).toBe('claude-opus-4-6');
+    });
+
+    it('should fall back from empty model (defaulting to Anthropic) to Kimi when no Anthropic key', () => {
+      expect(resolveModel('', { moonshot: 'kimi-key' })).toBe('kimi-k2.5');
+    });
+  });
+
   // ============ SDK OPTIONS STRUCTURE ============
 
   describe('SDK Options Structure', () => {

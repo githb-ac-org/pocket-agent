@@ -102,6 +102,24 @@ const SETTINGS_SCHEMA: SettingDefinition[] = [
     description: 'Your OpenAI API key for embeddings',
     type: 'password',
   },
+  {
+    key: 'moonshot.apiKey',
+    defaultValue: '',
+    encrypted: true,
+    category: 'api_keys',
+    label: 'Moonshot/Kimi API Key',
+    description: 'Your Moonshot API key for Kimi models',
+    type: 'password',
+  },
+  {
+    key: 'glm.apiKey',
+    defaultValue: '',
+    encrypted: true,
+    category: 'api_keys',
+    label: 'Z.AI GLM API Key',
+    description: 'Your Z.AI API key for GLM models',
+    type: 'password',
+  },
   // Agent settings
   {
     key: 'agent.model',
@@ -521,8 +539,11 @@ class TestableSettingsManager {
       return !!oauthToken;
     }
 
+    // Check for API key authentication (any supported provider)
     const anthropicKey = this.get('anthropic.apiKey');
-    return !!anthropicKey;
+    const moonshotKey = this.get('moonshot.apiKey');
+    const glmKey = this.get('glm.apiKey');
+    return !!anthropicKey || !!moonshotKey || !!glmKey;
   }
 
   getAuthMethod(): 'api_key' | 'oauth' | null {
@@ -897,12 +918,32 @@ describe('SettingsManager', () => {
       expect(settings.getAuthMethod()).toBe('oauth');
     });
 
+    it('hasRequiredKeys should return true when Moonshot key is set', () => {
+      settings.set('moonshot.apiKey', 'kimi-test-key');
+      expect(settings.hasRequiredKeys()).toBe(true);
+    });
+
+    it('hasRequiredKeys should return true when GLM key is set', () => {
+      settings.set('glm.apiKey', 'glm-test-key');
+      expect(settings.hasRequiredKeys()).toBe(true);
+    });
+
     it('isFirstRun should return true when no auth configured', () => {
       expect(settings.isFirstRun()).toBe(true);
     });
 
     it('isFirstRun should return false when API key exists', () => {
       settings.set('anthropic.apiKey', 'sk-ant-test-key');
+      expect(settings.isFirstRun()).toBe(false);
+    });
+
+    it('isFirstRun should return false when only Moonshot key exists', () => {
+      settings.set('moonshot.apiKey', 'kimi-test-key');
+      expect(settings.isFirstRun()).toBe(false);
+    });
+
+    it('isFirstRun should return false when only GLM key exists', () => {
+      settings.set('glm.apiKey', 'glm-test-key');
       expect(settings.isFirstRun()).toBe(false);
     });
   });
