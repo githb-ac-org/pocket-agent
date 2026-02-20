@@ -2016,113 +2016,8 @@ async function initializeAgent(): Promise<void> {
     }
   });
 
-  // Initialize scheduler
-  if (SettingsManager.getBoolean('scheduler.enabled')) {
-    scheduler = createScheduler();
-
-    // Set all handlers BEFORE initialize() — jobs can fire during init
-    scheduler.setNotificationHandler((title: string, body: string) => {
-      showNotification(title, body);
-    });
-
-    scheduler.setChatHandler((jobName: string, prompt: string, response: string, sessionId: string) => {
-      console.log(`[Scheduler] Sending chat message for job: ${jobName} (session: ${sessionId})`);
-      if (chatWindow && !chatWindow.isDestroyed()) {
-        chatWindow.webContents.send('scheduler:message', { jobName, prompt, response, sessionId });
-      }
-      if (!chatWindow || chatWindow.isDestroyed()) {
-        openChatWindow();
-        setTimeout(() => {
-          try {
-            if (chatWindow && !chatWindow.isDestroyed()) {
-              chatWindow.webContents.send('scheduler:message', { jobName, prompt, response, sessionId });
-            }
-          } catch (err) {
-            console.error('[Main] Failed to send scheduler message to chat window:', err);
-          }
-        }, 1000);
-      }
-    });
-
-    scheduler.setIOSSyncHandler((jobName: string, prompt: string, response: string, sessionId: string) => {
-      if (iosChannel) {
-        // WebSocket broadcast (reaches connected/foregrounded devices)
-        iosChannel.broadcast({
-          type: 'scheduler',
-          jobName,
-          prompt,
-          response,
-          sessionId,
-        });
-        // Push notification (reaches backgrounded/closed devices)
-        iosChannel.sendPushNotifications(
-          jobName,
-          response,
-          { sessionId, jobName, type: 'scheduler' }
-        ).catch(err => console.error('[Scheduler→iOS] Push failed:', err));
-      }
-    });
-
-    await scheduler.initialize(memory, dbPath);
-
-    // Set up birthday reminders if birthday is configured
-    const birthday = SettingsManager.get('profile.birthday');
-    if (birthday) {
-      await setupBirthdayCronJobs(birthday);
-    }
-  }
-
-  // Initialize Telegram
-  const telegramEnabled = SettingsManager.getBoolean('telegram.enabled');
-  const telegramToken = SettingsManager.get('telegram.botToken');
-
-  if (telegramEnabled && telegramToken) {
-    try {
-      telegramBot = createTelegramBot();
-
-      if (!telegramBot) {
-        console.error('[Main] Telegram bot creation failed');
-      } else {
-        // Set up cross-channel sync: Telegram -> Desktop
-        // Only send to chat window if it's already open - don't force open or notify
-        telegramBot.setOnMessageCallback((data) => {
-          // Only sync to desktop UI if chat window is already open
-          if (chatWindow && !chatWindow.isDestroyed()) {
-            chatWindow.webContents.send('telegram:message', {
-              userMessage: data.userMessage,
-              response: data.response,
-              chatId: data.chatId,
-              sessionId: data.sessionId,
-              hasAttachment: data.hasAttachment,
-              attachmentType: data.attachmentType,
-              wasCompacted: data.wasCompacted,
-              media: data.media,
-            });
-          }
-          // Messages are already saved to SQLite, so they'll appear when user opens chat
-        });
-
-        // Notify UI when Telegram session links change
-        telegramBot.setOnSessionLinkCallback(() => {
-          if (chatWindow && !chatWindow.isDestroyed()) {
-            chatWindow.webContents.send('sessions:changed');
-          }
-        });
-
-        await telegramBot.start();
-
-        if (scheduler) {
-          scheduler.setTelegramBot(telegramBot);
-        }
-
-        console.log('[Main] Telegram started');
-      }
-    } catch (error) {
-      console.error('[Main] Telegram failed:', error);
-    }
-  }
-
   // Initialize iOS channel (WebSocket server for mobile companion app)
+  // Must be initialized BEFORE scheduler so push notifications work for jobs that fire during init
   const iosEnabled = SettingsManager.getBoolean('ios.enabled');
   console.log('[Main] iOS channel enabled:', iosEnabled);
   if (iosEnabled) {
@@ -2282,6 +2177,112 @@ async function initializeAgent(): Promise<void> {
       }
     } catch (error) {
       console.error('[Main] iOS channel failed:', error);
+    }
+  }
+
+  // Initialize scheduler
+  if (SettingsManager.getBoolean('scheduler.enabled')) {
+    scheduler = createScheduler();
+
+    // Set all handlers BEFORE initialize() — jobs can fire during init
+    scheduler.setNotificationHandler((title: string, body: string) => {
+      showNotification(title, body);
+    });
+
+    scheduler.setChatHandler((jobName: string, prompt: string, response: string, sessionId: string) => {
+      console.log(`[Scheduler] Sending chat message for job: ${jobName} (session: ${sessionId})`);
+      if (chatWindow && !chatWindow.isDestroyed()) {
+        chatWindow.webContents.send('scheduler:message', { jobName, prompt, response, sessionId });
+      }
+      if (!chatWindow || chatWindow.isDestroyed()) {
+        openChatWindow();
+        setTimeout(() => {
+          try {
+            if (chatWindow && !chatWindow.isDestroyed()) {
+              chatWindow.webContents.send('scheduler:message', { jobName, prompt, response, sessionId });
+            }
+          } catch (err) {
+            console.error('[Main] Failed to send scheduler message to chat window:', err);
+          }
+        }, 1000);
+      }
+    });
+
+    scheduler.setIOSSyncHandler((jobName: string, prompt: string, response: string, sessionId: string) => {
+      if (iosChannel) {
+        // WebSocket broadcast (reaches connected/foregrounded devices)
+        iosChannel.broadcast({
+          type: 'scheduler',
+          jobName,
+          prompt,
+          response,
+          sessionId,
+        });
+        // Push notification (reaches backgrounded/closed devices)
+        iosChannel.sendPushNotifications(
+          jobName,
+          response,
+          { sessionId, jobName, type: 'scheduler' }
+        ).catch(err => console.error('[Scheduler→iOS] Push failed:', err));
+      }
+    });
+
+    await scheduler.initialize(memory, dbPath);
+
+    // Set up birthday reminders if birthday is configured
+    const birthday = SettingsManager.get('profile.birthday');
+    if (birthday) {
+      await setupBirthdayCronJobs(birthday);
+    }
+  }
+
+  // Initialize Telegram
+  const telegramEnabled = SettingsManager.getBoolean('telegram.enabled');
+  const telegramToken = SettingsManager.get('telegram.botToken');
+
+  if (telegramEnabled && telegramToken) {
+    try {
+      telegramBot = createTelegramBot();
+
+      if (!telegramBot) {
+        console.error('[Main] Telegram bot creation failed');
+      } else {
+        // Set up cross-channel sync: Telegram -> Desktop
+        // Only send to chat window if it's already open - don't force open or notify
+        telegramBot.setOnMessageCallback((data) => {
+          // Only sync to desktop UI if chat window is already open
+          if (chatWindow && !chatWindow.isDestroyed()) {
+            chatWindow.webContents.send('telegram:message', {
+              userMessage: data.userMessage,
+              response: data.response,
+              chatId: data.chatId,
+              sessionId: data.sessionId,
+              hasAttachment: data.hasAttachment,
+              attachmentType: data.attachmentType,
+              wasCompacted: data.wasCompacted,
+              media: data.media,
+            });
+          }
+          // Messages are already saved to SQLite, so they'll appear when user opens chat
+        });
+
+        // Notify UI when Telegram session links change
+        telegramBot.setOnSessionLinkCallback(() => {
+          if (chatWindow && !chatWindow.isDestroyed()) {
+            chatWindow.webContents.send('sessions:changed');
+          }
+        });
+
+        await telegramBot.start();
+
+        if (scheduler) {
+          scheduler.setTelegramBot(telegramBot);
+        }
+
+        console.log('[Main] Telegram started');
+      }
+    } catch (error) {
+      console.error('[Main] Telegram failed:', error);
     }
   }
 
