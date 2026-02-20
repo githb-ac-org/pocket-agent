@@ -13,3 +13,4 @@ config.json
 release/
 *.cer
 .claude/
+app.json
