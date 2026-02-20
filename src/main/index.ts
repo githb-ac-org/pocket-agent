@@ -17,6 +17,8 @@ import { DEFAULT_COMMANDS } from '../config/commands';
 import { loadWorkflowCommands } from '../config/commands-loader';
 import { closeTaskDb } from '../tools';
 import { getBrowserManager } from '../browser';
+import { isMacOS, getPermissionsStatus, openPermissionSettings } from '../permissions';
+import type { PermissionType } from '../permissions';
 import { initializeUpdater, setupUpdaterIPC, setSettingsWindow } from './updater';
 import cityTimezones from 'city-timezones';
 
@@ -1944,6 +1946,19 @@ function setupIPC(): void {
     const { parseOffice } = await import('officeparser');
     const ast = await parseOffice(filePath);
     return ast.toText();
+  });
+
+  // Permissions (macOS)
+  ipcMain.handle('permissions:isMacOS', () => {
+    return isMacOS();
+  });
+
+  ipcMain.handle('permissions:checkStatus', (_, types: PermissionType[]) => {
+    return getPermissionsStatus(types);
+  });
+
+  ipcMain.handle('permissions:openSettings', async (_, type: PermissionType) => {
+    await openPermissionSettings(type);
   });
 
 }

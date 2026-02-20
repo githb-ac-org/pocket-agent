@@ -153,6 +153,11 @@ contextBridge.exposeInMainWorld('pocketAgent', {
   // Platform info
   getPlatform: () => process.platform,
 
+  // Permissions (macOS)
+  isMacOS: () => ipcRenderer.invoke('permissions:isMacOS'),
+  checkPermissions: (types: string[]) => ipcRenderer.invoke('permissions:checkStatus', types),
+  openPermissionSettings: (type: string) => ipcRenderer.invoke('permissions:openSettings', type),
+
   // Navigation
   onNavigateTab: (callback: (tab: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, tab: string) => callback(tab);
@@ -273,6 +278,10 @@ declare global {
       runCommand: (command: string) => Promise<string>;
       // Platform info
       getPlatform: () => string;
+      // Permissions (macOS)
+      isMacOS: () => Promise<boolean>;
+      checkPermissions: (types: string[]) => Promise<Array<{ type: string; granted: boolean; canRequest: boolean; label: string; description: string; settingsUrl: string }>>;
+      openPermissionSettings: (type: string) => Promise<void>;
     };
   }
 }
