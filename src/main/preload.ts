@@ -34,6 +34,11 @@ contextBridge.exposeInMainWorld('pocketAgent', {
     ipcRenderer.on('sessions:changed', listener);
     return () => ipcRenderer.removeListener('sessions:changed', listener);
   },
+  onSessionCleared: (callback: (sessionId: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, sessionId: string) => callback(sessionId);
+    ipcRenderer.on('session:cleared', listener);
+    return () => ipcRenderer.removeListener('session:cleared', listener);
+  },
   onModelChanged: (callback: (model: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, model: string) => callback(model);
     ipcRenderer.on('model:changed', listener);
@@ -190,6 +195,7 @@ declare global {
       onTelegramMessage: (callback: (data: { userMessage: string; response: string; chatId: number; sessionId: string; hasAttachment?: boolean; attachmentType?: 'photo' | 'voice' | 'audio'; wasCompacted?: boolean; media?: Array<{ type: string; filePath: string; mimeType: string }> }) => void) => () => void;
       onIOSMessage: (callback: (data: { userMessage: string; response: string; sessionId: string; deviceId: string; media?: Array<{ type: string; filePath: string; mimeType: string }> }) => void) => () => void;
       onSessionsChanged: (callback: () => void) => () => void;
+      onSessionCleared: (callback: (sessionId: string) => void) => () => void;
       onModelChanged: (callback: (model: string) => void) => () => void;
       getHistory: (limit?: number, sessionId?: string) => Promise<Array<{ role: string; content: string; timestamp: string; metadata?: { source?: string; jobName?: string } }>>;
       getStats: (sessionId?: string) => Promise<{ messageCount: number; factCount: number; estimatedTokens: number; sessionCount?: number; contextTokens?: number; contextWindow?: number } | null>;

@@ -2903,6 +2903,16 @@
         handleIOSMessage(data);
       });
 
+      // Listen for session clears from iOS
+      window.pocketAgent.onSessionCleared((sessionId) => {
+        console.log('[Chat] Session cleared from iOS:', sessionId);
+        if (sessionId === currentSessionId) {
+          messagesDiv.innerHTML = '';
+          showEmptyState();
+          updateStats();
+        }
+      });
+
       // Listen for session changes (e.g., Telegram link/unlink)
       window.pocketAgent.onSessionsChanged(() => {
         console.log('[Chat] Sessions changed, reloading...');

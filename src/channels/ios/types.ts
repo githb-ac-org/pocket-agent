@@ -5,7 +5,7 @@
 // === Messages from iOS → Desktop ===
 
 export interface ClientMessage {
-  type: 'message' | 'pair' | 'ping' | 'stop' | 'push_token' | 'sessions:list' | 'sessions:switch' | 'sessions:history' | 'workflows:list' | 'models:list' | 'models:switch';
+  type: 'message' | 'pair' | 'ping' | 'stop' | 'push_token' | 'sessions:list' | 'sessions:switch' | 'sessions:history' | 'sessions:clear' | 'workflows:list' | 'models:list' | 'models:switch';
   id?: string;
 }
 
@@ -176,3 +176,5 @@ export type iOSModelsHandler = () => { models: ModelInfo[]; activeModelId: strin
 export type iOSModelSwitchHandler = (modelId: string) => void;
 
 export type iOSStopHandler = (sessionId: string) => boolean;
+
+export type iOSClearHandler = (sessionId: string) => void;

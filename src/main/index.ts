@@ -1423,6 +1423,14 @@ function setupIPC(): void {
           iosChannel.setStopHandler((sessionId: string) => {
             return AgentManager.stopQuery(sessionId);
           });
+          iosChannel.setClearHandler((sessionId: string) => {
+            AgentManager.clearQueue(sessionId);
+            AgentManager.clearConversation(sessionId);
+            AgentManager.clearSdkSessionMapping(sessionId);
+            updateTrayMenu();
+            chatWindow?.webContents.send('session:cleared', sessionId);
+            console.log(`[Main] Fresh start from iOS (session: ${sessionId})`);
+          });
           await iosChannel.start();
           console.log(`[Main] iOS channel started (${iosChannel.getMode()} mode)`);
         }
@@ -2210,6 +2218,14 @@ async function initializeAgent(): Promise<void> {
         });
         iosChannel.setStopHandler((sessionId: string) => {
           return AgentManager.stopQuery(sessionId);
+        });
+        iosChannel.setClearHandler((sessionId: string) => {
+          AgentManager.clearQueue(sessionId);
+          AgentManager.clearConversation(sessionId);
+          AgentManager.clearSdkSessionMapping(sessionId);
+          updateTrayMenu();
+          chatWindow?.webContents.send('session:cleared', sessionId);
+          console.log(`[Main] Fresh start from iOS (session: ${sessionId})`);
         });
 
         await iosChannel.start();

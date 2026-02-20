@@ -28,6 +28,7 @@ import {
   iOSModelsHandler,
   iOSModelSwitchHandler,
   iOSStopHandler,
+  iOSClearHandler,
 } from './types';
 import { loadWorkflowCommands } from '../../config/commands-loader';
 import { SettingsManager } from '../../settings';
@@ -56,6 +57,7 @@ export class iOSWebSocketServer {
   private onGetModels: iOSModelsHandler | null = null;
   private onSwitchModel: iOSModelSwitchHandler | null = null;
   private onStop: iOSStopHandler | null = null;
+  private onClear: iOSClearHandler | null = null;
 
   constructor(port?: number) {
     this.port = port || DEFAULT_PORT;
@@ -126,6 +128,10 @@ export class iOSWebSocketServer {
 
   setStopHandler(handler: iOSStopHandler): void {
     this.onStop = handler;
+  }
+
+  setClearHandler(handler: iOSClearHandler): void {
+    this.onClear = handler;
   }
 
   /**
@@ -425,6 +431,16 @@ export class iOSWebSocketServer {
             const histLimit = ('limit' in message ? (message as { limit: number }).limit : 100) || 100;
             const histMessages = this.onGetHistory?.(histSessionId, histLimit) || [];
             ws.send(JSON.stringify({ type: 'history', sessionId: histSessionId, messages: histMessages }));
+            break;
+          }
+
+          case 'sessions:clear': {
+            if ('sessionId' in message) {
+              const clearSessionId = (message as { sessionId: string }).sessionId;
+              this.onClear?.(clearSessionId);
+              // Send back empty history to confirm the clear
+              ws.send(JSON.stringify({ type: 'history', sessionId: clearSessionId, messages: [] }));
+            }
             break;
           }
 

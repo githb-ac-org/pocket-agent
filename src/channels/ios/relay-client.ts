@@ -27,6 +27,7 @@ import {
   iOSModelsHandler,
   iOSModelSwitchHandler,
   iOSStopHandler,
+  iOSClearHandler,
 } from './types';
 import { loadWorkflowCommands } from '../../config/commands-loader';
 import { SettingsManager } from '../../settings';
@@ -70,6 +71,7 @@ export class iOSRelayClient {
   private onGetModels: iOSModelsHandler | null = null;
   private onSwitchModel: iOSModelSwitchHandler | null = null;
   private onStop: iOSStopHandler | null = null;
+  private onClear: iOSClearHandler | null = null;
 
   private _isRunning = false;
 
@@ -131,6 +133,10 @@ export class iOSRelayClient {
 
   setStopHandler(handler: iOSStopHandler): void {
     this.onStop = handler;
+  }
+
+  setClearHandler(handler: iOSClearHandler): void {
+    this.onClear = handler;
   }
 
   generatePairingCode(): string {
@@ -515,6 +521,14 @@ export class iOSRelayClient {
         break;
       case 'sessions:history':
         this.handleSessionsHistory(client, message);
+        break;
+      case 'sessions:clear':
+        if ('sessionId' in message) {
+          const clearSessionId = (message as { sessionId: string }).sessionId;
+          this.onClear?.(clearSessionId);
+          // Send back empty history to confirm the clear
+          this.sendToRelay(client.relayClientId, { type: 'history', sessionId: clearSessionId, messages: [] });
+        }
         break;
       case 'workflows:list':
         this.handleWorkflowsList(client);
