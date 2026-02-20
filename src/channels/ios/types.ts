@@ -5,7 +5,7 @@
 // === Messages from iOS → Desktop ===
 
 export interface ClientMessage {
-  type: 'message' | 'pair' | 'ping' | 'stop' | 'sessions:list' | 'sessions:switch' | 'sessions:history' | 'workflows:list' | 'models:list' | 'models:switch';
+  type: 'message' | 'pair' | 'ping' | 'stop' | 'push_token' | 'sessions:list' | 'sessions:switch' | 'sessions:history' | 'workflows:list' | 'models:list' | 'models:switch';
   id?: string;
 }
 
@@ -28,6 +28,11 @@ export interface ClientPairMessage extends ClientMessage {
   type: 'pair';
   pairingCode: string;
   deviceName: string;
+}
+
+export interface ClientPushTokenMessage extends ClientMessage {
+  type: 'push_token';
+  pushToken: string;
 }
 
 // === Messages from Desktop → iOS ===
@@ -92,6 +97,14 @@ export interface ServerSyncMessage {
   sessionId: string;
   tokensUsed?: number;
   media?: Array<{ type: string; filePath: string; mimeType: string }>;
+}
+
+export interface ServerSchedulerMessage {
+  type: 'scheduler';
+  jobName: string;
+  prompt: string;
+  response: string;
+  sessionId: string;
 }
 
 export interface ServerErrorMessage {

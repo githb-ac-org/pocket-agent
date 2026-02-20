@@ -120,6 +120,10 @@ export class iOSChannel extends BaseChannel {
     this.backend.broadcast(message);
   }
 
+  async sendPushNotifications(title: string, body: string, data?: Record<string, string>): Promise<void> {
+    await this.backend.sendPushNotifications(title, body, data);
+  }
+
   syncFromDesktop(userMessage: string, response: string, sessionId: string, media?: Array<{ type: string; filePath: string; mimeType: string }>): void {
     this.backend.broadcast({
       type: 'sync',

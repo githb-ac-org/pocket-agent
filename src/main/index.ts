@@ -2019,24 +2019,19 @@ async function initializeAgent(): Promise<void> {
   // Initialize scheduler
   if (SettingsManager.getBoolean('scheduler.enabled')) {
     scheduler = createScheduler();
-    await scheduler.initialize(memory, dbPath);
 
-    // Set notification handler for scheduler
+    // Set all handlers BEFORE initialize() — jobs can fire during init
     scheduler.setNotificationHandler((title: string, body: string) => {
       showNotification(title, body);
     });
 
-    // Set chat handler for scheduler (sends messages to chat window with session context)
     scheduler.setChatHandler((jobName: string, prompt: string, response: string, sessionId: string) => {
       console.log(`[Scheduler] Sending chat message for job: ${jobName} (session: ${sessionId})`);
-      // Send to chat window if open, with session context
       if (chatWindow && !chatWindow.isDestroyed()) {
         chatWindow.webContents.send('scheduler:message', { jobName, prompt, response, sessionId });
       }
-      // Also open chat window if not open
       if (!chatWindow || chatWindow.isDestroyed()) {
         openChatWindow();
-        // Wait a bit for window to load, then send message
         setTimeout(() => {
           try {
             if (chatWindow && !chatWindow.isDestroyed()) {
@@ -2048,6 +2043,27 @@ async function initializeAgent(): Promise<void> {
         }, 1000);
       }
     });
+
+    scheduler.setIOSSyncHandler((jobName: string, prompt: string, response: string, sessionId: string) => {
+      if (iosChannel) {
+        // WebSocket broadcast (reaches connected/foregrounded devices)
+        iosChannel.broadcast({
+          type: 'scheduler',
+          jobName,
+          prompt,
+          response,
+          sessionId,
+        });
+        // Push notification (reaches backgrounded/closed devices)
+        iosChannel.sendPushNotifications(
+          jobName,
+          response,
+          { sessionId, jobName, type: 'scheduler' }
+        ).catch(err => console.error('[Scheduler→iOS] Push failed:', err));
+      }
+    });
+
+    await scheduler.initialize(memory, dbPath);
 
     // Set up birthday reminders if birthday is configured
     const birthday = SettingsManager.get('profile.birthday');

@@ -45,7 +45,7 @@ export class iOSWebSocketServer {
   private wss: WebSocketServer | null = null;
   private port: number;
   private clients: Map<string, AuthenticatedClient> = new Map(); // authToken → client
-  private authTokens: Map<string, { deviceId: string; deviceName: string }> = new Map(); // persistent tokens
+  private authTokens: Map<string, { deviceId: string; deviceName: string; pushToken?: string }> = new Map(); // persistent tokens
   private pairingCodes: Map<string, { createdAt: number }> = new Map(); // active pairing codes
   private activePairingCode: string | null = null;
 
@@ -66,9 +66,9 @@ export class iOSWebSocketServer {
     try {
       const raw = SettingsManager.get('ios.pairedDevices');
       if (!raw) return;
-      const devices: Array<{ token: string; deviceId: string; deviceName: string }> = JSON.parse(raw);
+      const devices: Array<{ token: string; deviceId: string; deviceName: string; pushToken?: string }> = JSON.parse(raw);
       for (const d of devices) {
-        this.authTokens.set(d.token, { deviceId: d.deviceId, deviceName: d.deviceName });
+        this.authTokens.set(d.token, { deviceId: d.deviceId, deviceName: d.deviceName, pushToken: d.pushToken });
       }
       if (devices.length > 0) {
         console.log(`[iOS] Loaded ${devices.length} paired device(s)`);
@@ -83,6 +83,7 @@ export class iOSWebSocketServer {
       token,
       deviceId: info.deviceId,
       deviceName: info.deviceName,
+      ...(info.pushToken ? { pushToken: info.pushToken } : {}),
     }));
     SettingsManager.set('ios.pairedDevices', JSON.stringify(devices));
   }
@@ -185,6 +186,36 @@ export class iOSWebSocketServer {
       if (client.ws.readyState === WebSocket.OPEN) {
         client.ws.send(data);
       }
+    }
+  }
+
+  async sendPushNotifications(title: string, body: string, data?: Record<string, string>): Promise<void> {
+    const tokens: string[] = [];
+    for (const info of this.authTokens.values()) {
+      if (info.pushToken) tokens.push(info.pushToken);
+    }
+    if (tokens.length === 0) return;
+
+    const messages = tokens.map((token) => ({
+      to: token,
+      title,
+      body: body.length > 200 ? body.substring(0, 200) + '...' : body,
+      sound: 'pocket-agent-notif.mp3',
+      categoryId: 'REPLY',
+      ...(data ? { data } : {}),
+    }));
+
+    try {
+      const resp = await fetch('https://exp.host/--/api/v2/push/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(messages),
+      });
+      if (!resp.ok) {
+        console.error(`[iOS] Push failed: ${resp.status}`);
+      }
+    } catch (err) {
+      console.error('[iOS] Push error:', err);
     }
   }
 
@@ -429,6 +460,17 @@ export class iOSWebSocketServer {
                 status: 'done',
                 sessionId: client.device.sessionId,
               }));
+            }
+            break;
+
+          case 'push_token':
+            if ('pushToken' in message) {
+              const tokenInfo = this.authTokens.get(authToken);
+              if (tokenInfo) {
+                tokenInfo.pushToken = (message as { pushToken: string }).pushToken;
+                this.savePairedDevices();
+                console.log(`[iOS] Push token saved for ${client.device.deviceName}`);
+              }
             }
             break;
 

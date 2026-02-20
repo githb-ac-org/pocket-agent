@@ -453,6 +453,11 @@ export class CronScheduler {
       this.onChatMessage(jobName, prompt, response, sessionId);
     }
 
+    // Send to iOS devices
+    if (this.onIOSSync) {
+      this.onIOSSync(jobName, prompt, response, sessionId);
+    }
+
     // Also send to Telegram if configured AND session has a linked chat
     if (this.telegramBot && this.memory) {
       const linkedChatId = this.memory.getChatForSession(sessionId);
@@ -480,6 +485,11 @@ export class CronScheduler {
     }
     if (this.onChatMessage) {
       this.onChatMessage(`${type}_reminder`, message, message, sessionId);
+    }
+
+    // Send to iOS devices
+    if (this.onIOSSync) {
+      this.onIOSSync(`${type}_reminder`, message, message, sessionId);
     }
 
     // Also send to Telegram if configured AND session has a linked chat
@@ -650,6 +660,11 @@ export class CronScheduler {
     const plainResponse = this.stripMarkdown(response);
     this.emitDesktopNotification('Pocket Agent', plainResponse.slice(0, 200));
 
+    // Send to iOS devices
+    if (this.onIOSSync) {
+      this.onIOSSync(job.name, job.prompt, response, sessionId);
+    }
+
     // Also send to Telegram if configured and session has a linked chat
     if (this.telegramBot && this.memory) {
       if (job.recipient) {
@@ -724,8 +739,16 @@ export class CronScheduler {
     this.onChatMessage = handler;
   }
 
+  /**
+   * Set iOS sync handler (for sending scheduled results to iOS devices)
+   */
+  setIOSSyncHandler(handler: (jobName: string, prompt: string, response: string, sessionId: string) => void): void {
+    this.onIOSSync = handler;
+  }
+
   private onNotification?: (title: string, body: string) => void;
   private onChatMessage?: (jobName: string, prompt: string, response: string, sessionId: string) => void;
+  private onIOSSync?: (jobName: string, prompt: string, response: string, sessionId: string) => void;
 
   /**
    * Add result to history

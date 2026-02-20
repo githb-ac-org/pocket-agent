@@ -54,7 +54,7 @@ export class iOSRelayClient {
   // Virtual clients tracked by relay clientId
   private clients: Map<string, VirtualClient> = new Map();
   // Auth tokens → device info (persistent across reconnects)
-  private authTokens: Map<string, { deviceId: string; deviceName: string; relayClientId?: string }> = new Map();
+  private authTokens: Map<string, { deviceId: string; deviceName: string; relayClientId?: string; pushToken?: string }> = new Map();
   // Reverse map: relay client ID → auth token (tracks all IDs per device)
   private relayIdToToken: Map<string, string> = new Map();
   // Pairing codes
@@ -83,9 +83,9 @@ export class iOSRelayClient {
     try {
       const raw = SettingsManager.get('ios.pairedDevices');
       if (!raw) return;
-      const devices: Array<{ token: string; deviceId: string; deviceName: string }> = JSON.parse(raw);
+      const devices: Array<{ token: string; deviceId: string; deviceName: string; pushToken?: string }> = JSON.parse(raw);
       for (const d of devices) {
-        this.authTokens.set(d.token, { deviceId: d.deviceId, deviceName: d.deviceName });
+        this.authTokens.set(d.token, { deviceId: d.deviceId, deviceName: d.deviceName, pushToken: d.pushToken });
       }
       if (devices.length > 0) {
         console.log(`[iOS Relay] Loaded ${devices.length} paired device(s)`);
@@ -100,6 +100,7 @@ export class iOSRelayClient {
       token,
       deviceId: info.deviceId,
       deviceName: info.deviceName,
+      ...(info.pushToken ? { pushToken: info.pushToken } : {}),
     }));
     SettingsManager.set('ios.pairedDevices', JSON.stringify(devices));
   }
@@ -174,6 +175,36 @@ export class iOSRelayClient {
   broadcast(message: object): void {
     // Send without _to → relay broadcasts to all clients
     this.sendRaw(JSON.stringify(message));
+  }
+
+  async sendPushNotifications(title: string, body: string, data?: Record<string, string>): Promise<void> {
+    const tokens: string[] = [];
+    for (const info of this.authTokens.values()) {
+      if (info.pushToken) tokens.push(info.pushToken);
+    }
+    if (tokens.length === 0) return;
+
+    const messages = tokens.map((token) => ({
+      to: token,
+      title,
+      body: body.length > 200 ? body.substring(0, 200) + '...' : body,
+      sound: 'pocket-agent-notif.mp3',
+      categoryId: 'REPLY',
+      ...(data ? { data } : {}),
+    }));
+
+    try {
+      const resp = await fetch('https://exp.host/--/api/v2/push/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(messages),
+      });
+      if (!resp.ok) {
+        console.error(`[iOS Relay] Push failed: ${resp.status}`);
+      }
+    } catch (err) {
+      console.error('[iOS Relay] Push error:', err);
+    }
   }
 
   getConnectedDevices(): ConnectedDevice[] {
@@ -507,6 +538,16 @@ export class iOSRelayClient {
             status: 'done',
             sessionId: client.device.sessionId,
           });
+        }
+        break;
+      case 'push_token':
+        if ('pushToken' in message) {
+          const tokenInfo = this.authTokens.get(client.authToken);
+          if (tokenInfo) {
+            tokenInfo.pushToken = (message as { pushToken: string }).pushToken;
+            this.savePairedDevices();
+            console.log(`[iOS Relay] Push token saved for ${client.device.deviceName}`);
+          }
         }
         break;
       case 'ping':
