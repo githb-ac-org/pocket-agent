@@ -10,7 +10,14 @@ import crypto from 'crypto';
 import { BaseChannel } from '../index';
 import { iOSWebSocketServer } from './server';
 import { iOSRelayClient } from './relay-client';
-import { iOSMessageCallback, ConnectedDevice, iOSMessageHandler, iOSSessionsHandler, iOSHistoryHandler, iOSStatusForwarder, iOSModelsHandler, iOSModelSwitchHandler, iOSStopHandler, iOSClearHandler } from './types';
+import {
+  iOSMessageCallback, ConnectedDevice, iOSMessageHandler, iOSSessionsHandler, iOSHistoryHandler, iOSStatusForwarder,
+  iOSModelsHandler, iOSModelSwitchHandler, iOSStopHandler, iOSClearHandler,
+  iOSFactsHandler, iOSFactsDeleteHandler, iOSDailyLogsHandler, iOSSoulHandler, iOSSoulDeleteHandler,
+  iOSFactsGraphHandler, iOSCustomizeGetHandler, iOSCustomizeSaveHandler,
+  iOSRoutinesListHandler, iOSRoutinesCreateHandler, iOSRoutinesDeleteHandler, iOSRoutinesToggleHandler, iOSRoutinesRunHandler,
+  iOSAppInfoHandler,
+} from './types';
 import { SettingsManager } from '../../settings';
 
 export type { iOSMessageCallback, ConnectedDevice };
@@ -85,6 +92,21 @@ export class iOSChannel extends BaseChannel {
   setClearHandler(handler: iOSClearHandler): void {
     this.backend.setClearHandler(handler);
   }
+
+  setFactsHandler(handler: iOSFactsHandler): void { this.backend.setFactsHandler(handler); }
+  setFactsDeleteHandler(handler: iOSFactsDeleteHandler): void { this.backend.setFactsDeleteHandler(handler); }
+  setDailyLogsHandler(handler: iOSDailyLogsHandler): void { this.backend.setDailyLogsHandler(handler); }
+  setSoulHandler(handler: iOSSoulHandler): void { this.backend.setSoulHandler(handler); }
+  setSoulDeleteHandler(handler: iOSSoulDeleteHandler): void { this.backend.setSoulDeleteHandler(handler); }
+  setFactsGraphHandler(handler: iOSFactsGraphHandler): void { this.backend.setFactsGraphHandler(handler); }
+  setCustomizeGetHandler(handler: iOSCustomizeGetHandler): void { this.backend.setCustomizeGetHandler(handler); }
+  setCustomizeSaveHandler(handler: iOSCustomizeSaveHandler): void { this.backend.setCustomizeSaveHandler(handler); }
+  setRoutinesListHandler(handler: iOSRoutinesListHandler): void { this.backend.setRoutinesListHandler(handler); }
+  setRoutinesCreateHandler(handler: iOSRoutinesCreateHandler): void { this.backend.setRoutinesCreateHandler(handler); }
+  setRoutinesDeleteHandler(handler: iOSRoutinesDeleteHandler): void { this.backend.setRoutinesDeleteHandler(handler); }
+  setRoutinesToggleHandler(handler: iOSRoutinesToggleHandler): void { this.backend.setRoutinesToggleHandler(handler); }
+  setRoutinesRunHandler(handler: iOSRoutinesRunHandler): void { this.backend.setRoutinesRunHandler(handler); }
+  setAppInfoHandler(handler: iOSAppInfoHandler): void { this.backend.setAppInfoHandler(handler); }
 
   getPairingCode(): string {
     return this.backend.getActivePairingCode();

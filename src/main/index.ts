@@ -1431,6 +1431,28 @@ function setupIPC(): void {
             chatWindow?.webContents.send('session:cleared', sessionId);
             console.log(`[Main] Fresh start from iOS (session: ${sessionId})`);
           });
+          iosChannel.setFactsHandler(() => AgentManager.getAllFacts());
+          iosChannel.setFactsDeleteHandler((id) => { memory?.deleteFact(id); return true; });
+          iosChannel.setDailyLogsHandler((days) => memory?.getDailyLogsSince(days || 3) || []);
+          iosChannel.setSoulHandler(() => memory?.getAllSoulAspects() || []);
+          iosChannel.setSoulDeleteHandler((id) => { memory?.deleteSoulAspectById(id); return true; });
+          iosChannel.setFactsGraphHandler(async () => memory?.getFactsGraphData() || { nodes: [] as never[], links: [] as never[] });
+          iosChannel.setCustomizeGetHandler(() => ({ identity: loadIdentity(), instructions: loadInstructions() }));
+          iosChannel.setCustomizeSaveHandler((identity, instructions) => {
+            if (identity !== undefined) saveIdentity(identity);
+            if (instructions !== undefined) saveInstructions(instructions);
+          });
+          iosChannel.setRoutinesListHandler(() => scheduler?.getAllJobs() || []);
+          iosChannel.setRoutinesCreateHandler(async (name, schedule, prompt, channel, sessionId) => {
+            return await scheduler?.createJob(name, schedule, prompt, channel, sessionId) || false;
+          });
+          iosChannel.setRoutinesDeleteHandler((name) => scheduler?.deleteJob(name) || false);
+          iosChannel.setRoutinesToggleHandler((name, enabled) => scheduler?.setJobEnabled(name, enabled) || false);
+          iosChannel.setRoutinesRunHandler(async (name) => {
+            try { await scheduler?.runJobNow(name); return { success: true }; }
+            catch (e) { return { success: false, error: String(e) }; }
+          });
+          iosChannel.setAppInfoHandler(() => ({ version: app.getVersion(), name: 'Pocket Agent' }));
           await iosChannel.start();
           console.log(`[Main] iOS channel started (${iosChannel.getMode()} mode)`);
         }
@@ -2227,6 +2249,29 @@ async function initializeAgent(): Promise<void> {
           chatWindow?.webContents.send('session:cleared', sessionId);
           console.log(`[Main] Fresh start from iOS (session: ${sessionId})`);
         });
+
+        iosChannel.setFactsHandler(() => AgentManager.getAllFacts());
+        iosChannel.setFactsDeleteHandler((id) => { memory?.deleteFact(id); return true; });
+        iosChannel.setDailyLogsHandler((days) => memory?.getDailyLogsSince(days || 3) || []);
+        iosChannel.setSoulHandler(() => memory?.getAllSoulAspects() || []);
+        iosChannel.setSoulDeleteHandler((id) => { memory?.deleteSoulAspectById(id); return true; });
+        iosChannel.setFactsGraphHandler(async () => memory?.getFactsGraphData() || { nodes: [] as never[], links: [] as never[] });
+        iosChannel.setCustomizeGetHandler(() => ({ identity: loadIdentity(), instructions: loadInstructions() }));
+        iosChannel.setCustomizeSaveHandler((identity, instructions) => {
+          if (identity !== undefined) saveIdentity(identity);
+          if (instructions !== undefined) saveInstructions(instructions);
+        });
+        iosChannel.setRoutinesListHandler(() => scheduler?.getAllJobs() || []);
+        iosChannel.setRoutinesCreateHandler(async (name, schedule, prompt, channel, sessionId) => {
+          return await scheduler?.createJob(name, schedule, prompt, channel, sessionId) || false;
+        });
+        iosChannel.setRoutinesDeleteHandler((name) => scheduler?.deleteJob(name) || false);
+        iosChannel.setRoutinesToggleHandler((name, enabled) => scheduler?.setJobEnabled(name, enabled) || false);
+        iosChannel.setRoutinesRunHandler(async (name) => {
+          try { await scheduler?.runJobNow(name); return { success: true }; }
+          catch (e) { return { success: false, error: String(e) }; }
+        });
+        iosChannel.setAppInfoHandler(() => ({ version: app.getVersion(), name: 'Pocket Agent' }));
 
         await iosChannel.start();
         const mode = iosChannel.getMode();

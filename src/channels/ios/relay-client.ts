@@ -28,6 +28,20 @@ import {
   iOSModelSwitchHandler,
   iOSStopHandler,
   iOSClearHandler,
+  iOSFactsHandler,
+  iOSFactsDeleteHandler,
+  iOSDailyLogsHandler,
+  iOSSoulHandler,
+  iOSSoulDeleteHandler,
+  iOSFactsGraphHandler,
+  iOSCustomizeGetHandler,
+  iOSCustomizeSaveHandler,
+  iOSRoutinesListHandler,
+  iOSRoutinesCreateHandler,
+  iOSRoutinesDeleteHandler,
+  iOSRoutinesToggleHandler,
+  iOSRoutinesRunHandler,
+  iOSAppInfoHandler,
 } from './types';
 import { loadWorkflowCommands } from '../../config/commands-loader';
 import { SettingsManager } from '../../settings';
@@ -72,6 +86,20 @@ export class iOSRelayClient {
   private onSwitchModel: iOSModelSwitchHandler | null = null;
   private onStop: iOSStopHandler | null = null;
   private onClear: iOSClearHandler | null = null;
+  private onGetFacts: iOSFactsHandler | null = null;
+  private onDeleteFact: iOSFactsDeleteHandler | null = null;
+  private onGetDailyLogs: iOSDailyLogsHandler | null = null;
+  private onGetSoul: iOSSoulHandler | null = null;
+  private onDeleteSoulAspect: iOSSoulDeleteHandler | null = null;
+  private onGetFactsGraph: iOSFactsGraphHandler | null = null;
+  private onGetCustomize: iOSCustomizeGetHandler | null = null;
+  private onSaveCustomize: iOSCustomizeSaveHandler | null = null;
+  private onGetRoutines: iOSRoutinesListHandler | null = null;
+  private onCreateRoutine: iOSRoutinesCreateHandler | null = null;
+  private onDeleteRoutine: iOSRoutinesDeleteHandler | null = null;
+  private onToggleRoutine: iOSRoutinesToggleHandler | null = null;
+  private onRunRoutine: iOSRoutinesRunHandler | null = null;
+  private onGetAppInfo: iOSAppInfoHandler | null = null;
 
   private _isRunning = false;
 
@@ -138,6 +166,21 @@ export class iOSRelayClient {
   setClearHandler(handler: iOSClearHandler): void {
     this.onClear = handler;
   }
+
+  setFactsHandler(handler: iOSFactsHandler): void { this.onGetFacts = handler; }
+  setFactsDeleteHandler(handler: iOSFactsDeleteHandler): void { this.onDeleteFact = handler; }
+  setDailyLogsHandler(handler: iOSDailyLogsHandler): void { this.onGetDailyLogs = handler; }
+  setSoulHandler(handler: iOSSoulHandler): void { this.onGetSoul = handler; }
+  setSoulDeleteHandler(handler: iOSSoulDeleteHandler): void { this.onDeleteSoulAspect = handler; }
+  setFactsGraphHandler(handler: iOSFactsGraphHandler): void { this.onGetFactsGraph = handler; }
+  setCustomizeGetHandler(handler: iOSCustomizeGetHandler): void { this.onGetCustomize = handler; }
+  setCustomizeSaveHandler(handler: iOSCustomizeSaveHandler): void { this.onSaveCustomize = handler; }
+  setRoutinesListHandler(handler: iOSRoutinesListHandler): void { this.onGetRoutines = handler; }
+  setRoutinesCreateHandler(handler: iOSRoutinesCreateHandler): void { this.onCreateRoutine = handler; }
+  setRoutinesDeleteHandler(handler: iOSRoutinesDeleteHandler): void { this.onDeleteRoutine = handler; }
+  setRoutinesToggleHandler(handler: iOSRoutinesToggleHandler): void { this.onToggleRoutine = handler; }
+  setRoutinesRunHandler(handler: iOSRoutinesRunHandler): void { this.onRunRoutine = handler; }
+  setAppInfoHandler(handler: iOSAppInfoHandler): void { this.onGetAppInfo = handler; }
 
   generatePairingCode(): string {
     if (this.activePairingCode) {
@@ -567,6 +610,105 @@ export class iOSRelayClient {
       case 'ping':
         this.sendToRelay(client.relayClientId, { type: 'pong' });
         break;
+      case 'facts:list': {
+        const facts = this.onGetFacts?.() || [];
+        this.sendToRelay(client.relayClientId, { type: 'facts', facts });
+        break;
+      }
+      case 'facts:delete': {
+        if ('id' in message) {
+          this.onDeleteFact?.((message as unknown as { id: number }).id);
+          const updatedFacts = this.onGetFacts?.() || [];
+          this.sendToRelay(client.relayClientId, { type: 'facts', facts: updatedFacts });
+        }
+        break;
+      }
+      case 'daily-logs:list': {
+        const days = 'days' in message ? (message as { days: number }).days : undefined;
+        const logs = this.onGetDailyLogs?.(days) || [];
+        this.sendToRelay(client.relayClientId, { type: 'daily-logs', logs });
+        break;
+      }
+      case 'soul:list': {
+        const aspects = this.onGetSoul?.() || [];
+        this.sendToRelay(client.relayClientId, { type: 'soul', aspects });
+        break;
+      }
+      case 'soul:delete': {
+        if ('id' in message) {
+          this.onDeleteSoulAspect?.((message as unknown as { id: number }).id);
+          const updatedAspects = this.onGetSoul?.() || [];
+          this.sendToRelay(client.relayClientId, { type: 'soul', aspects: updatedAspects });
+        }
+        break;
+      }
+      case 'facts:graph': {
+        this.onGetFactsGraph?.().then((graph) => {
+          this.sendToRelay(client.relayClientId, { type: 'facts:graph', ...graph });
+        }).catch(() => {
+          this.sendToRelay(client.relayClientId, { type: 'facts:graph', nodes: [], links: [] });
+        });
+        break;
+      }
+      case 'customize:get': {
+        const customize = this.onGetCustomize?.() || { identity: '', instructions: '' };
+        this.sendToRelay(client.relayClientId, { type: 'customize', ...customize });
+        break;
+      }
+      case 'customize:save': {
+        const identity = 'identity' in message ? (message as { identity: string }).identity : undefined;
+        const instructions = 'instructions' in message ? (message as { instructions: string }).instructions : undefined;
+        this.onSaveCustomize?.(identity, instructions);
+        const updated = this.onGetCustomize?.() || { identity: '', instructions: '' };
+        this.sendToRelay(client.relayClientId, { type: 'customize', ...updated });
+        break;
+      }
+      case 'routines:list': {
+        const jobs = this.onGetRoutines?.() || [];
+        this.sendToRelay(client.relayClientId, { type: 'routines', jobs });
+        break;
+      }
+      case 'routines:create': {
+        const m = message as unknown as { name: string; schedule: string; prompt: string; channel: string; sessionId: string };
+        this.onCreateRoutine?.(m.name, m.schedule, m.prompt, m.channel || 'default', m.sessionId || 'default').then(() => {
+          const updatedJobs = this.onGetRoutines?.() || [];
+          this.sendToRelay(client.relayClientId, { type: 'routines', jobs: updatedJobs });
+        }).catch(() => {
+          this.sendToRelay(client.relayClientId, { type: 'error', message: 'Failed to create routine' });
+        });
+        break;
+      }
+      case 'routines:delete': {
+        if ('name' in message) {
+          this.onDeleteRoutine?.((message as { name: string }).name);
+          const updatedJobs = this.onGetRoutines?.() || [];
+          this.sendToRelay(client.relayClientId, { type: 'routines', jobs: updatedJobs });
+        }
+        break;
+      }
+      case 'routines:toggle': {
+        const toggleMsg = message as unknown as { name: string; enabled: boolean };
+        this.onToggleRoutine?.(toggleMsg.name, toggleMsg.enabled);
+        const updatedJobs = this.onGetRoutines?.() || [];
+        this.sendToRelay(client.relayClientId, { type: 'routines', jobs: updatedJobs });
+        break;
+      }
+      case 'routines:run': {
+        if ('name' in message) {
+          const routineName = (message as { name: string }).name;
+          this.onRunRoutine?.(routineName).then((result) => {
+            this.sendToRelay(client.relayClientId, { type: 'routine:result', name: routineName, ...result });
+          }).catch((err) => {
+            this.sendToRelay(client.relayClientId, { type: 'routine:result', name: routineName, success: false, error: String(err) });
+          });
+        }
+        break;
+      }
+      case 'app:info': {
+        const info = this.onGetAppInfo?.() || { version: 'unknown', name: 'Pocket Agent' };
+        this.sendToRelay(client.relayClientId, { type: 'app:info', ...info });
+        break;
+      }
     }
   }
 

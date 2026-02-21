@@ -5,7 +5,11 @@
 // === Messages from iOS → Desktop ===
 
 export interface ClientMessage {
-  type: 'message' | 'pair' | 'ping' | 'stop' | 'push_token' | 'sessions:list' | 'sessions:switch' | 'sessions:history' | 'sessions:clear' | 'workflows:list' | 'models:list' | 'models:switch';
+  type: 'message' | 'pair' | 'ping' | 'stop' | 'push_token' | 'sessions:list' | 'sessions:switch' | 'sessions:history' | 'sessions:clear' | 'workflows:list' | 'models:list' | 'models:switch'
+    | 'facts:list' | 'facts:delete' | 'daily-logs:list' | 'soul:list' | 'soul:delete'
+    | 'facts:graph' | 'customize:get' | 'customize:save'
+    | 'routines:list' | 'routines:create' | 'routines:delete' | 'routines:toggle' | 'routines:run'
+    | 'app:info';
   id?: string;
 }
 
@@ -178,3 +182,33 @@ export type iOSModelSwitchHandler = (modelId: string) => void;
 export type iOSStopHandler = (sessionId: string) => boolean;
 
 export type iOSClearHandler = (sessionId: string) => void;
+
+// === New feature handler types ===
+
+export type iOSFactsHandler = () => Array<{ id: number; category: string; subject: string; content: string; created_at?: string; updated_at?: string }>;
+
+export type iOSFactsDeleteHandler = (id: number) => boolean;
+
+export type iOSDailyLogsHandler = (days?: number) => Array<{ id: number; date: string; content: string; updated_at?: string }>;
+
+export type iOSSoulHandler = () => Array<{ id: number; aspect: string; content: string; created_at?: string; updated_at?: string }>;
+
+export type iOSSoulDeleteHandler = (id: number) => boolean;
+
+export type iOSFactsGraphHandler = () => Promise<{ nodes: Array<{ id: number; subject: string; category: string; content: string; group: number }>; links: Array<{ source: number; target: number; type: string; strength: number }> }>;
+
+export type iOSCustomizeGetHandler = () => { identity: string; instructions: string };
+
+export type iOSCustomizeSaveHandler = (identity?: string, instructions?: string) => void;
+
+export type iOSRoutinesListHandler = () => Array<{ id: number; name: string; schedule_type?: string; schedule: string | null; run_at?: string | null; interval_ms?: number | null; prompt: string; channel: string; enabled: boolean; delete_after_run?: boolean; context_messages?: number; next_run_at?: string | null; session_id?: string | null; job_type?: string }>;
+
+export type iOSRoutinesCreateHandler = (name: string, schedule: string, prompt: string, channel: string, sessionId: string) => Promise<boolean>;
+
+export type iOSRoutinesDeleteHandler = (name: string) => boolean;
+
+export type iOSRoutinesToggleHandler = (name: string, enabled: boolean) => boolean;
+
+export type iOSRoutinesRunHandler = (name: string) => Promise<{ success: boolean; error?: string }>;
+
+export type iOSAppInfoHandler = () => { version: string; name: string };
