@@ -3094,6 +3094,9 @@
       ensureStatusListener(sessionId);
       renderTabs();
       messagesDiv.innerHTML = '';
+      // Clear stale streaming bubble reference — the DOM element was just destroyed.
+      // A fresh bubble will be created when partial_text events arrive for this session.
+      streamingBubbleBySession.delete(sessionId);
       updateBackgroundTasksUI();
       await loadHistory();
 
@@ -3856,22 +3859,18 @@
           }
         }
 
+        // Always clean up streaming bubble reference (may be stale if user switched sessions)
+        const streamBubble = streamingBubbleBySession.get(sessionId);
+        if (streamBubble) {
+          streamBubble.remove();
+          streamingBubbleBySession.delete(sessionId);
+        }
+
         // Only update visible UI if still on same session
         if (currentSessionId === sessionId) {
           if (result.stopped) {
-            // Query was stopped with no partial text — remove streaming preview
-            const streamBubble = streamingBubbleBySession.get(sessionId);
-            if (streamBubble) {
-              streamBubble.remove();
-              streamingBubbleBySession.delete(sessionId);
-            }
+            // Query was stopped — nothing to display
           } else if (result.success) {
-            // Remove streaming preview bubble — final response replaces it
-            const streamBubble = streamingBubbleBySession.get(sessionId);
-            if (streamBubble) {
-              streamBubble.remove();
-              streamingBubbleBySession.delete(sessionId);
-            }
             addMessage('assistant', result.response, true, [], null, true, result.media);
 
             // Show compaction notice if conversation was compacted
@@ -4321,6 +4320,17 @@
     function updateStatusIndicator(status, sessionId) {
       // Use sessionId if provided, otherwise fall back to current session
       const targetSession = sessionId || currentSessionId;
+
+      // Allow notification sound for any session completing (even non-active)
+      if (status.type === 'done' && targetSession !== currentSessionId) {
+        playNotificationSound();
+        return;
+      }
+
+      // GUARD: Never render status/streaming UI for a session that isn't currently displayed.
+      // Without this, partial_text bubbles and status updates from session A would be
+      // appended to session B's visible messagesDiv when the user switches mid-query.
+      if (targetSession !== currentSessionId) return;
 
       // Handle background tasks before status element check — they use a separate UI area
       if (status.type === 'background_task_start') {

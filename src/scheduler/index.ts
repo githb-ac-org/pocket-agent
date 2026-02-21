@@ -299,7 +299,10 @@ export class CronScheduler {
             }
           }
 
-          const fullPrompt = job.prompt + contextText + '\n\nIf nothing needs attention, reply with only HEARTBEAT_OK.';
+          // Only add HEARTBEAT_OK escape for recurring jobs (cron/interval).
+          // One-time "at" jobs are intentionally scheduled — always produce output.
+          const heartbeatSuffix = job.schedule_type === 'at' ? '' : '\n\nIf nothing needs attention, reply with only HEARTBEAT_OK.';
+          const fullPrompt = job.prompt + contextText + heartbeatSuffix;
 
           if (!AgentManager.isInitialized()) {
             throw new Error('AgentManager not initialized');
