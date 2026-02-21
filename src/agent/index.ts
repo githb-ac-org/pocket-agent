@@ -1927,17 +1927,16 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
             }
 
             // Start timeout timer for SDK built-in tools (MCP tools have their own via wrapToolHandler)
+            // NOTE: On timeout we only log a warning — we do NOT interrupt the session.
+            // The SDK handles tool failures internally and returns error tool_results to the
+            // model, letting it recover gracefully (e.g. retry or respond without the tool).
+            // Interrupting kills the entire turn and leaves the user with no response.
             if (!rawName.startsWith('mcp__')) {
               const timeoutMs = AgentManagerClass.SDK_TOOL_TIMEOUTS[rawName]
                 ?? AgentManagerClass.SDK_TOOL_DEFAULT_TIMEOUT;
               const timer = setTimeout(() => {
-                console.error(`[AgentManager] SDK tool ${rawName} (${toolUseId}) timed out after ${timeoutMs}ms`);
+                console.warn(`[AgentManager] SDK tool ${rawName} (${toolUseId}) exceeded ${timeoutMs}ms — waiting for SDK to handle`);
                 this.sdkToolTimers.delete(toolUseId);
-                const session = this.persistentSessions.get(sessionId);
-                if (session?.isAlive() && this.processingBySession.get(sessionId)) {
-                  session.interrupt().catch(err =>
-                    console.error(`[AgentManager] Timeout interrupt failed:`, err));
-                }
               }, timeoutMs);
               this.sdkToolTimers.set(toolUseId, { timer, sessionId });
             }
