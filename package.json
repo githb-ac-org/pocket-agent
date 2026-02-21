@@ -1,12 +1,14 @@
 {
   "name": "pocket-agent",
-  "version": "2.4.5",
+  "version": "2.5.2",
   "description": "Desktop AI agent with persistent memory powered by Claude Agent SDK",
   "main": "dist/main/index.js",
   "scripts": {
+    "sync-version": "node scripts/sync-version.js",
+    "prebuild": "npm run sync-version",
     "build": "tsc",
     "start": "npm run build && npm run electron",
-    "dev": "tsc && npm run electron",
+    "dev": "node scripts/sync-version.js && tsc && npm run electron",
     "watch": "tsc -w",
     "preelectron": "node scripts/check-native.js",
     "electron": "electron .",
