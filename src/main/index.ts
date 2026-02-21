@@ -1236,11 +1236,18 @@ function setupIPC(): void {
   });
 
   ipcMain.handle('agent:clear', async (_, sessionId?: string) => {
+    if (sessionId) {
+      AgentManager.clearQueue(sessionId);
+    }
     AgentManager.clearConversation(sessionId);
     if (sessionId) {
       AgentManager.clearSdkSessionMapping(sessionId);
     }
     updateTrayMenu();
+    // Notify iOS app to clear its messages
+    if (iosChannel && sessionId) {
+      iosChannel.broadcast({ type: 'session:cleared', sessionId });
+    }
     return { success: true };
   });
 
@@ -1251,7 +1258,12 @@ function setupIPC(): void {
 
   ipcMain.handle('sessions:create', async (_, name: string) => {
     try {
-      return { success: true, session: memory?.createSession(name) };
+      const session = memory?.createSession(name);
+      // Notify iOS of updated session list
+      if (iosChannel) {
+        iosChannel.broadcast({ type: 'sessions', sessions: memory?.getSessions() || [], activeSessionId: '' });
+      }
+      return { success: true, session };
     } catch (err) {
       return { success: false, error: (err as Error).message };
     }
@@ -1260,6 +1272,10 @@ function setupIPC(): void {
   ipcMain.handle('sessions:rename', async (_, id: string, name: string) => {
     try {
       const success = memory?.renameSession(id, name) ?? false;
+      // Notify iOS of updated session list
+      if (success && iosChannel) {
+        iosChannel.broadcast({ type: 'sessions', sessions: memory?.getSessions() || [], activeSessionId: '' });
+      }
       return { success };
     } catch (err) {
       return { success: false, error: (err as Error).message };
@@ -1271,6 +1287,10 @@ function setupIPC(): void {
     AgentManager.clearQueue(id);
     AgentManager.clearSdkSessionMapping(id);  // Also closes persistent session
     const success = memory?.deleteSession(id) ?? false;
+    // Notify iOS of updated session list
+    if (success && iosChannel) {
+      iosChannel.broadcast({ type: 'sessions', sessions: memory?.getSessions() || [], activeSessionId: '' });
+    }
     return { success };
   });
 
@@ -1648,18 +1668,30 @@ function setupIPC(): void {
   ipcMain.handle('cron:create', async (_, name: string, schedule: string, prompt: string, channel: string, sessionId: string) => {
     const success = await scheduler?.createJob(name, schedule, prompt, channel, sessionId || 'default');
     updateTrayMenu();
+    // Notify iOS of updated routines
+    if (iosChannel) {
+      iosChannel.broadcast({ type: 'routines', jobs: scheduler?.getAllJobs() || [] });
+    }
     return { success };
   });
 
   ipcMain.handle('cron:delete', async (_, name: string) => {
     const success = scheduler?.deleteJob(name);
     updateTrayMenu();
+    // Notify iOS of updated routines
+    if (success && iosChannel) {
+      iosChannel.broadcast({ type: 'routines', jobs: scheduler?.getAllJobs() || [] });
+    }
     return { success };
   });
 
   ipcMain.handle('cron:toggle', async (_, name: string, enabled: boolean) => {
     const success = scheduler?.setJobEnabled(name, enabled);
     updateTrayMenu();
+    // Notify iOS of updated routines
+    if (success && iosChannel) {
+      iosChannel.broadcast({ type: 'routines', jobs: scheduler?.getAllJobs() || [] });
+    }
     return { success };
   });
 
@@ -1693,6 +1725,11 @@ function setupIPC(): void {
       // Auto-setup birthday cron jobs when birthday is set
       if (key === 'profile.birthday') {
         await setupBirthdayCronJobs(value);
+      }
+
+      // Notify iOS when model changes
+      if (key === 'agent.model' && iosChannel) {
+        iosChannel.broadcast({ type: 'models', models: getAvailableModels(), activeModelId: value });
       }
 
       // Instant Telegram toggle — no restart required
@@ -1781,14 +1818,11 @@ function setupIPC(): void {
   });
 
   // Get available models based on configured API keys
-  ipcMain.handle('settings:getAvailableModels', async () => {
+  function getAvailableModels(): Array<{ id: string; name: string; provider: string }> {
     const models: Array<{ id: string; name: string; provider: string }> = [];
-
-    // Check for Anthropic keys (OAuth or API key)
     const authMethod = SettingsManager.get('auth.method');
     const hasOAuth = authMethod === 'oauth' && SettingsManager.get('auth.oauthToken');
     const hasAnthropicKey = SettingsManager.get('anthropic.apiKey');
-
     if (hasOAuth || hasAnthropicKey) {
       models.push(
         { id: 'claude-opus-4-6', name: 'Opus 4.6', provider: 'anthropic' },
@@ -1796,16 +1830,10 @@ function setupIPC(): void {
         { id: 'claude-haiku-4-5-20251001', name: 'Haiku 4.5', provider: 'anthropic' }
       );
     }
-
-    // Check for Moonshot/Kimi key
     const hasMoonshotKey = SettingsManager.get('moonshot.apiKey');
     if (hasMoonshotKey) {
-      models.push(
-        { id: 'kimi-k2.5', name: 'Kimi K2.5', provider: 'moonshot' }
-      );
+      models.push({ id: 'kimi-k2.5', name: 'Kimi K2.5', provider: 'moonshot' });
     }
-
-    // Check for Z.AI GLM key
     const hasGlmKey = SettingsManager.get('glm.apiKey');
     if (hasGlmKey) {
       models.push(
@@ -1815,6 +1843,10 @@ function setupIPC(): void {
     }
 
     return models;
+  }
+
+  ipcMain.handle('settings:getAvailableModels', async () => {
+    return getAvailableModels();
   });
 
   ipcMain.handle('agent:restart', async () => {
