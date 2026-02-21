@@ -28,7 +28,7 @@
     "dist": "npm run build && electron-builder --mac",
     "dist:local": "npm run build && electron-builder --mac --config.mac.identity=null",
     "dist:win": "npm run build && electron-builder --win",
-    "dist:win:local": "npm run build && electron-builder --win --config.win.certificateFile=null"
+    "dist:win:local": "npm run build && electron-builder --win --config.win.forceCodeSigning=false"
   },
   "build": {
     "appId": "com.unstablemind.pocket-agent",
