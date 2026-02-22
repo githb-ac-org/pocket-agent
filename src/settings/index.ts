@@ -415,6 +415,17 @@ export const SETTINGS_SCHEMA: SettingDefinition[] = [
     type: 'string',
   },
 
+  // Chat settings
+  {
+    key: 'chat.username',
+    defaultValue: '',
+    encrypted: false,
+    category: 'chat',
+    label: 'Chat Username',
+    description: 'Your username for global chat',
+    type: 'string',
+  },
+
   // User Profile settings
   {
     key: 'profile.name',
