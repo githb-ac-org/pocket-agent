@@ -1474,6 +1474,15 @@ function setupIPC(): void {
             catch (e) { return { success: false, error: String(e) }; }
           });
           iosChannel.setAppInfoHandler(() => ({ version: app.getVersion(), name: 'Pocket Agent' }));
+          iosChannel.setSkinHandler((skinId: string) => {
+            SettingsManager.set('ui.skin', skinId);
+            const allWindows = [chatWindow, settingsWindow, cronWindow, factsWindow, factsGraphWindow, customizeWindow, soulWindow, dailyLogsWindow];
+            for (const win of allWindows) {
+              if (win && !win.isDestroyed()) {
+                win.webContents.send('skin:changed', skinId);
+              }
+            }
+          });
           await iosChannel.start();
           console.log(`[Main] iOS channel started (${iosChannel.getMode()} mode)`);
         }
@@ -1741,13 +1750,17 @@ function setupIPC(): void {
         iosChannel.broadcast({ type: 'models', models: getAvailableModels(), activeModelId: value });
       }
 
-      // Broadcast skin change to all open windows
+      // Broadcast skin change to all open windows + iOS
       if (key === 'ui.skin') {
         const allWindows = [chatWindow, settingsWindow, cronWindow, factsWindow, factsGraphWindow, customizeWindow, soulWindow, dailyLogsWindow];
         for (const win of allWindows) {
           if (win && !win.isDestroyed()) {
             win.webContents.send('skin:changed', value);
           }
+        }
+        // Push skin change to connected iOS devices
+        if (iosChannel) {
+          iosChannel.broadcast({ type: 'skin:changed', skinId: value });
         }
       }
 
@@ -2323,6 +2336,15 @@ async function initializeAgent(): Promise<void> {
           catch (e) { return { success: false, error: String(e) }; }
         });
         iosChannel.setAppInfoHandler(() => ({ version: app.getVersion(), name: 'Pocket Agent' }));
+        iosChannel.setSkinHandler((skinId: string) => {
+          SettingsManager.set('ui.skin', skinId);
+          const allWindows = [chatWindow, settingsWindow, cronWindow, factsWindow, factsGraphWindow, customizeWindow, soulWindow, dailyLogsWindow];
+          for (const win of allWindows) {
+            if (win && !win.isDestroyed()) {
+              win.webContents.send('skin:changed', skinId);
+            }
+          }
+        });
 
         await iosChannel.start();
         const mode = iosChannel.getMode();

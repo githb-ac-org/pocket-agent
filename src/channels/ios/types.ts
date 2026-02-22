@@ -9,7 +9,8 @@ export interface ClientMessage {
     | 'facts:list' | 'facts:delete' | 'daily-logs:list' | 'soul:list' | 'soul:delete'
     | 'facts:graph' | 'customize:get' | 'customize:save'
     | 'routines:list' | 'routines:create' | 'routines:delete' | 'routines:toggle' | 'routines:run'
-    | 'app:info';
+    | 'app:info'
+    | 'skin:set';
   id?: string;
 }
 

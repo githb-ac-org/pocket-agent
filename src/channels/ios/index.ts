@@ -107,6 +107,7 @@ export class iOSChannel extends BaseChannel {
   setRoutinesToggleHandler(handler: iOSRoutinesToggleHandler): void { this.backend.setRoutinesToggleHandler(handler); }
   setRoutinesRunHandler(handler: iOSRoutinesRunHandler): void { this.backend.setRoutinesRunHandler(handler); }
   setAppInfoHandler(handler: iOSAppInfoHandler): void { this.backend.setAppInfoHandler(handler); }
+  setSkinHandler(handler: (skinId: string) => void): void { this.backend.setSkinHandler(handler); }
 
   getPairingCode(): string {
     return this.backend.getActivePairingCode();

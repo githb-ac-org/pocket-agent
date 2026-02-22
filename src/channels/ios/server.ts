@@ -86,6 +86,7 @@ export class iOSWebSocketServer {
   private onToggleRoutine: iOSRoutinesToggleHandler | null = null;
   private onRunRoutine: iOSRoutinesRunHandler | null = null;
   private onGetAppInfo: iOSAppInfoHandler | null = null;
+  private onSkinSet: ((skinId: string) => void) | null = null;
 
   constructor(port?: number) {
     this.port = port || DEFAULT_PORT;
@@ -176,6 +177,7 @@ export class iOSWebSocketServer {
   setRoutinesToggleHandler(handler: iOSRoutinesToggleHandler): void { this.onToggleRoutine = handler; }
   setRoutinesRunHandler(handler: iOSRoutinesRunHandler): void { this.onRunRoutine = handler; }
   setAppInfoHandler(handler: iOSAppInfoHandler): void { this.onGetAppInfo = handler; }
+  setSkinHandler(handler: (skinId: string) => void): void { this.onSkinSet = handler; }
 
   /**
    * Generate a new 6-digit pairing code
@@ -634,6 +636,13 @@ export class iOSWebSocketServer {
           case 'app:info': {
             const info = this.onGetAppInfo?.() || { version: 'unknown', name: 'Pocket Agent' };
             ws.send(JSON.stringify({ type: 'app:info', ...info }));
+            break;
+          }
+          case 'skin:set': {
+            if ('skinId' in message) {
+              const skinId = (message as { skinId: string }).skinId;
+              this.onSkinSet?.(skinId);
+            }
             break;
           }
         }

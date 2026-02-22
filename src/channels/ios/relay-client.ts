@@ -100,6 +100,7 @@ export class iOSRelayClient {
   private onToggleRoutine: iOSRoutinesToggleHandler | null = null;
   private onRunRoutine: iOSRoutinesRunHandler | null = null;
   private onGetAppInfo: iOSAppInfoHandler | null = null;
+  private onSkinSet: ((skinId: string) => void) | null = null;
 
   private _isRunning = false;
 
@@ -181,6 +182,7 @@ export class iOSRelayClient {
   setRoutinesToggleHandler(handler: iOSRoutinesToggleHandler): void { this.onToggleRoutine = handler; }
   setRoutinesRunHandler(handler: iOSRoutinesRunHandler): void { this.onRunRoutine = handler; }
   setAppInfoHandler(handler: iOSAppInfoHandler): void { this.onGetAppInfo = handler; }
+  setSkinHandler(handler: (skinId: string) => void): void { this.onSkinSet = handler; }
 
   generatePairingCode(): string {
     if (this.activePairingCode) {
@@ -707,6 +709,13 @@ export class iOSRelayClient {
       case 'app:info': {
         const info = this.onGetAppInfo?.() || { version: 'unknown', name: 'Pocket Agent' };
         this.sendToRelay(client.relayClientId, { type: 'app:info', ...info });
+        break;
+      }
+      case 'skin:set': {
+        if ('skinId' in message) {
+          const skinId = (message as { skinId: string }).skinId;
+          this.onSkinSet?.(skinId);
+        }
         break;
       }
     }
