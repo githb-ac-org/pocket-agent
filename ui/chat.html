@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' wss://pocket-agent-chat-production.up.railway.app;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' wss://pocket-agent-chat-production.up.railway.app https://pocket-agent-chat-production.up.railway.app;">
   <title>Pocket Agent</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1919,6 +1919,22 @@
       color: rgba(255, 255, 255, 0.6);
     }
 
+    .admin-badge {
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      background: rgba(245, 158, 11, 0.15);
+      color: #f59e0b;
+      padding: 1px 5px;
+      border-radius: 4px;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    .message.global-chat-admin {
+      border-left: 2px solid #f59e0b;
+    }
+
     .chat-toast {
       position: fixed;
       bottom: 24px;
@@ -3120,7 +3136,10 @@
     let globalChatMessages = [];
     let chatWs = null;
     let chatWsReconnectTimer = null;
+    let chatAdminKey = '';
+    let chatIsAdmin = false;
     const CHAT_WS_URL = 'wss://pocket-agent-chat-production.up.railway.app';
+    const CHAT_API_URL = 'https://pocket-agent-chat-production.up.railway.app';
 
     // Allowed file types
     const ALLOWED_EXTENSIONS = new Set([
@@ -4996,7 +5015,24 @@
       return CHAT_SENDER_COLORS[hashUsername(username) % CHAT_SENDER_COLORS.length];
     }
 
+    async function tryRegisterUsername(name) {
+      try {
+        const res = await fetch(`${CHAT_API_URL}/api/register-username`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: name }),
+        });
+        const data = await res.json();
+        return data.ok === true;
+      } catch { return false; }
+    }
+
     async function getOrCreateChatUsername() {
+      // Load admin key
+      try {
+        chatAdminKey = (await window.pocketAgent.getSetting('chat.adminKey')) || '';
+      } catch { chatAdminKey = ''; }
+
       try {
         const existing = await window.pocketAgent.getSetting('chat.username');
         if (existing) {
@@ -5009,11 +5045,30 @@
       let firstName = 'anon';
       try {
         const name = await window.pocketAgent.getSetting('profile.name');
-        if (name) firstName = name.split(' ')[0].toLowerCase();
+        if (name) firstName = name.split(' ')[0].toLowerCase().replace(/[^a-z]/g, '');
       } catch { /* use default */ }
 
-      const funWord = CHAT_FUN_WORDS[Math.floor(Math.random() * CHAT_FUN_WORDS.length)];
-      const username = `${firstName}-${funWord}`;
+      // Truncate firstName so total stays ≤ 15 (name + dash + word)
+      if (firstName.length > 5) firstName = firstName.slice(0, 5);
+
+      // Try up to 5 times with different fun words
+      const shuffled = [...CHAT_FUN_WORDS].sort(() => Math.random() - 0.5);
+      let username = '';
+      for (let i = 0; i < Math.min(5, shuffled.length); i++) {
+        const candidate = `${firstName}-${shuffled[i]}`.slice(0, 15);
+        const registered = await tryRegisterUsername(candidate);
+        if (registered) {
+          username = candidate;
+          break;
+        }
+      }
+
+      // Fallback: add random digits
+      if (!username) {
+        const fallback = `${firstName}-${Math.floor(Math.random() * 10000)}`.slice(0, 15);
+        await tryRegisterUsername(fallback);
+        username = fallback;
+      }
 
       try {
         await window.pocketAgent.setSetting('chat.username', username);
@@ -5047,14 +5102,15 @@
       const div = document.createElement('div');
       const isSelf = msg.username === globalChatUsername;
       div.className = `message ${isSelf ? 'global-chat-self' : 'global-chat-other'}`;
+      if (msg.admin) div.classList.add('global-chat-admin');
 
       // Sender label
       const sender = document.createElement('div');
       sender.className = 'global-chat-sender';
       const dot = document.createElement('span');
       dot.className = 'sender-dot';
-      const color = isSelf ? '' : getSenderColor(msg.username);
-      if (isSelf) {
+      const color = msg.admin ? '#f59e0b' : (isSelf ? '' : getSenderColor(msg.username));
+      if (isSelf && !msg.admin) {
         dot.style.background = 'rgba(255, 255, 255, 0.6)';
       } else {
         dot.style.background = color;
@@ -5062,8 +5118,18 @@
       sender.appendChild(dot);
       const name = document.createElement('span');
       name.textContent = msg.username;
-      if (!isSelf) name.style.color = color;
+      if (msg.admin) {
+        name.style.color = '#f59e0b';
+      } else if (!isSelf) {
+        name.style.color = color;
+      }
       sender.appendChild(name);
+      if (msg.admin) {
+        const badge = document.createElement('span');
+        badge.className = 'admin-badge';
+        badge.textContent = 'admin';
+        sender.appendChild(badge);
+      }
       div.appendChild(sender);
 
       // Message text
@@ -5102,7 +5168,9 @@
       chatWs.onopen = () => {
         const dot = document.getElementById('chat-status-dot');
         if (dot) dot.classList.add('connected');
-        chatWs.send(JSON.stringify({ type: 'join', username: globalChatUsername }));
+        const joinPayload = { type: 'join', username: globalChatUsername };
+        if (chatAdminKey) joinPayload.adminKey = chatAdminKey;
+        chatWs.send(JSON.stringify(joinPayload));
         // If already in chat mode when reconnecting, re-enter
         if (globalChatMode) {
           chatWs.send(JSON.stringify({ type: 'enter_chat' }));
@@ -5113,15 +5181,18 @@
         let data;
         try { data = JSON.parse(event.data); } catch { return; }
 
-        if (data.type === 'history') {
+        if (data.type === 'joined') {
+          chatIsAdmin = !!data.admin;
+        } else if (data.type === 'history') {
           globalChatMessages = (data.messages || []).map(m => ({
             username: m.username,
             text: m.text,
             ts: Number(m.ts),
+            admin: !!m.admin,
           }));
           if (globalChatMode) renderGlobalChatMessages();
         } else if (data.type === 'message') {
-          addGlobalChatMessage({ username: data.username, text: data.text, ts: data.ts });
+          addGlobalChatMessage({ username: data.username, text: data.text, ts: data.ts, admin: !!data.admin });
         } else if (data.type === 'counts') {
           updateChatCounts(data.online, data.inChat);
         } else if (data.type === 'error') {

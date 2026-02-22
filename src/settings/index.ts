@@ -425,6 +425,15 @@ export const SETTINGS_SCHEMA: SettingDefinition[] = [
     description: 'Your username for global chat',
     type: 'string',
   },
+  {
+    key: 'chat.adminKey',
+    defaultValue: '',
+    encrypted: true,
+    category: 'chat',
+    label: 'Admin Key',
+    description: 'Admin authentication key (leave blank if not admin)',
+    type: 'string',
+  },
 
   // User Profile settings
   {
