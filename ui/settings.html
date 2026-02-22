@@ -2245,6 +2245,7 @@
       }
 
       const oldUsername = settings['chat.username'] || '';
+      const adminKey = document.getElementById('chat.adminKey').value.trim() || settings['chat.adminKey'] || '';
 
       // Skip server check if unchanged
       if (raw === oldUsername.toLowerCase()) {
@@ -2253,8 +2254,10 @@
       }
 
       try {
-        // Check availability
-        const checkRes = await fetch(`${CHAT_API_URL}/api/check-username?name=${encodeURIComponent(raw)}`);
+        // Check availability (pass admin key for reserved names)
+        const checkParams = new URLSearchParams({ name: raw });
+        if (adminKey) checkParams.set('adminKey', adminKey);
+        const checkRes = await fetch(`${CHAT_API_URL}/api/check-username?${checkParams}`);
         const checkData = await checkRes.json();
 
         if (!checkData.available) {
@@ -2262,11 +2265,11 @@
           return;
         }
 
-        // Register it
+        // Register it (pass admin key for reserved names)
         const regRes = await fetch(`${CHAT_API_URL}/api/register-username`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: raw, oldUsername }),
+          body: JSON.stringify({ username: raw, oldUsername, adminKey }),
         });
         const regData = await regRes.json();
 
