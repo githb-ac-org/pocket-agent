@@ -11,6 +11,7 @@ import { createiOSChannel, destroyiOSChannel, iOSChannel } from '../channels/ios
 import type { ConnectedDevice, ClientChatMessage } from '../channels/ios/types';
 import { transcribeAudio } from '../utils/transcribe';
 import { SettingsManager } from '../settings';
+import { THEMES } from '../settings/themes';
 import { loadIdentity, saveIdentity, getIdentityPath, DEFAULT_IDENTITY } from '../config/identity';
 import { loadInstructions, saveInstructions, getInstructionsPath, DEFAULT_INSTRUCTIONS } from '../config/instructions';
 import { DEFAULT_COMMANDS } from '../config/commands';
@@ -1714,6 +1715,14 @@ function setupIPC(): void {
     return SettingsManager.getAll();
   });
 
+  ipcMain.handle('settings:getThemes', async () => {
+    return THEMES;
+  });
+
+  ipcMain.handle('settings:getSkin', async () => {
+    return SettingsManager.get('ui.skin') || 'default';
+  });
+
   ipcMain.handle('settings:get', async (_, key: string) => {
     return SettingsManager.get(key);
   });
@@ -1730,6 +1739,16 @@ function setupIPC(): void {
       // Notify iOS when model changes
       if (key === 'agent.model' && iosChannel) {
         iosChannel.broadcast({ type: 'models', models: getAvailableModels(), activeModelId: value });
+      }
+
+      // Broadcast skin change to all open windows
+      if (key === 'ui.skin') {
+        const allWindows = [chatWindow, settingsWindow, cronWindow, factsWindow, factsGraphWindow, customizeWindow, soulWindow, dailyLogsWindow];
+        for (const win of allWindows) {
+          if (win && !win.isDestroyed()) {
+            win.webContents.send('skin:changed', value);
+          }
+        }
       }
 
       // Instant Telegram toggle — no restart required

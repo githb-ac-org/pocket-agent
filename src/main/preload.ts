@@ -104,6 +104,15 @@ contextBridge.exposeInMainWorld('pocketAgent', {
   // App info
   getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
 
+  // Themes
+  getThemes: () => ipcRenderer.invoke('settings:getThemes'),
+  getSkin: () => ipcRenderer.invoke('settings:getSkin'),
+  onSkinChanged: (callback: (skinId: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, skinId: string) => callback(skinId);
+    ipcRenderer.on('skin:changed', listener);
+    return () => ipcRenderer.removeListener('skin:changed', listener);
+  },
+
   // Settings
   getSettings: () => ipcRenderer.invoke('settings:getAll'),
   getSetting: (key: string) => ipcRenderer.invoke('settings:get', key),
@@ -247,6 +256,10 @@ declare global {
       getCronHistory: (limit?: number) => Promise<Array<{ jobName: string; response: string; success: boolean; timestamp: string }>>;
       // App info
       getAppVersion: () => Promise<string>;
+      // Themes
+      getThemes: () => Promise<Record<string, { id: string; name: string; palette: Record<string, string> | null }>>;
+      getSkin: () => Promise<string>;
+      onSkinChanged: (callback: (skinId: string) => void) => () => void;
       // Settings
       getSettings: () => Promise<Record<string, string>>;
       getSetting: (key: string) => Promise<string>;

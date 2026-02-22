@@ -404,6 +404,17 @@ export const SETTINGS_SCHEMA: SettingDefinition[] = [
     description: 'Saved position and size of facts window (JSON)',
     type: 'string',
   },
+  // Appearance settings
+  {
+    key: 'ui.skin',
+    defaultValue: 'default',
+    encrypted: false,
+    category: 'appearance',
+    label: 'UI Skin',
+    description: 'Visual theme for the app (default, light, emerald, sandstone)',
+    type: 'string',
+  },
+
   // User Profile settings
   {
     key: 'profile.name',
