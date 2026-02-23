@@ -5811,6 +5811,10 @@
         } else if (data.type === 'tier_change') {
           const oldTier = globalChatSelfTier;
           globalChatSelfTier = data.tier || 0;
+          // Update own messages so re-renders preserve the tier
+          globalChatMessages.forEach(m => {
+            if (m.username === globalChatUsername) m.tier = data.tier;
+          });
           updateHeaderTierBadge();
           if (data.tier > oldTier) {
             const info = TIER_CONFIG[data.tier] || TIER_CONFIG[0];
@@ -5835,6 +5839,10 @@
             chatUnreadCount++;
             updateUnreadBadge();
           }
+        } else if (data.type === 'message_ack') {
+          // Server confirmed our message was saved — add it to chat
+          if (data.minTier !== undefined) userMinTierMap.set(data.username, data.minTier);
+          addGlobalChatMessage({ username: data.username, text: data.text, ts: data.ts, admin: !!data.admin, tier: data.tier || 0 });
         } else if (data.type === 'chat_cleared') {
           globalChatMessages = [];
           const container = document.getElementById('global-chat-messages');
@@ -5846,6 +5854,10 @@
           container.appendChild(sysMsg);
         } else if (data.type === 'tier_update') {
           userMinTierMap.set(data.username, data.minTier);
+          // Update tier in message data so re-renders preserve the change
+          globalChatMessages.forEach(m => {
+            if (m.username === data.username) m.tier = data.tier;
+          });
           // Update existing bubbles for this user
           document.querySelectorAll('[data-chat-username="' + data.username + '"]').forEach(nameEl => {
             const tierInfo = TIER_CONFIG[data.tier] || TIER_CONFIG[0];
@@ -5889,6 +5901,12 @@
         const dot = document.getElementById('chat-status-dot');
         if (dot) dot.classList.remove('connected');
         clearTimeout(chatWsReconnectTimer);
+        // Don't retry if username is reserved and admin key is wrong
+        if (event.code === 4003) {
+          console.warn('[Chat WS] Username reserved — admin key mismatch, not reconnecting');
+          showChatToast('username reserved — check admin key in settings');
+          return;
+        }
         chatWsReconnectTimer = setTimeout(connectChatWs, 3000);
       };
 
@@ -5974,7 +5992,7 @@
       chatSendTimestamps.push(now);
       lastChatMessageText = text;
 
-      addGlobalChatMessage({ username: globalChatUsername, text, ts: now, admin: chatIsAdmin, tier: globalChatSelfTier });
+      // Don't optimistically add — wait for server echo so all users see the same state
       input.value = '';
       autoResizeTextarea();
       sendChatWs({ type: 'message', text });
