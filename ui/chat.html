@@ -3777,6 +3777,22 @@
       await getOrCreateChatUsername();
       connectChatWs();
 
+      // Listen for chat username changes from settings window
+      window.pocketAgent.onChatUsernameChanged((newUsername) => {
+        console.log('[Chat] Username changed via settings:', newUsername);
+        globalChatUsername = newUsername;
+        // Clear any pending reconnect timer and reconnect with new username
+        clearTimeout(chatWsReconnectTimer);
+        if (chatWs) {
+          chatWs.onclose = null; // Prevent auto-reconnect with old handler
+          chatWs.close();
+          chatWs = null;
+        }
+        connectChatWs();
+        // Update header badge if in chat mode
+        if (globalChatMode) updateHeaderTierBadge();
+      });
+
       // Listen for scheduler messages
       window.pocketAgent.onSchedulerMessage((data) => {
         console.log('[Chat] Received scheduler message:', data.jobName, 'sessionId:', data.sessionId, 'currentSession:', currentSessionId);

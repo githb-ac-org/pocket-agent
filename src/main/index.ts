@@ -1774,6 +1774,11 @@ function setupIPC(): void {
         }
       }
 
+      // Broadcast chat username change to chat window — no restart required
+      if (key === 'chat.username' && chatWindow && !chatWindow.isDestroyed()) {
+        chatWindow.webContents.send('chat:usernameChanged', value);
+      }
+
       // Instant Telegram toggle — no restart required
       if (key === 'telegram.enabled') {
         const enabled = value === 'true' || value === '1';

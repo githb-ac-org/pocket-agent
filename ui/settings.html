@@ -2278,12 +2278,11 @@
           return;
         }
 
-        // Save locally
+        // Save locally (broadcasts to chat window automatically)
         input.value = raw;
         await window.pocketAgent.setSetting('chat.username', raw);
         settings['chat.username'] = raw;
         showToast('Username saved!', 'success');
-        activateReboot();
       } catch (err) {
         console.error('Failed to save username:', err);
         showToast('Could not reach chat server', 'error');

@@ -113,6 +113,13 @@ contextBridge.exposeInMainWorld('pocketAgent', {
     return () => ipcRenderer.removeListener('skin:changed', listener);
   },
 
+  // Chat
+  onChatUsernameChanged: (callback: (username: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, username: string) => callback(username);
+    ipcRenderer.on('chat:usernameChanged', listener);
+    return () => ipcRenderer.removeListener('chat:usernameChanged', listener);
+  },
+
   // Settings
   getSettings: () => ipcRenderer.invoke('settings:getAll'),
   getSetting: (key: string) => ipcRenderer.invoke('settings:get', key),
@@ -260,6 +267,8 @@ declare global {
       getThemes: () => Promise<Record<string, { id: string; name: string; palette: Record<string, string> | null }>>;
       getSkin: () => Promise<string>;
       onSkinChanged: (callback: (skinId: string) => void) => () => void;
+      // Chat
+      onChatUsernameChanged: (callback: (username: string) => void) => () => void;
       // Settings
       getSettings: () => Promise<Record<string, string>>;
       getSetting: (key: string) => Promise<string>;
