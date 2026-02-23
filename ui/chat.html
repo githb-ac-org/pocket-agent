@@ -672,6 +672,14 @@
       bottom: 140px;
     }
 
+    #gchat-scroll-top-btn {
+      top: 100px;
+    }
+
+    #gchat-scroll-bottom-btn {
+      bottom: 140px;
+    }
+
     /* Message Bubbles */
     .message {
       max-width: 80%;
@@ -1790,6 +1798,35 @@
       color: #fff;
     }
 
+    .chat-toggle {
+      position: relative;
+    }
+
+    .chat-unread-badge {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 4px;
+      background: #ef4444;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      box-shadow: 0 0 0 2px var(--bg-secondary);
+      animation: unread-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    @keyframes unread-pop {
+      0% { transform: scale(0); }
+      100% { transform: scale(1); }
+    }
+
     /* Global Chat Header */
     #global-chat-header {
       display: none;
@@ -1835,6 +1872,14 @@
       padding: 2px 8px;
       border-radius: 10px;
       border: 1px solid var(--border);
+      cursor: pointer;
+      transition: border-color 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+    }
+    .chat-username-badge:hover {
+      border-color: var(--accent);
     }
 
     #global-chat-header .chat-status {
@@ -1859,32 +1904,24 @@
       padding: 20px;
       display: none;
       flex-direction: column;
-      gap: 12px;
+      gap: 16px;
       scroll-behavior: smooth;
     }
 
-    .message.global-chat-self {
-      align-self: flex-end;
-      max-width: 75%;
-      background: var(--user-bubble);
-      color: #fff;
-      padding: 10px 14px;
-      border-radius: 16px 16px 4px 16px;
-      font-size: 13px;
-      line-height: 1.5;
-      word-break: break-word;
+    .global-chat-wrapper {
+      display: flex;
+      flex-direction: column;
+      max-width: 80%;
     }
 
-    .message.global-chat-other {
+    .global-chat-wrapper.self {
+      align-self: flex-end;
+      align-items: flex-end;
+    }
+
+    .global-chat-wrapper.other {
       align-self: flex-start;
-      max-width: 75%;
-      background: var(--bg-tertiary);
-      color: var(--text-primary);
-      padding: 10px 14px;
-      border-radius: 16px 16px 16px 4px;
-      font-size: 13px;
-      line-height: 1.5;
-      word-break: break-word;
+      align-items: flex-start;
     }
 
     .global-chat-sender {
@@ -1893,46 +1930,539 @@
       gap: 5px;
       font-size: 11px;
       font-weight: 600;
-      margin-bottom: 4px;
+      margin-bottom: 3px;
+      padding: 0 4px;
+      color: var(--text-muted);
     }
 
-    .global-chat-sender .sender-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
+    .verified-badge {
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .verified-badge svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .message.global-chat-self {
+      max-width: 100%;
+      background: var(--user-bubble);
+      color: #fff;
+      padding: 12px 16px;
+      border-radius: 16px 16px 4px 16px;
+      font-size: 14px;
+      line-height: 1.5;
+      word-wrap: break-word;
+    }
+
+    .message.global-chat-other {
+      max-width: 100%;
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      padding: 12px 16px;
+      border-radius: 16px 16px 16px 4px;
+      font-size: 14px;
+      line-height: 1.5;
+      word-wrap: break-word;
+    }
+
+    .admin-username {
+      background: linear-gradient(90deg, #60a5fa, #c084fc, #22d3ee, #f472b6, #818cf8, #a855f7, #60a5fa);
+      background-size: 300% 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: admin-flow 6s linear infinite, admin-neon 4s ease-in-out infinite alternate;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      position: relative;
+      text-transform: uppercase;
+    }
+
+    @keyframes admin-flow {
+      0% { background-position: 0% 50%; }
+      100% { background-position: 300% 50%; }
+    }
+
+    @keyframes admin-neon {
+      0% {
+        filter:
+          drop-shadow(0 0 3px rgba(96, 165, 250, 0.5))
+          drop-shadow(0 0 6px rgba(168, 85, 247, 0.3));
+      }
+      50% {
+        filter:
+          drop-shadow(0 0 6px rgba(34, 211, 238, 0.7))
+          drop-shadow(0 0 12px rgba(168, 85, 247, 0.5))
+          drop-shadow(0 0 24px rgba(96, 165, 250, 0.3));
+      }
+      100% {
+        filter:
+          drop-shadow(0 0 4px rgba(168, 85, 247, 0.5))
+          drop-shadow(0 0 10px rgba(96, 165, 250, 0.3));
+      }
+    }
+
+    /* Glitch layer — occasional subtle slice */
+    .admin-username::before {
+      content: attr(data-text);
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      background: linear-gradient(90deg, #22d3ee, #f472b6, #60a5fa);
+      background-size: 200% 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: admin-glitch 8s ease-in-out infinite;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    @keyframes admin-glitch {
+      0%, 90%, 100% { opacity: 0; transform: none; clip-path: inset(0); }
+      91% { opacity: 0.8; transform: translate(2px, -1px) skewX(-3deg); clip-path: inset(0 0 55% 0); }
+      92% { opacity: 0; transform: translate(-2px, 1px); clip-path: inset(40% 0 0 0); }
+      93% { opacity: 0.6; transform: translate(1px, 0) skewX(2deg); clip-path: inset(20% 0 40% 0); }
+      94% { opacity: 0; transform: none; clip-path: inset(0); }
+    }
+
+    /* --- Tier progression effects --- */
+
+    .tier-badge {
+      font-size: 12px;
+      line-height: 1;
+      display: inline-block;
+    }
+
+    /* Per-tier emoji animations */
+    .tier-spark + .tier-spark-badge, .tier-badge-spark {
+      animation: badge-flash 1.5s ease-in-out infinite;
+    }
+    .tier-badge-blaze {
+      animation: badge-flicker 0.8s ease-in-out infinite alternate;
+    }
+    .tier-badge-storm {
+      animation: badge-shake 2s ease-in-out infinite;
+    }
+    .tier-badge-frost {
+      animation: badge-float 2.5s ease-in-out infinite;
+    }
+    .tier-badge-solar {
+      animation: badge-glow-pulse 1.8s ease-in-out infinite;
+    }
+    .tier-badge-mystic {
+      animation: badge-float 2s ease-in-out infinite, badge-glow-pulse 2.5s ease-in-out infinite;
+    }
+    .tier-badge-inferno {
+      animation: badge-flicker 0.4s ease-in-out infinite alternate, badge-shake 1.5s ease-in-out infinite;
+    }
+    .tier-badge-cosmic {
+      animation: badge-spin 4s linear infinite;
+    }
+    .tier-badge-legendary {
+      animation: badge-bounce 1.2s ease-in-out infinite, badge-glow-pulse 1.5s ease-in-out infinite;
+    }
+    .tier-badge-mythic {
+      animation: badge-bounce 1s ease-in-out infinite, badge-spin 6s linear infinite;
+      filter: drop-shadow(0 0 4px rgba(192,132,252,0.6));
+    }
+
+    @keyframes badge-flash {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(1.15); }
+    }
+    @keyframes badge-flicker {
+      0% { transform: scale(1) rotate(-3deg); opacity: 0.8; }
+      100% { transform: scale(1.1) rotate(3deg); opacity: 1; }
+    }
+    @keyframes badge-shake {
+      0%, 100% { transform: translateX(0); }
+      15% { transform: translateX(-1.5px) rotate(-2deg); }
+      30% { transform: translateX(1.5px) rotate(2deg); }
+      45% { transform: translateX(-1px) rotate(-1deg); }
+      60% { transform: translateX(1px); }
+      75% { transform: translateX(0); }
+    }
+    @keyframes badge-float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-3px); }
+    }
+    @keyframes badge-glow-pulse {
+      0%, 100% { filter: drop-shadow(0 0 2px rgba(255,255,255,0.2)); transform: scale(1); }
+      50% { filter: drop-shadow(0 0 6px rgba(255,255,255,0.6)); transform: scale(1.1); }
+    }
+    @keyframes badge-spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    @keyframes badge-bounce {
+      0%, 100% { transform: translateY(0) scale(1); }
+      40% { transform: translateY(-4px) scale(1.15); }
+      60% { transform: translateY(-2px) scale(1.05); }
+    }
+
+    /* Tier 1: Spark — subtle yellow glow */
+    .tier-spark {
+      color: #facc15;
+      text-shadow: 0 0 4px rgba(250,204,21,0.4);
+    }
+
+    /* Tier 2: Blaze — orange shimmer */
+    .tier-blaze {
+      background: linear-gradient(90deg, #f97316, #fbbf24, #f97316);
+      background-size: 200% 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: tier-shimmer 3s linear infinite;
+    }
+
+    /* Tier 3: Storm — blue-purple pulse */
+    .tier-storm {
+      background: linear-gradient(90deg, #818cf8, #a78bfa, #818cf8);
+      background-size: 200% 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: tier-shimmer 2.5s linear infinite;
+      filter: drop-shadow(0 0 3px rgba(129,140,248,0.5));
+    }
+
+    /* Tier 4: Frost — cyan frost glow */
+    .tier-frost {
+      background: linear-gradient(90deg, #22d3ee, #67e8f9, #a5f3fc, #22d3ee);
+      background-size: 200% 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: tier-shimmer 2.5s linear infinite;
+      filter: drop-shadow(0 0 4px rgba(34,211,238,0.5));
+    }
+
+    /* Tier 5: Solar — gold radiance */
+    .tier-solar {
+      background: linear-gradient(90deg, #f59e0b, #fbbf24, #fde68a, #f59e0b);
+      background-size: 200% 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: tier-shimmer 2s linear infinite;
+      filter: drop-shadow(0 0 6px rgba(245,158,11,0.6));
+    }
+
+    /* Tier 6: Mystic — purple-pink flow */
+    .tier-mystic {
+      background: linear-gradient(90deg, #a855f7, #ec4899, #d946ef, #a855f7);
+      background-size: 200% 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: tier-shimmer 2s linear infinite;
+      filter: drop-shadow(0 0 5px rgba(168,85,247,0.5));
+    }
+
+    /* Tier 7: Inferno — red-orange fire text */
+    .tier-inferno {
+      background: linear-gradient(90deg, #ef4444, #f97316, #fbbf24, #ef4444);
+      background-size: 300% 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: tier-shimmer 1.8s linear infinite, tier-pulse 2s ease-in-out infinite alternate;
+      filter: drop-shadow(0 0 6px rgba(239,68,68,0.6));
+    }
+
+    /* Tier 8: Cosmic — rainbow gradient flow */
+    .tier-cosmic {
+      background: linear-gradient(90deg, #ef4444, #f97316, #facc15, #22c55e, #3b82f6, #8b5cf6, #ec4899, #ef4444);
+      background-size: 400% 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: tier-shimmer 3s linear infinite;
+      filter: drop-shadow(0 0 6px rgba(139,92,246,0.5)) drop-shadow(0 0 10px rgba(59,130,246,0.3));
+    }
+
+    /* Tier 9: Legendary — multi-color glitch + glow */
+    .tier-legendary {
+      background: linear-gradient(90deg, #ef4444, #8b5cf6, #22d3ee, #facc15, #ec4899, #ef4444);
+      background-size: 400% 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: tier-shimmer 2s linear infinite;
+      filter: drop-shadow(0 0 8px rgba(236,72,153,0.6)) drop-shadow(0 0 14px rgba(139,92,246,0.4));
+      position: relative;
+    }
+    .tier-legendary::before {
+      content: attr(data-text);
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      background: linear-gradient(90deg, #22d3ee, #facc15, #ec4899);
+      background-size: 300% 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: tier-glitch 4s ease-in-out infinite;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    /* Tier 10: Mythic — electric plasma + particle shimmer */
+    .tier-mythic {
+      background: linear-gradient(90deg, #c084fc, #60a5fa, #22d3ee, #facc15, #f472b6, #c084fc);
+      background-size: 500% 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: tier-shimmer 1.5s linear infinite, tier-pulse 1.5s ease-in-out infinite alternate;
+      filter: drop-shadow(0 0 8px rgba(192,132,252,0.7)) drop-shadow(0 0 16px rgba(96,165,250,0.5)) drop-shadow(0 0 24px rgba(34,211,238,0.3));
+      position: relative;
+    }
+    .tier-mythic::before {
+      content: attr(data-text);
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      background: linear-gradient(90deg, #22d3ee, #c084fc, #f472b6);
+      background-size: 300% 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: tier-glitch 3s ease-in-out infinite;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    @keyframes tier-shimmer {
+      0% { background-position: 100% 0; }
+      100% { background-position: -100% 0; }
+    }
+
+    @keyframes tier-pulse {
+      0% { filter: drop-shadow(0 0 4px currentColor); }
+      100% { filter: drop-shadow(0 0 10px currentColor) drop-shadow(0 0 20px currentColor); }
+    }
+
+    @keyframes tier-glitch {
+      0%, 85%, 100% { opacity: 0; transform: none; clip-path: inset(0); }
+      86% { opacity: 0.8; transform: translate(2px, -1px) skewX(-2deg); clip-path: inset(0 0 60% 0); }
+      87% { opacity: 0; transform: translate(-2px, 1px); clip-path: inset(40% 0 0 0); }
+      88% { opacity: 0.6; transform: translate(1px, 0) skewX(1deg); clip-path: inset(20% 0 40% 0); }
+      89% { opacity: 0; transform: none; clip-path: inset(0); }
+    }
+
+    /* Tier toast (success-style, not error) */
+    .chat-toast.tier-toast::before {
+      background: linear-gradient(90deg, #a855f7 0%, #ec4899 100%);
+    }
+    .chat-toast.tier-toast .toast-icon {
+      background: linear-gradient(135deg, rgba(168,85,247,0.2) 0%, rgba(236,72,153,0.1) 100%);
+      color: #c084fc;
+    }
+
+    /* Tier tooltip */
+    .tier-tooltip {
+      position: fixed;
+      z-index: 2000;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      min-width: 220px;
+      max-width: 280px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      animation: tierTooltipIn 0.2s ease;
+    }
+    @keyframes tierTooltipIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .tier-tooltip-current {
+      font-size: 14px;
+      margin-bottom: 6px;
+    }
+    .tier-tooltip-next {
+      font-size: 12px;
+      margin-bottom: 8px;
+      color: var(--text-secondary);
+    }
+    .tier-tooltip-divider {
+      height: 1px;
+      background: var(--border);
+      margin: 8px 0;
+    }
+    .tier-tooltip-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      max-height: 260px;
+      overflow-y: auto;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+    .tier-tooltip-list::-webkit-scrollbar {
+      display: none;
+    }
+    .tier-tooltip-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      padding: 5px 8px;
+      border-radius: 6px;
+      opacity: 0.75;
+      background: rgba(255,255,255,0.02);
+    }
+    .tier-tooltip-row.active {
+      opacity: 1;
+      background: rgba(255,255,255,0.04);
+    }
+    .tier-tooltip-row.current {
+      opacity: 1;
+      background: rgba(168,85,247,0.12);
+      border: 1px solid rgba(168,85,247,0.3);
+      box-shadow: 0 0 8px rgba(168,85,247,0.1);
+    }
+    .tier-tooltip-badge {
+      font-size: 16px;
+      width: 24px;
+      text-align: center;
       flex-shrink: 0;
+      display: inline-block;
     }
-
-    .global-chat-footer {
+    .tier-tooltip-name {
+      flex: 1;
+      font-weight: 600;
+    }
+    .tier-tooltip-name-preview {
+      flex: 1;
+      font-weight: 600;
+      font-size: 11px;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .tier-tooltip-name-preview span {
+      position: relative;
+    }
+    .tier-tooltip-tier-label {
       font-size: 10px;
       color: var(--text-muted);
-      opacity: 0.7;
-      margin-top: 4px;
+      flex-shrink: 0;
+      width: 58px;
       text-align: right;
     }
-
-    .message.global-chat-self .global-chat-sender {
-      color: rgba(255, 255, 255, 0.8);
+    .tier-tooltip-threshold {
+      color: var(--text-muted);
+      font-size: 11px;
+      flex-shrink: 0;
     }
-
-    .message.global-chat-self .global-chat-footer {
-      color: rgba(255, 255, 255, 0.6);
-    }
-
-    .admin-badge {
+    .tier-tooltip-you {
       font-size: 9px;
       font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      background: rgba(245, 158, 11, 0.15);
-      color: #f59e0b;
+      color: var(--accent);
+      background: rgba(168,85,247,0.15);
       padding: 1px 5px;
       border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .admin-badge {
+      display: none;
       border: 1px solid rgba(245, 158, 11, 0.3);
     }
 
     .message.global-chat-admin {
       border-left: 2px solid #f59e0b;
+    }
+
+    /* Admin gear menu in global chat header */
+    #admin-menu-wrap {
+      position: relative;
+      margin-left: auto;
+    }
+    #admin-dropdown {
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      min-width: 160px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(-8px);
+      transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+      z-index: 200;
+      overflow: hidden;
+    }
+    #admin-dropdown.open {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+    }
+
+    /* Admin tier popover */
+    .admin-tier-popover {
+      position: fixed;
+      z-index: 1000;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      min-width: 200px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      animation: tierTooltipIn 0.2s ease;
+    }
+    .atp-header {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: var(--text-primary);
+    }
+    .atp-current {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+    .atp-floor {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+    .atp-floor-label {
+      flex: 1;
+    }
+    .atp-btn {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+      padding: 0;
+      line-height: 1;
+    }
+    .atp-btn:hover {
+      background: var(--accent);
+      border-color: var(--accent);
     }
 
     .chat-toast {
@@ -2872,6 +3402,22 @@
     </button>
     <span class="chat-title">global chat</span>
     <span class="chat-status" id="chat-status-dot"></span>
+    <div id="admin-menu-wrap" style="display:none;">
+      <button id="admin-gear-btn" class="chat-back-btn" title="Admin">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </button>
+      <div id="admin-dropdown">
+        <button class="menu-item danger" id="admin-clear-chat">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+          <span>Clear Chat</span>
+        </button>
+      </div>
+    </div>
   </div>
 
   <div id="messages"></div>
@@ -2885,6 +3431,18 @@
     </svg>
   </button>
   <button id="scroll-bottom-btn" class="scroll-btn" onclick="playNormalClick(); scrollToBottom()" title="Scroll to bottom">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="6 9 12 15 18 9"></polyline>
+    </svg>
+  </button>
+
+  <!-- Global Chat Scroll Buttons -->
+  <button id="gchat-scroll-top-btn" class="scroll-btn gchat-scroll-btn" onclick="playNormalClick(); gchatScrollToTop()" title="Scroll to top" style="display:none">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="18 15 12 9 6 15"></polyline>
+    </svg>
+  </button>
+  <button id="gchat-scroll-bottom-btn" class="scroll-btn gchat-scroll-btn" onclick="playNormalClick(); gchatScrollToBottom()" title="Scroll to bottom" style="display:none">
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <polyline points="6 9 12 15 18 9"></polyline>
     </svg>
@@ -3138,6 +3696,23 @@
     let chatWsReconnectTimer = null;
     let chatAdminKey = '';
     let chatIsAdmin = false;
+    let globalChatSelfTier = 0;
+    let chatUnreadCount = 0;
+    const userMinTierMap = new Map(); // username -> minTier
+
+    const TIER_CONFIG = [
+      { name: '', threshold: 0, badge: '', cssClass: '' },
+      { name: 'Spark', threshold: 10, badge: '\u26A1', cssClass: 'tier-spark' },
+      { name: 'Blaze', threshold: 25, badge: '\uD83D\uDD25', cssClass: 'tier-blaze' },
+      { name: 'Storm', threshold: 50, badge: '\u26C8\uFE0F', cssClass: 'tier-storm' },
+      { name: 'Frost', threshold: 80, badge: '\u2744\uFE0F', cssClass: 'tier-frost' },
+      { name: 'Solar', threshold: 120, badge: '\u2600\uFE0F', cssClass: 'tier-solar' },
+      { name: 'Mystic', threshold: 175, badge: '\uD83D\uDD2E', cssClass: 'tier-mystic' },
+      { name: 'Inferno', threshold: 250, badge: '\uD83D\uDC80', cssClass: 'tier-inferno' },
+      { name: 'Cosmic', threshold: 350, badge: '\uD83C\uDF0C', cssClass: 'tier-cosmic' },
+      { name: 'Legendary', threshold: 500, badge: '\u2694\uFE0F', cssClass: 'tier-legendary' },
+      { name: 'Mythic', threshold: 750, badge: '\uD83D\uDC51', cssClass: 'tier-mythic' },
+    ];
     const CHAT_WS_URL = 'wss://pocket-agent-chat-production.up.railway.app';
     const CHAT_API_URL = 'https://pocket-agent-chat-production.up.railway.app';
 
@@ -5031,10 +5606,12 @@
       // Load admin key
       try {
         chatAdminKey = (await window.pocketAgent.getSetting('chat.adminKey')) || '';
-      } catch { chatAdminKey = ''; }
+        console.log('[Chat] Admin key loaded, length:', chatAdminKey.length);
+      } catch (e) { console.log('[Chat] Admin key load failed:', e); chatAdminKey = ''; }
 
       try {
         const existing = await window.pocketAgent.getSetting('chat.username');
+        console.log('[Chat] Username loaded:', existing);
         if (existing) {
           globalChatUsername = existing;
           return existing;
@@ -5099,51 +5676,72 @@
     }
 
     function createGlobalChatBubble(msg) {
-      const div = document.createElement('div');
       const isSelf = msg.username === globalChatUsername;
-      div.className = `message ${isSelf ? 'global-chat-self' : 'global-chat-other'}`;
-      if (msg.admin) div.classList.add('global-chat-admin');
+      const tier = msg.tier || 0;
+      const tierInfo = TIER_CONFIG[tier] || TIER_CONFIG[0];
+      const color = msg.admin ? '#f59e0b' : (isSelf ? '' : getSenderColor(msg.username));
 
-      // Sender label
+      // Wrapper holds sender label above + bubble below
+      const wrapper = document.createElement('div');
+      wrapper.className = `global-chat-wrapper ${isSelf ? 'self' : 'other'}`;
+
+      // Sender label (outside bubble)
       const sender = document.createElement('div');
       sender.className = 'global-chat-sender';
-      const dot = document.createElement('span');
-      dot.className = 'sender-dot';
-      const color = msg.admin ? '#f59e0b' : (isSelf ? '' : getSenderColor(msg.username));
-      if (isSelf && !msg.admin) {
-        dot.style.background = 'rgba(255, 255, 255, 0.6)';
-      } else {
-        dot.style.background = color;
+      if (msg.admin) {
+        const tick = document.createElement('span');
+        tick.className = 'verified-badge';
+        tick.innerHTML = '<svg viewBox="0 0 40 40"><path d="M19.998 3.094L14.638 0l-2.972 5.15H5.432v6.354L0 14.64 3.094 20 0 25.359l5.432 3.137v6.354h6.234L14.638 40l5.36-3.094L25.358 40l2.972-5.15h6.238v-6.354L40 25.359 36.905 20 40 14.641l-5.432-3.137V5.15h-6.238L25.358 0l-5.36 3.094z" fill="#3b82f6"/><path d="M17.204 27.377l-6.952-6.952 2.828-2.828 4.124 4.124 8.492-8.492 2.828 2.828-11.32 11.32z" fill="#fff"/></svg>';
+        sender.appendChild(tick);
+      } else if (tier > 0 && tierInfo.badge) {
+        const badge = document.createElement('span');
+        badge.className = 'tier-badge tier-badge-' + tierInfo.cssClass.replace('tier-', '');
+        badge.textContent = tierInfo.badge;
+        sender.appendChild(badge);
       }
-      sender.appendChild(dot);
       const name = document.createElement('span');
       name.textContent = msg.username;
       if (msg.admin) {
-        name.style.color = '#f59e0b';
+        name.className = 'admin-username';
+        name.setAttribute('data-text', msg.username);
+      } else if (tier > 0 && tierInfo.cssClass) {
+        name.className = tierInfo.cssClass;
+        // Tiers with ::before pseudo-elements need data-text
+        if (tier >= 9) name.setAttribute('data-text', msg.username);
       } else if (!isSelf) {
         name.style.color = color;
       }
-      sender.appendChild(name);
-      if (msg.admin) {
-        const badge = document.createElement('span');
-        badge.className = 'admin-badge';
-        badge.textContent = 'admin';
-        sender.appendChild(badge);
+      // Tag non-self, non-admin names for tier_update lookups
+      if (!isSelf && !msg.admin) {
+        name.dataset.chatUsername = msg.username;
       }
-      div.appendChild(sender);
+      sender.appendChild(name);
 
-      // Message text
+      // Admin hover popover on other users' names (not self, not admin)
+      if (chatIsAdmin && !isSelf && !msg.admin) {
+        name.style.cursor = 'pointer';
+        name.addEventListener('mouseenter', (e) => {
+          const uname = msg.username;
+          const uMinTier = userMinTierMap.get(uname) || 0;
+          showAdminTierPopover(uname, tier, uMinTier, e.target);
+        });
+        name.addEventListener('mouseleave', () => {
+          scheduleHideAdminTierPopover();
+        });
+      }
+
+      wrapper.appendChild(sender);
+
+      // Bubble
+      const div = document.createElement('div');
+      div.className = `message ${isSelf ? 'global-chat-self' : 'global-chat-other'}`;
+      if (msg.admin) div.classList.add('global-chat-admin');
       const text = document.createElement('span');
       text.textContent = msg.text;
       div.appendChild(text);
+      wrapper.appendChild(div);
 
-      // Timestamp footer
-      const footer = document.createElement('div');
-      footer.className = 'global-chat-footer';
-      footer.textContent = formatTimestamp(new Date(msg.ts));
-      div.appendChild(footer);
-
-      return div;
+      return wrapper;
     }
 
     function addGlobalChatMessage(msg) {
@@ -5170,6 +5768,7 @@
         if (dot) dot.classList.add('connected');
         const joinPayload = { type: 'join', username: globalChatUsername };
         if (chatAdminKey) joinPayload.adminKey = chatAdminKey;
+        console.log('[Chat WS] Joining as:', globalChatUsername, 'adminKey present:', !!chatAdminKey, 'keyLen:', chatAdminKey.length);
         chatWs.send(JSON.stringify(joinPayload));
         // If already in chat mode when reconnecting, re-enter
         if (globalChatMode) {
@@ -5183,16 +5782,80 @@
 
         if (data.type === 'joined') {
           chatIsAdmin = !!data.admin;
+          globalChatSelfTier = data.tier || 0;
+          updateHeaderTierBadge();
+          // Show admin gear if admin
+          const adminWrap = document.getElementById('admin-menu-wrap');
+          if (adminWrap) adminWrap.style.display = chatIsAdmin ? '' : 'none';
+        } else if (data.type === 'tier_change') {
+          const oldTier = globalChatSelfTier;
+          globalChatSelfTier = data.tier || 0;
+          updateHeaderTierBadge();
+          if (data.tier > oldTier) {
+            const info = TIER_CONFIG[data.tier] || TIER_CONFIG[0];
+            showTierToast(info.badge + ' You reached ' + info.name + '!');
+          }
         } else if (data.type === 'history') {
-          globalChatMessages = (data.messages || []).map(m => ({
-            username: m.username,
-            text: m.text,
-            ts: Number(m.ts),
-            admin: !!m.admin,
-          }));
+          globalChatMessages = (data.messages || []).map(m => {
+            if (m.minTier !== undefined) userMinTierMap.set(m.username, m.minTier);
+            return {
+              username: m.username,
+              text: m.text,
+              ts: Number(m.ts),
+              admin: !!m.admin,
+              tier: m.tier || 0,
+            };
+          });
           if (globalChatMode) renderGlobalChatMessages();
         } else if (data.type === 'message') {
-          addGlobalChatMessage({ username: data.username, text: data.text, ts: data.ts, admin: !!data.admin });
+          if (data.minTier !== undefined) userMinTierMap.set(data.username, data.minTier);
+          addGlobalChatMessage({ username: data.username, text: data.text, ts: data.ts, admin: !!data.admin, tier: data.tier || 0 });
+          if (!globalChatMode) {
+            chatUnreadCount++;
+            updateUnreadBadge();
+          }
+        } else if (data.type === 'chat_cleared') {
+          globalChatMessages = [];
+          const container = document.getElementById('global-chat-messages');
+          container.innerHTML = '';
+          // Show system message
+          const sysMsg = document.createElement('div');
+          sysMsg.className = 'global-chat-empty';
+          sysMsg.textContent = 'Chat was cleared by admin';
+          container.appendChild(sysMsg);
+        } else if (data.type === 'tier_update') {
+          userMinTierMap.set(data.username, data.minTier);
+          // Update existing bubbles for this user
+          document.querySelectorAll('[data-chat-username="' + data.username + '"]').forEach(nameEl => {
+            const tierInfo = TIER_CONFIG[data.tier] || TIER_CONFIG[0];
+            nameEl.className = '';
+            if (data.tier > 0 && tierInfo.cssClass) {
+              nameEl.className = tierInfo.cssClass;
+              if (data.tier >= 9) nameEl.setAttribute('data-text', data.username);
+              else nameEl.removeAttribute('data-text');
+            }
+            // Update badge in same sender div
+            const senderDiv = nameEl.parentElement;
+            if (senderDiv) {
+              const oldBadge = senderDiv.querySelector('.tier-badge');
+              if (oldBadge) oldBadge.remove();
+              if (data.tier > 0 && tierInfo.badge) {
+                const badge = document.createElement('span');
+                badge.className = 'tier-badge tier-badge-' + tierInfo.cssClass.replace('tier-', '');
+                badge.textContent = tierInfo.badge;
+                senderDiv.insertBefore(badge, nameEl);
+              }
+            }
+          });
+          // If it's current user, update self tier
+          if (data.username === globalChatUsername) {
+            globalChatSelfTier = data.tier;
+            updateHeaderTierBadge();
+          }
+          // Update popover if it's showing for this user
+          if (adminTierPopoverEl && adminTierPopoverEl.dataset.username === data.username) {
+            updateAdminTierPopoverContent(data.username, data.tier, data.minTier);
+          }
         } else if (data.type === 'counts') {
           updateChatCounts(data.online, data.inChat);
         } else if (data.type === 'error') {
@@ -5200,7 +5863,8 @@
         }
       };
 
-      chatWs.onclose = () => {
+      chatWs.onclose = (event) => {
+        console.log('[Chat WS] Closed, code:', event.code, 'reason:', event.reason);
         const dot = document.getElementById('chat-status-dot');
         if (dot) dot.classList.remove('connected');
         clearTimeout(chatWsReconnectTimer);
@@ -5289,7 +5953,7 @@
       chatSendTimestamps.push(now);
       lastChatMessageText = text;
 
-      addGlobalChatMessage({ username: globalChatUsername, text, ts: now });
+      addGlobalChatMessage({ username: globalChatUsername, text, ts: now, admin: chatIsAdmin, tier: globalChatSelfTier });
       input.value = '';
       autoResizeTextarea();
       sendChatWs({ type: 'message', text });
@@ -5323,9 +5987,290 @@
       }, 2500);
     }
 
+    function showTierToast(msg) {
+      const existing = document.getElementById('chat-toast');
+      clearTimeout(chatToastTimer);
+      existing.classList.remove('show', 'exiting', 'tier-toast');
+      existing.innerHTML = `
+        <div class="toast-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+          </svg>
+        </div>
+        <div class="toast-message">${msg.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+      `;
+      void existing.offsetWidth;
+      existing.classList.add('show', 'tier-toast');
+      chatToastTimer = setTimeout(() => {
+        existing.classList.add('exiting');
+        setTimeout(() => {
+          existing.classList.remove('show', 'exiting', 'tier-toast');
+        }, 300);
+      }, 3500);
+    }
+
+    function updateHeaderTierBadge() {
+      const badge = document.getElementById('chat-username-badge');
+      if (!badge) return;
+      const tier = globalChatSelfTier;
+      const info = TIER_CONFIG[tier] || TIER_CONFIG[0];
+      badge.className = 'chat-username-badge';
+      if (chatIsAdmin) {
+        badge.innerHTML = '';
+        const tick = document.createElement('span');
+        tick.className = 'verified-badge';
+        tick.innerHTML = '<svg viewBox="0 0 40 40" style="width:14px;height:14px"><path d="M19.998 3.094L14.638 0l-2.972 5.15H5.432v6.354L0 14.64 3.094 20 0 25.359l5.432 3.137v6.354h6.234L14.638 40l5.36-3.094L25.358 40l2.972-5.15h6.238v-6.354L40 25.359 36.905 20 40 14.641l-5.432-3.137V5.15h-6.238L25.358 0l-5.36 3.094z" fill="#3b82f6"/><path d="M17.204 27.377l-6.952-6.952 2.828-2.828 4.124 4.124 8.492-8.492 2.828 2.828-11.32 11.32z" fill="#fff"/></svg>';
+        badge.appendChild(tick);
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'admin-username';
+        nameSpan.textContent = globalChatUsername;
+        nameSpan.setAttribute('data-text', globalChatUsername);
+        badge.appendChild(nameSpan);
+      } else if (tier > 0) {
+        badge.innerHTML = '';
+        const badgeEmoji = document.createElement('span');
+        badgeEmoji.className = 'tier-badge tier-badge-' + info.cssClass.replace('tier-', '');
+        badgeEmoji.textContent = info.badge + ' ';
+        badge.appendChild(badgeEmoji);
+        const nameSpan = document.createElement('span');
+        nameSpan.className = info.cssClass;
+        nameSpan.textContent = globalChatUsername;
+        if (tier >= 9) nameSpan.setAttribute('data-text', globalChatUsername);
+        badge.appendChild(nameSpan);
+        const tierLabel = document.createTextNode(' \u00B7 ' + info.name);
+        badge.appendChild(tierLabel);
+      } else {
+        badge.textContent = globalChatUsername;
+      }
+    }
+
+    function buildTierTooltipHTML() {
+      const tier = globalChatSelfTier;
+      const currentInfo = TIER_CONFIG[tier] || TIER_CONFIG[0];
+      const nextTier = tier < 10 ? tier + 1 : null;
+      const nextInfo = nextTier ? TIER_CONFIG[nextTier] : null;
+      const uname = globalChatUsername;
+
+      let html = '<div class="tier-tooltip-content">';
+      html += '<div class="tier-tooltip-current">';
+      if (tier > 0) {
+        html += '<span class="tier-tooltip-badge">' + currentInfo.badge + '</span> ';
+        html += '<strong>' + currentInfo.name + '</strong> (Tier ' + tier + ')';
+      } else {
+        html += '<strong>No Tier</strong>';
+      }
+      html += '</div>';
+
+      if (nextInfo) {
+        html += '<div class="tier-tooltip-next">';
+        html += '<span style="color:var(--text-secondary)">Next: </span>';
+        html += '<span class="tier-tooltip-badge">' + nextInfo.badge + '</span> ';
+        html += '<strong>' + nextInfo.name + '</strong>';
+        html += ' &mdash; ' + nextInfo.threshold + ' msgs/week';
+        html += '</div>';
+      } else {
+        html += '<div class="tier-tooltip-next" style="color:var(--accent)">Max tier reached!</div>';
+      }
+
+      html += '<div class="tier-tooltip-divider"></div>';
+      html += '<div class="tier-tooltip-list">';
+      for (let i = 1; i <= 10; i++) {
+        const t = TIER_CONFIG[i];
+        const active = i <= tier;
+        const isCurrent = i === tier;
+        html += '<div class="tier-tooltip-row' + (active ? ' active' : '') + (isCurrent ? ' current' : '') + '">';
+        html += '<span class="tier-tooltip-badge tier-badge-' + t.cssClass.replace('tier-', '') + '">' + t.badge + '</span>';
+        html += '<span class="tier-tooltip-name-preview"><span class="' + t.cssClass + '"' + (i >= 9 ? ' data-text="' + uname + '"' : '') + '>' + uname + '</span></span>';
+        html += '<span class="tier-tooltip-tier-label">' + t.name + '</span>';
+        html += '<span class="tier-tooltip-threshold">' + t.threshold + '/wk</span>';
+        if (isCurrent) html += '<span class="tier-tooltip-you">YOU</span>';
+        html += '</div>';
+      }
+      html += '</div>';
+      html += '</div>';
+      return html;
+    }
+
+    let tierTooltipEl = null;
+    function toggleTierTooltip(e) {
+      if (tierTooltipEl) {
+        tierTooltipEl.remove();
+        tierTooltipEl = null;
+        return;
+      }
+      tierTooltipEl = document.createElement('div');
+      tierTooltipEl.className = 'tier-tooltip';
+      tierTooltipEl.innerHTML = buildTierTooltipHTML();
+      document.body.appendChild(tierTooltipEl);
+
+      // Position below the badge
+      const badge = document.getElementById('chat-username-badge');
+      if (badge) {
+        const rect = badge.getBoundingClientRect();
+        tierTooltipEl.style.top = (rect.bottom + 6) + 'px';
+        tierTooltipEl.style.right = (window.innerWidth - rect.right) + 'px';
+      }
+
+      // Close on click outside
+      setTimeout(() => {
+        document.addEventListener('click', closeTierTooltip, { once: true });
+      }, 0);
+    }
+    function closeTierTooltip(e) {
+      if (tierTooltipEl) {
+        if (tierTooltipEl.contains(e?.target)) {
+          document.addEventListener('click', closeTierTooltip, { once: true });
+          return;
+        }
+        tierTooltipEl.remove();
+        tierTooltipEl = null;
+      }
+    }
+
+    // --- Admin gear dropdown ---
+    (function initAdminGear() {
+      const gearBtn = document.getElementById('admin-gear-btn');
+      const dropdown = document.getElementById('admin-dropdown');
+      const clearBtn = document.getElementById('admin-clear-chat');
+      if (gearBtn && dropdown) {
+        gearBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          playNormalClick();
+          dropdown.classList.toggle('open');
+        });
+        document.addEventListener('click', () => dropdown.classList.remove('open'));
+      }
+      if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+          playNormalClick();
+          sendChatWs({ type: 'clear_chat' });
+          dropdown.classList.remove('open');
+        });
+      }
+    })();
+
+    // --- Admin tier popover ---
+    let adminTierPopoverEl = null;
+    let adminTierPopoverHideTimer = null;
+
+    function showAdminTierPopover(username, currentTier, minTier, anchorEl) {
+      clearTimeout(adminTierPopoverHideTimer);
+      hideAdminTierPopover();
+
+      const popover = document.createElement('div');
+      popover.className = 'admin-tier-popover';
+      popover.dataset.username = username;
+      updateAdminTierPopoverContentEl(popover, username, currentTier, minTier);
+
+      popover.addEventListener('mouseenter', () => clearTimeout(adminTierPopoverHideTimer));
+      popover.addEventListener('mouseleave', () => scheduleHideAdminTierPopover());
+
+      document.body.appendChild(popover);
+      adminTierPopoverEl = popover;
+
+      // Position near anchor
+      const rect = anchorEl.getBoundingClientRect();
+      popover.style.left = rect.left + 'px';
+      popover.style.top = (rect.bottom + 6) + 'px';
+      // Keep within viewport
+      const pRect = popover.getBoundingClientRect();
+      if (pRect.right > window.innerWidth - 10) {
+        popover.style.left = (window.innerWidth - pRect.width - 10) + 'px';
+      }
+    }
+
+    function updateAdminTierPopoverContent(username, tier, minTier) {
+      if (adminTierPopoverEl) updateAdminTierPopoverContentEl(adminTierPopoverEl, username, tier, minTier);
+    }
+
+    function updateAdminTierPopoverContentEl(el, username, currentTier, minTier) {
+      const tierInfo = TIER_CONFIG[currentTier] || TIER_CONFIG[0];
+      const floorInfo = TIER_CONFIG[minTier] || TIER_CONFIG[0];
+      const floorLabel = minTier > 0 ? ('Tier ' + minTier + ' - ' + floorInfo.name) : 'None';
+
+      el.innerHTML = '';
+      const header = document.createElement('div');
+      header.className = 'atp-header';
+      header.textContent = username;
+      el.appendChild(header);
+
+      const current = document.createElement('div');
+      current.className = 'atp-current';
+      current.textContent = currentTier > 0
+        ? 'Current: ' + tierInfo.badge + ' Tier ' + currentTier + ' - ' + tierInfo.name
+        : 'Current: No Tier';
+      el.appendChild(current);
+
+      const floor = document.createElement('div');
+      floor.className = 'atp-floor';
+
+      const floorSpan = document.createElement('span');
+      floorSpan.className = 'atp-floor-label';
+      floorSpan.textContent = 'Floor: ' + floorLabel;
+      floor.appendChild(floorSpan);
+
+      const downBtn = document.createElement('button');
+      downBtn.className = 'atp-btn';
+      downBtn.textContent = '\u2212';
+      downBtn.disabled = minTier <= 0;
+      downBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        playNormalClick();
+        adminSetFloor(username, minTier - 1);
+      });
+      floor.appendChild(downBtn);
+
+      const upBtn = document.createElement('button');
+      upBtn.className = 'atp-btn';
+      upBtn.textContent = '+';
+      upBtn.disabled = minTier >= 10;
+      upBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        playNormalClick();
+        adminSetFloor(username, minTier + 1);
+      });
+      floor.appendChild(upBtn);
+
+      el.appendChild(floor);
+    }
+
+    function scheduleHideAdminTierPopover() {
+      clearTimeout(adminTierPopoverHideTimer);
+      adminTierPopoverHideTimer = setTimeout(hideAdminTierPopover, 300);
+    }
+
+    function hideAdminTierPopover() {
+      clearTimeout(adminTierPopoverHideTimer);
+      if (adminTierPopoverEl) {
+        adminTierPopoverEl.remove();
+        adminTierPopoverEl = null;
+      }
+    }
+
+    function adminSetFloor(username, newMinTier) {
+      const clamped = Math.max(0, Math.min(10, newMinTier));
+      sendChatWs({ type: 'set_min_tier', targetUsername: username, minTier: clamped });
+    }
+
     function updateChatCounts(online, inChat) {
       const el = document.getElementById('chat-online-stats');
       if (el) el.textContent = `${online} online · ${inChat} in chat`;
+    }
+
+    function updateUnreadBadge() {
+      const btn = document.getElementById('chat-toggle-btn');
+      if (!btn) return;
+      let badge = btn.querySelector('.chat-unread-badge');
+      if (chatUnreadCount > 0 && !globalChatMode) {
+        if (!badge) {
+          badge = document.createElement('span');
+          badge.className = 'chat-unread-badge';
+          btn.appendChild(badge);
+        }
+        badge.textContent = chatUnreadCount > 99 ? '99+' : String(chatUnreadCount);
+      } else if (badge) {
+        badge.remove();
+      }
     }
 
     async function toggleGlobalChat() {
@@ -5350,9 +6295,12 @@
       const scrollBottomBtn = document.getElementById('scroll-bottom-btn');
 
       if (globalChatMode) {
-        // Enter chat mode
+        // Enter chat mode — clear unread
+        chatUnreadCount = 0;
+        updateUnreadBadge();
         const username = await getOrCreateChatUsername();
-        document.getElementById('chat-username-badge').textContent = username;
+        updateHeaderTierBadge();
+        document.getElementById('chat-username-badge').onclick = toggleTierTooltip;
 
         tabsCont.style.display = 'none';
         chatHeader.style.display = 'flex';
@@ -5371,14 +6319,21 @@
         if (workflowBadge) workflowBadge.style.display = 'none';
         if (scrollTopBtn) scrollTopBtn.style.display = 'none';
         if (scrollBottomBtn) scrollBottomBtn.style.display = 'none';
+        document.getElementById('gchat-scroll-top-btn').style.display = '';
+        document.getElementById('gchat-scroll-bottom-btn').style.display = '';
         chatToggle.classList.add('active');
         input.placeholder = 'say something...';
+
+        // Show admin gear if admin
+        const adminWrap = document.getElementById('admin-menu-wrap');
+        if (adminWrap) adminWrap.style.display = chatIsAdmin ? '' : 'none';
 
         renderGlobalChatMessages();
         enterChatActive();
       } else {
         // Exit chat mode
         leaveChatActive();
+        hideAdminTierPopover();
         tabsCont.style.display = '';
         chatHeader.style.display = 'none';
         messagesEl.style.display = '';
@@ -5396,6 +6351,10 @@
         if (workflowBadge) workflowBadge.style.display = '';
         if (scrollTopBtn) scrollTopBtn.style.display = '';
         if (scrollBottomBtn) scrollBottomBtn.style.display = '';
+        document.getElementById('gchat-scroll-top-btn').style.display = 'none';
+        document.getElementById('gchat-scroll-bottom-btn').style.display = 'none';
+        gchatScrollTopBtn.classList.remove('visible');
+        gchatScrollBottomBtn.classList.remove('visible');
         chatToggle.classList.remove('active');
         input.placeholder = "what's on your mind? \u{1F431}";
       }
@@ -5789,6 +6748,41 @@
     }
 
     messagesDiv.addEventListener('scroll', updateScrollButtons);
+
+    // Global chat scroll buttons
+    const gchatMsgsDiv = document.getElementById('global-chat-messages');
+    const gchatScrollTopBtn = document.getElementById('gchat-scroll-top-btn');
+    const gchatScrollBottomBtn = document.getElementById('gchat-scroll-bottom-btn');
+
+    window.gchatScrollToTop = function() {
+      gchatMsgsDiv.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    window.gchatScrollToBottom = function() {
+      gchatMsgsDiv.scrollTo({ top: gchatMsgsDiv.scrollHeight, behavior: 'smooth' });
+    };
+
+    function updateGchatScrollButtons() {
+      if (!globalChatMode) return;
+      const scrollTop = gchatMsgsDiv.scrollTop;
+      const scrollHeight = gchatMsgsDiv.scrollHeight;
+      const clientHeight = gchatMsgsDiv.clientHeight;
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+
+      if (scrollTop > SCROLL_THRESHOLD) {
+        gchatScrollTopBtn.classList.add('visible');
+      } else {
+        gchatScrollTopBtn.classList.remove('visible');
+      }
+
+      if (distanceFromBottom > SCROLL_THRESHOLD) {
+        gchatScrollBottomBtn.classList.add('visible');
+      } else {
+        gchatScrollBottomBtn.classList.remove('visible');
+      }
+    }
+
+    gchatMsgsDiv.addEventListener('scroll', updateGchatScrollButtons);
 
     function handleKeydown(e) {
       // Tab: Accept the suggestion and place cursor at end
