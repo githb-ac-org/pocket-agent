@@ -189,9 +189,8 @@ export class iOSRelayClient {
       this.pairingCodes.delete(this.activePairingCode);
     }
 
-    const code = Array.from({ length: PAIRING_CODE_LENGTH }, () =>
-      Math.floor(Math.random() * 10)
-    ).join('');
+    const bytes = crypto.randomBytes(PAIRING_CODE_LENGTH);
+    const code = Array.from(bytes, (b) => (b % 10).toString()).join('');
 
     this.pairingCodes.set(code, { createdAt: Date.now() });
     this.activePairingCode = code;

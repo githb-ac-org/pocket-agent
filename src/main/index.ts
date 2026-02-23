@@ -1569,6 +1569,11 @@ function setupIPC(): void {
   });
 
   ipcMain.handle('app:openExternal', async (_, url: string) => {
+    // Only allow http, https, and mailto schemes to prevent arbitrary protocol handler abuse
+    if (!/^https?:\/\//i.test(url) && !/^mailto:/i.test(url)) {
+      console.warn('[Main] Blocked openExternal with disallowed scheme:', url);
+      return;
+    }
     await shell.openExternal(url);
   });
 
@@ -1579,9 +1584,9 @@ function setupIPC(): void {
   // Open an image in the default viewer — handles both local paths and URLs
   ipcMain.handle('app:openImage', async (_, src: string) => {
     try {
+      const mediaDir = path.join(app.getPath('documents'), 'Pocket-agent', 'media');
       if (src.startsWith('http://') || src.startsWith('https://')) {
         // Remote URL — download to media dir first
-        const mediaDir = path.join(app.getPath('documents'), 'Pocket-agent', 'media');
         if (!fs.existsSync(mediaDir)) fs.mkdirSync(mediaDir, { recursive: true });
 
         const res = await fetch(src);
@@ -1598,8 +1603,13 @@ function setupIPC(): void {
         fs.writeFileSync(filePath, buf);
         await shell.openPath(filePath);
       } else {
-        // Local file path
-        await shell.openPath(src);
+        // Local file path — only allow files within the media directory
+        const resolvedPath = path.resolve(src);
+        if (!resolvedPath.startsWith(mediaDir)) {
+          console.warn('[Main] Blocked openImage outside media directory:', src);
+          return;
+        }
+        await shell.openPath(resolvedPath);
       }
     } catch (err) {
       console.error('[Main] Failed to open image:', err);
@@ -1955,7 +1965,13 @@ function setupIPC(): void {
   });
 
   // Shell commands — platform-aware shell selection
-  ipcMain.handle('shell:runCommand', async (_, command: string) => {
+  ipcMain.handle('shell:runCommand', async (event, command: string) => {
+    // Security: only allow calls from local file origins (not remote/injected content)
+    const senderUrl = event.sender.getURL();
+    if (!senderUrl.startsWith('file://')) {
+      console.warn('[Shell] Blocked runCommand from non-local origin:', senderUrl);
+      throw new Error('Access denied: shell commands only allowed from local UI');
+    }
     const execAsync = promisify(exec);
     const shellOpts: Record<string, unknown> = IS_WINDOWS
       ? { shell: 'powershell.exe', env: process.env }
@@ -2037,8 +2053,14 @@ function setupIPC(): void {
 
   // Extract text from Office documents (docx, pptx, xlsx, odt, odp, ods, rtf)
   ipcMain.handle('attachment:extract-text', async (_, filePath: string) => {
+    // Security: only allow reading from the attachments directory
+    const attachmentsDir = path.join(app.getPath('userData'), 'attachments');
+    const resolvedPath = path.resolve(filePath);
+    if (!resolvedPath.startsWith(attachmentsDir)) {
+      throw new Error('Access denied: path outside attachments directory');
+    }
     const { parseOffice } = await import('officeparser');
-    const ast = await parseOffice(filePath);
+    const ast = await parseOffice(resolvedPath);
     return ast.toText();
   });
 
