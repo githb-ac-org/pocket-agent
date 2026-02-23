@@ -5793,10 +5793,8 @@
         if (chatAdminKey) joinPayload.adminKey = chatAdminKey;
         console.log('[Chat WS] Joining as:', globalChatUsername, 'adminKey present:', !!chatAdminKey, 'keyLen:', chatAdminKey.length);
         chatWs.send(JSON.stringify(joinPayload));
-        // If already in chat mode when reconnecting, re-enter
-        if (globalChatMode) {
-          chatWs.send(JSON.stringify({ type: 'enter_chat' }));
-        }
+        // Always subscribe to messages so unread notifications work
+        chatWs.send(JSON.stringify({ type: 'enter_chat' }));
       };
 
       chatWs.onmessage = (event) => {
@@ -5915,7 +5913,7 @@
     function leaveChatActive() {
       clearInterval(chatActivityInterval);
       chatActivityInterval = null;
-      sendChatWs({ type: 'leave_chat' });
+      // Don't send leave_chat — stay subscribed so unread notifications work
     }
 
     const chatSendTimestamps = [];
