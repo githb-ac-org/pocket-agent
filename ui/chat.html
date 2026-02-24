@@ -2610,6 +2610,167 @@
       padding: 40px;
     }
 
+    /* Reply button on hover — sits beside bubble */
+    .gchat-bubble-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .global-chat-wrapper.self .gchat-bubble-row {
+      flex-direction: row-reverse;
+    }
+
+    .gchat-reply-btn {
+      width: 26px;
+      height: 26px;
+      border: none;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.08);
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.15s ease, background 0.15s ease;
+      padding: 0;
+      flex-shrink: 0;
+    }
+
+    .global-chat-wrapper:hover .gchat-reply-btn {
+      opacity: 1;
+    }
+
+    .gchat-reply-btn:hover {
+      background: rgba(255,255,255,0.15);
+      color: var(--text-primary);
+    }
+
+    .gchat-reply-btn svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    /* Reply banner above input */
+    .gchat-reply-banner {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 16px;
+      margin: 0 20px 8px 20px;
+      background: var(--bg-tertiary);
+      border-radius: 6px;
+      animation: gchatReplySlideUp 0.15s ease;
+    }
+
+    @keyframes gchatReplySlideUp {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .gchat-reply-banner-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .gchat-reply-banner-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 2px;
+    }
+
+    .gchat-reply-banner-text {
+      font-size: 12px;
+      color: var(--text-secondary);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .gchat-reply-banner-close {
+      width: 22px;
+      height: 22px;
+      border: none;
+      border-radius: 50%;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      flex-shrink: 0;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+
+    .gchat-reply-banner-close:hover {
+      background: rgba(255,255,255,0.1);
+      color: var(--text-primary);
+    }
+
+    .gchat-reply-banner-close svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    /* Reply preview inside bubble */
+    .gchat-reply-preview {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      padding: 6px 10px;
+      margin-bottom: 8px;
+      background: rgba(0,0,0,0.2);
+      border-left: 3px solid rgba(255,255,255,0.4);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.15s ease;
+      max-width: 100%;
+      overflow: hidden;
+    }
+
+    .gchat-reply-preview:hover {
+      background: rgba(0,0,0,0.3);
+    }
+
+    /* Other users' bubbles — lighter style */
+    .message.global-chat-other .gchat-reply-preview {
+      background: rgba(255,255,255,0.06);
+      border-left-color: var(--accent);
+    }
+
+    .message.global-chat-other .gchat-reply-preview:hover {
+      background: rgba(255,255,255,0.1);
+    }
+
+    .message.global-chat-other .gchat-reply-preview-name {
+      color: var(--accent);
+    }
+
+    .message.global-chat-other .gchat-reply-preview-text {
+      color: var(--text-secondary);
+    }
+
+    .gchat-reply-preview-name {
+      font-size: 11px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.85);
+    }
+
+    .gchat-reply-preview-text {
+      font-size: 12px;
+      color: rgba(255,255,255,0.7);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     #workflows-expanded {
       display: none;
       align-items: center;
@@ -3754,6 +3915,7 @@
     let globalChatSelfTier = 0;
     let chatUnreadCount = 0;
     const userMinTierMap = new Map(); // username -> minTier
+    let gchatReplyTo = null; // { username, text, element }
 
     const TIER_CONFIG = [
       { name: '', threshold: 0, badge: '', cssClass: '' },
@@ -5749,6 +5911,94 @@
       return username;
     }
 
+    function gchatTruncate(text, max = 100) {
+      if (!text) return '';
+      return text.length > max ? text.slice(0, max) + '...' : text;
+    }
+
+    function gchatSetReply(username, text, element) {
+      gchatReplyTo = { username, text, element };
+      gchatRenderReplyBanner();
+      input.focus();
+    }
+
+    function gchatClearReply() {
+      gchatReplyTo = null;
+      const banner = document.querySelector('.gchat-reply-banner');
+      if (banner) banner.remove();
+    }
+
+    function gchatRenderReplyBanner() {
+      // Remove existing banner
+      const existing = document.querySelector('.gchat-reply-banner');
+      if (existing) existing.remove();
+      if (!gchatReplyTo) return;
+
+      const banner = document.createElement('div');
+      banner.className = 'gchat-reply-banner';
+
+      const content = document.createElement('div');
+      content.className = 'gchat-reply-banner-content';
+
+      const label = document.createElement('div');
+      label.className = 'gchat-reply-banner-label';
+      label.textContent = 'Replying to ' + gchatReplyTo.username;
+
+      const text = document.createElement('div');
+      text.className = 'gchat-reply-banner-text';
+      text.textContent = gchatReplyTo.text;
+
+      content.appendChild(label);
+      content.appendChild(text);
+
+      const closeBtn = document.createElement('button');
+      closeBtn.className = 'gchat-reply-banner-close';
+      closeBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>';
+      closeBtn.onclick = () => gchatClearReply();
+
+      banner.appendChild(content);
+      banner.appendChild(closeBtn);
+
+      const toolbarRow = document.getElementById('toolbar-row');
+      toolbarRow.parentNode.insertBefore(banner, toolbarRow);
+    }
+
+    function gchatCreateReplyPreview(replyTo) {
+      const preview = document.createElement('div');
+      preview.className = 'gchat-reply-preview';
+
+      const name = document.createElement('div');
+      name.className = 'gchat-reply-preview-name';
+      name.textContent = replyTo.username;
+
+      const text = document.createElement('div');
+      text.className = 'gchat-reply-preview-text';
+      text.textContent = gchatTruncate(replyTo.text, 100);
+
+      preview.appendChild(name);
+      preview.appendChild(text);
+
+      // Click to scroll to original message
+      preview.onclick = () => {
+        const container = document.getElementById('global-chat-messages');
+        const wrappers = container.querySelectorAll('.global-chat-wrapper');
+        for (const w of wrappers) {
+          const senderEl = w.querySelector('.global-chat-sender');
+          const bubbleEl = w.querySelector('.message');
+          if (senderEl && bubbleEl) {
+            const nameEl = senderEl.querySelector('span:last-child');
+            const bubbleText = bubbleEl.textContent;
+            if (nameEl && nameEl.textContent === replyTo.username && bubbleText === replyTo.text) {
+              w.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              break;
+            }
+          }
+        }
+      };
+
+      return preview;
+    }
+
     function renderGlobalChatMessages() {
       const container = document.getElementById('global-chat-messages');
       container.innerHTML = '';
@@ -5826,14 +6076,34 @@
 
       wrapper.appendChild(sender);
 
-      // Bubble
+      // Bubble + reply button row (button vertically centered with bubble)
+      const bubbleRow = document.createElement('div');
+      bubbleRow.className = 'gchat-bubble-row';
+
       const div = document.createElement('div');
       div.className = `message ${isSelf ? 'global-chat-self' : 'global-chat-other'}`;
       if (msg.admin) div.classList.add('global-chat-admin');
+
+      // Reply preview inside the bubble (if this message is a reply)
+      if (msg.replyTo) {
+        div.appendChild(gchatCreateReplyPreview(msg.replyTo));
+      }
+
       const text = document.createElement('span');
       text.textContent = msg.text;
       div.appendChild(text);
-      wrapper.appendChild(div);
+      bubbleRow.appendChild(div);
+
+      const replyBtn = document.createElement('button');
+      replyBtn.className = 'gchat-reply-btn';
+      replyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>';
+      replyBtn.onclick = (e) => {
+        e.stopPropagation();
+        gchatSetReply(msg.username, msg.text, wrapper);
+      };
+      bubbleRow.appendChild(replyBtn);
+
+      wrapper.appendChild(bubbleRow);
 
       return wrapper;
     }
@@ -5900,12 +6170,13 @@
               ts: Number(m.ts),
               admin: !!m.admin,
               tier: m.tier || 0,
+              replyTo: m.replyTo || undefined,
             };
           });
           if (globalChatMode) renderGlobalChatMessages();
         } else if (data.type === 'message') {
           if (data.minTier !== undefined) userMinTierMap.set(data.username, data.minTier);
-          addGlobalChatMessage({ username: data.username, text: data.text, ts: data.ts, admin: !!data.admin, tier: data.tier || 0 });
+          addGlobalChatMessage({ username: data.username, text: data.text, ts: data.ts, admin: !!data.admin, tier: data.tier || 0, replyTo: data.replyTo || undefined });
           if (!globalChatMode) {
             chatUnreadCount++;
             updateUnreadBadge();
@@ -5913,7 +6184,7 @@
         } else if (data.type === 'message_ack') {
           // Server confirmed our message was saved — add it to chat
           if (data.minTier !== undefined) userMinTierMap.set(data.username, data.minTier);
-          addGlobalChatMessage({ username: data.username, text: data.text, ts: data.ts, admin: !!data.admin, tier: data.tier || 0 });
+          addGlobalChatMessage({ username: data.username, text: data.text, ts: data.ts, admin: !!data.admin, tier: data.tier || 0, replyTo: data.replyTo || undefined });
         } else if (data.type === 'chat_cleared') {
           globalChatMessages = [];
           const container = document.getElementById('global-chat-messages');
@@ -6063,10 +6334,14 @@
       chatSendTimestamps.push(now);
       lastChatMessageText = text;
 
+      // Capture reply context before clearing
+      const replyTo = gchatReplyTo ? { username: gchatReplyTo.username, text: gchatTruncate(gchatReplyTo.text, 200) } : undefined;
+
       // Don't optimistically add — wait for server echo so all users see the same state
       input.value = '';
       autoResizeTextarea();
-      sendChatWs({ type: 'message', text });
+      gchatClearReply();
+      sendChatWs({ type: 'message', text, replyTo });
     }
 
     let chatToastTimer = null;
@@ -6445,6 +6720,7 @@
         // Exit chat mode
         leaveChatActive();
         hideAdminTierPopover();
+        gchatClearReply();
         tabsCont.style.display = '';
         chatHeader.style.display = 'none';
         messagesEl.style.display = '';
@@ -6996,11 +7272,18 @@
         return;
       }
 
-      // Escape: Clear the suggestion
-      if (e.key === 'Escape' && getCurrentSuggestion()) {
-        e.preventDefault();
-        clearSuggestion();
-        return;
+      // Escape: Clear reply banner first, then suggestion
+      if (e.key === 'Escape') {
+        if (gchatReplyTo) {
+          e.preventDefault();
+          gchatClearReply();
+          return;
+        }
+        if (getCurrentSuggestion()) {
+          e.preventDefault();
+          clearSuggestion();
+          return;
+        }
       }
     }
 
