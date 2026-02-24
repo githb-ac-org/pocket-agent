@@ -5,7 +5,8 @@
  * Supports three schedule types:
  * - cron: Standard cron expressions (e.g., "0 9 * * *")
  * - at: One-time execution (e.g., "tomorrow 3pm", "in 10 minutes")
- * - every: Recurring intervals (e.g., "30m", "2h", "1d")
+ * - every: Recurring intervals (requires "every" prefix, e.g., "every 30m", "every 2h")
+ * - Bare durations like "30m", "2h" are treated as one-shot (same as "in 30 minutes")
  */
 
 import { getScheduler } from '../scheduler';
@@ -36,8 +37,8 @@ function parseSchedule(input: string): {
 } | null {
   const trimmed = input.trim();
 
-  // Check for "every" pattern: 30m, 2h, 1d, etc.
-  const everyMatch = trimmed.match(/^(?:every\s+)?(\d+)\s*(m|min|mins|minutes?|h|hr|hrs|hours?|d|days?)$/i);
+  // Check for explicit "every" pattern (recurring): "every 30m", "every 2h", "every 1d"
+  const everyMatch = trimmed.match(/^every\s+(\d+)\s*(m|min|mins|minutes?|h|hr|hrs|hours?|d|days?)$/i);
   if (everyMatch) {
     const [, amount, unit] = everyMatch;
     const num = parseInt(amount, 10);
@@ -46,6 +47,19 @@ function parseSchedule(input: string): {
     else if (unit.startsWith('h')) ms = num * 60 * 60 * 1000;
     else ms = num * 24 * 60 * 60 * 1000;
     return { type: 'every', intervalMs: ms };
+  }
+
+  // Check for bare duration (one-shot): "30m", "2h", "1d" → treated as "in X"
+  const bareMatch = trimmed.match(/^(\d+)\s*(m|min|mins|minutes?|h|hr|hrs|hours?|d|days?)$/i);
+  if (bareMatch) {
+    const [, amount, unit] = bareMatch;
+    const num = parseInt(amount, 10);
+    let ms: number;
+    if (unit.startsWith('m')) ms = num * 60 * 1000;
+    else if (unit.startsWith('h')) ms = num * 60 * 60 * 1000;
+    else ms = num * 24 * 60 * 60 * 1000;
+    const runAt = new Date(Date.now() + ms).toISOString();
+    return { type: 'at', runAt };
   }
 
   // Check for "at" pattern: specific datetime
@@ -224,7 +238,7 @@ export function getCreateRoutineToolDefinition() {
         },
         schedule: {
           type: 'string',
-          description: 'When to run: "30m", "2h", "0 9 * * *", "in 10 minutes", "tomorrow 3pm"',
+          description: 'When to run. One-shot: "30m", "2h", "in 10 minutes", "tomorrow 3pm". Recurring: "every 30m", "every 2h", or cron "0 9 * * *". Bare durations like "2h" are ONE-SHOT (runs once). Use "every 2h" for recurring.',
         },
         prompt: {
           type: 'string',
@@ -258,7 +272,7 @@ export async function handleCreateRoutineTool(input: unknown): Promise<string> {
   if (!parsed) {
     return JSON.stringify({
       error: `Could not parse schedule: "${schedule}"`,
-      hint: 'Use: "in 10 minutes", "tomorrow 3pm", "30m", "2h", or cron "0 9 * * *"',
+      hint: 'One-shot: "30m", "2h", "in 10 minutes", "tomorrow 3pm". Recurring: "every 2h", or cron "0 9 * * *"',
     });
   }
 
@@ -383,7 +397,7 @@ export function getCreateReminderToolDefinition() {
         },
         schedule: {
           type: 'string',
-          description: 'When to remind: "in 10 minutes", "tomorrow 3pm", "30m", "2h", or cron "0 9 * * *"',
+          description: 'When to remind. One-shot: "30m", "2h", "in 10 minutes", "tomorrow 3pm". Recurring: "every 30m", "every 2h", or cron "0 9 * * *". Bare durations like "2h" are ONE-SHOT (runs once). Use "every 2h" for recurring.',
         },
         reminder: {
           type: 'string',
@@ -416,7 +430,7 @@ export async function handleCreateReminderTool(input: unknown): Promise<string> 
   if (!parsed) {
     return JSON.stringify({
       error: `Could not parse schedule: "${schedule}"`,
-      hint: 'Use: "in 10 minutes", "tomorrow 3pm", "30m", "2h", or cron "0 9 * * *"',
+      hint: 'One-shot: "30m", "2h", "in 10 minutes", "tomorrow 3pm". Recurring: "every 2h", or cron "0 9 * * *"',
     });
   }
 
