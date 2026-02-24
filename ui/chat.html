@@ -5959,8 +5959,13 @@
         const existing = await window.pocketAgent.getSetting('chat.username');
         console.log('[Chat] Username loaded:', existing);
         if (existing) {
-          globalChatUsername = existing;
-          return existing;
+          const normalized = existing.toLowerCase();
+          globalChatUsername = normalized;
+          // Fix any stored mixed-case usernames
+          if (normalized !== existing) {
+            try { await window.pocketAgent.setSetting('chat.username', normalized); } catch {}
+          }
+          return normalized;
         }
       } catch { /* no saved username */ }
 
@@ -6440,6 +6445,12 @@
         } else if (data.type === 'username_changed') {
           const oldName = data.oldUsername;
           const newName = data.newUsername;
+          // If current user was renamed, update globalChatUsername immediately
+          if (oldName === globalChatUsername) {
+            globalChatUsername = newName;
+            try { window.pocketAgent.setSetting('chat.username', newName); } catch {}
+            updateHeaderTierBadge();
+          }
           // Update cached messages
           globalChatMessages.forEach(m => {
             if (m.username === oldName) m.username = newName;
