@@ -93,8 +93,17 @@ export class BrowserManager {
       case 'electron':
         return this.getElectronTier().execute(action);
 
-      case 'cdp':
-        return this.getCdpTier().execute(action);
+      case 'cdp': {
+        const result = await this.getCdpTier().execute(action);
+        // If CDP was auto-selected (not explicitly requested) and failed, fall back to Electron
+        const isExplicit = action.tier === 'cdp' || action.requiresAuth;
+        if (!result.success && !isExplicit && result.error?.includes('CDP connection failed')) {
+          console.log(`[Browser] CDP failed, falling back to Electron`);
+          this.lastTier = 'electron';
+          return this.getElectronTier().execute(action);
+        }
+        return result;
+      }
 
       default:
         return {

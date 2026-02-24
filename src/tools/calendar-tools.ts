@@ -256,11 +256,15 @@ export async function handleCalendarListTool(input: unknown): Promise<string> {
   const queryParams: (string | null)[] = [sessionId];
 
   if (params.date) {
+    // Use local date (not UTC) so "today"/"tomorrow" match the user's timezone
+    const localDateStr = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
     const filterDate =
       params.date.toLowerCase() === 'today'
-        ? new Date().toISOString().split('T')[0]
+        ? localDateStr(new Date())
         : params.date.toLowerCase() === 'tomorrow'
-          ? new Date(Date.now() + 86400000).toISOString().split('T')[0]
+          ? localDateStr(new Date(Date.now() + 86400000))
           : params.date;
 
     query += ' AND date(start_time) = date(?)';

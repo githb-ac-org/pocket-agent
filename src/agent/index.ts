@@ -10,6 +10,7 @@ import os from 'os';
 import path from 'path';
 import { buildCanUseToolCallback, buildPreToolUseHook, setStatusEmitter } from './safety';
 import { PersistentSDKSession, TurnResult } from './persistent-session';
+import { ChatEngine } from './chat-engine';
 
 // Provider configuration for different LLM backends
 type ProviderType = 'anthropic' | 'moonshot' | 'glm';
@@ -397,6 +398,8 @@ class AgentManagerClass extends EventEmitter {
   private projectRoot: string = process.cwd();
   private workspace: string = process.cwd();  // Isolated working directory for agent
   private model: string = 'claude-opus-4-6';
+  private mode: 'general' | 'coder' = 'coder';
+  private chatEngine: ChatEngine | null = null;
   private toolsConfig: ToolsConfig | null = null;
   private initialized: boolean = false;
   private identity: string = '';
@@ -478,6 +481,23 @@ class AgentManagerClass extends EventEmitter {
       }
     }
 
+    // Instantiate Chat engine for General mode
+    if (this.toolsConfig) {
+      this.chatEngine = new ChatEngine({
+        memory: this.memory,
+        toolsConfig: this.toolsConfig,
+        statusEmitter: (status) => this.emitStatus(status),
+      });
+      console.log('[AgentManager] Chat engine initialized');
+    }
+
+    // Read persisted mode from settings
+    const savedMode = SettingsManager.get('agent.mode');
+    if (savedMode === 'general' || savedMode === 'coder') {
+      this.mode = savedMode;
+      console.log('[AgentManager] Mode:', this.mode);
+    }
+
     // Backfill message embeddings asynchronously (for semantic retrieval)
     this.backfillMessageEmbeddings().catch(e => {
       console.error('[AgentManager] Embedding backfill failed:', e);
@@ -526,6 +546,39 @@ class AgentManagerClass extends EventEmitter {
     this.emit('model:changed', model);
   }
 
+  getMode(): 'general' | 'coder' {
+    return this.mode;
+  }
+
+  setMode(mode: 'general' | 'coder'): void {
+    if (this.mode === mode) return;
+    const previousMode = this.mode;
+
+    // Stop any in-flight queries before switching to avoid overlapping responses
+    for (const [sid, processing] of this.processingBySession.entries()) {
+      if (processing) {
+        console.log(`[AgentManager] Stopping in-flight query for session ${sid} before mode switch`);
+        this.stopQuery(sid);
+      }
+    }
+    // Also stop ChatEngine queries (it has its own processingBySession map)
+    if (this.chatEngine) {
+      this.chatEngine.stopAllQueries();
+    }
+
+    this.mode = mode;
+    console.log(`[AgentManager] Mode changed: ${previousMode} -> ${mode}`);
+
+    // When switching to general, load conversation history for active sessions
+    if (mode === 'general' && this.chatEngine) {
+      for (const sid of this.processingBySession.keys()) {
+        this.chatEngine.loadConversationFromMemory(sid);
+      }
+    }
+
+    this.emit('mode:changed', mode);
+  }
+
   async processMessage(
     userMessage: string,
     channel: string = 'default',
@@ -535,6 +588,11 @@ class AgentManagerClass extends EventEmitter {
   ): Promise<ProcessResult> {
     if (!this.memory) {
       throw new Error('AgentManager not initialized - call initialize() first');
+    }
+
+    // Route to Chat engine in General mode
+    if (this.mode === 'general' && this.chatEngine) {
+      return this.chatEngine.processMessage(userMessage, channel, sessionId, images, attachmentInfo);
     }
 
     // If already processing, queue the message
@@ -670,6 +728,16 @@ class AgentManagerClass extends EventEmitter {
           console.log(`[AgentManager] Resuming SDK session: ${sdkSessionId}`);
         } else {
           console.log('[AgentManager] Starting new persistent SDK session');
+
+          // Inject prior conversation history (e.g. from General mode) so SDK has context
+          const priorMessages = memory.getRecentMessages(30, sessionId);
+          if (priorMessages.length > 0) {
+            const historyLines = priorMessages.map(m =>
+              `[${m.role}]: ${m.content.length > 500 ? m.content.slice(0, 500) + '...' : m.content}`
+            );
+            userMessage = `[Prior conversation in this session]\n${historyLines.join('\n')}\n[End prior conversation]\n\n${userMessage}`;
+            console.log(`[AgentManager] Injected ${priorMessages.length} prior messages as context`);
+          }
         }
 
         const queryFn = await loadSDK();
@@ -1086,6 +1154,11 @@ class AgentManagerClass extends EventEmitter {
    * Also clears any queued messages for that session.
    */
   stopQuery(sessionId?: string, clearQueuedMessages: boolean = true): boolean {
+    // Delegate to Chat engine in General mode
+    if (this.mode === 'general' && this.chatEngine) {
+      return this.chatEngine.stopQuery(sessionId);
+    }
+
     // Clear SDK tool timeout timers for the session being stopped
     const targetSessionId = sessionId
       || [...this.processingBySession.entries()].find(([, v]) => v)?.[0];
@@ -1158,6 +1231,11 @@ class AgentManagerClass extends EventEmitter {
    * Check if a query is currently processing (optionally for a specific session)
    */
   isQueryProcessing(sessionId?: string): boolean {
+    // Check Chat engine in General mode
+    if (this.mode === 'general' && this.chatEngine) {
+      return this.chatEngine.isQueryProcessing(sessionId);
+    }
+
     if (sessionId) {
       return this.processingBySession.get(sessionId) || false;
     }
@@ -2304,6 +2382,9 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
 
   clearConversation(sessionId?: string): void {
     this.memory?.clearConversation(sessionId);
+    if (sessionId && this.chatEngine) {
+      this.chatEngine.clearSession(sessionId);
+    }
     console.log('[AgentManager] Conversation cleared' + (sessionId ? ` (session: ${sessionId})` : ''));
   }
 

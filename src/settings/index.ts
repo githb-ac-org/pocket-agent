@@ -136,6 +136,15 @@ export const SETTINGS_SCHEMA: SettingDefinition[] = [
     type: 'number',
   },
   {
+    key: 'agent.mode',
+    defaultValue: 'coder',
+    encrypted: false,
+    category: 'agent',
+    label: 'Agent Mode',
+    description: 'General (fast chat) or Coder (full coding tools)',
+    type: 'string',
+  },
+  {
     key: 'agent.thinkingLevel',
     defaultValue: 'normal',
     encrypted: false,

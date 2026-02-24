@@ -1714,6 +1714,45 @@
       height: 14px;
     }
 
+    /* Mode Toggle */
+    #mode-toggle-area {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+    }
+
+    .mode-toggle {
+      display: flex;
+      height: 30px;
+      box-sizing: border-box;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+    }
+
+    .mode-btn {
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 500;
+      font-family: inherit;
+      padding: 6px 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .mode-btn:hover {
+      color: var(--text-primary);
+    }
+
+    .mode-btn.active {
+      background: var(--accent);
+      color: #fff;
+    }
+
     /* Toolbar row (search + workflows side by side) */
     #toolbar-row {
       display: flex;
@@ -3449,8 +3488,14 @@
     </svg>
   </button>
 
-  <!-- Toolbar Row (Search + Workflows) -->
+  <!-- Toolbar Row (Mode Toggle + Search + Workflows) -->
   <div id="toolbar-row">
+    <div id="mode-toggle-area">
+      <div class="mode-toggle">
+        <button class="mode-btn" id="mode-btn-general" onclick="playNormalClick(); setAgentMode('general')">General</button>
+        <button class="mode-btn active" id="mode-btn-coder" onclick="playNormalClick(); setAgentMode('coder')">Coder</button>
+      </div>
+    </div>
     <div id="search-area">
       <!-- Toggle Button (shown by default) -->
       <button class="search-toggle" id="search-toggle-btn" onclick="playNormalClick(); toggleSearch()">
@@ -3756,6 +3801,9 @@
 
       // Load current model
       await updateModelBadge();
+
+      // Load current agent mode
+      await initAgentMode();
 
       // Refresh model badge when window gains focus (in case user changed it in settings)
       window.addEventListener('focus', updateModelBadge);
@@ -5555,7 +5603,8 @@
       if (area.classList.contains('active')) {
         closeWorkflows();
       } else {
-        // Hide search and chat areas when workflows is open
+        // Hide mode toggle, search and chat areas when workflows is open
+        document.getElementById('mode-toggle-area').style.display = 'none';
         document.getElementById('search-area').style.display = 'none';
         document.getElementById('chat-area').style.display = 'none';
         area.classList.add('active');
@@ -5579,6 +5628,7 @@
 
     function closeWorkflows() {
       document.getElementById('workflows-area').classList.remove('active');
+      document.getElementById('mode-toggle-area').style.display = '';
       document.getElementById('search-area').style.display = '';
       document.getElementById('chat-area').style.display = '';
     }
@@ -6351,6 +6401,7 @@
         statsEl.style.display = 'none';
         chatUsernameBadge.style.display = '';
         chatOnlineStats.style.display = '';
+        document.getElementById('mode-toggle-area').style.display = 'none';
         searchArea.style.display = 'none';
         workflowsArea.style.display = 'none';
         bgTasksArea.style.display = 'none';
@@ -6383,9 +6434,13 @@
         statsEl.style.display = '';
         chatUsernameBadge.style.display = 'none';
         chatOnlineStats.style.display = 'none';
+        document.getElementById('mode-toggle-area').style.display = '';
         searchArea.style.display = '';
         workflowsArea.style.display = '';
-        bgTasksArea.style.display = '';
+        // Only show bg tasks area if there are active tasks
+        if (getBackgroundTaskCount(currentSessionId) > 0) {
+          bgTasksArea.style.display = '';
+        }
         if (attachBtn) attachBtn.style.display = '';
         if (workflowBadge) workflowBadge.style.display = '';
         if (scrollTopBtn) scrollTopBtn.style.display = '';
@@ -6487,6 +6542,44 @@
       input.placeholder = "what's on your mind? \u{1F431}";
     }
 
+    // ============ Agent Mode Toggle ============
+
+    let currentAgentMode = 'coder';
+
+    async function initAgentMode() {
+      try {
+        const mode = await window.pocketAgent.getMode();
+        currentAgentMode = mode || 'coder';
+        updateModeUI(currentAgentMode);
+      } catch (err) {
+        console.error('Failed to load agent mode:', err);
+      }
+
+      // Listen for mode changes from other sources
+      window.pocketAgent.onModeChanged((mode) => {
+        currentAgentMode = mode;
+        updateModeUI(mode);
+      });
+    }
+
+    function setAgentMode(mode) {
+      if (mode === currentAgentMode) return;
+      currentAgentMode = mode;
+      updateModeUI(mode);
+      window.pocketAgent.setMode(mode).catch(err => {
+        console.error('Failed to set agent mode:', err);
+      });
+    }
+
+    function updateModeUI(mode) {
+      const generalBtn = document.getElementById('mode-btn-general');
+      const coderBtn = document.getElementById('mode-btn-coder');
+      if (!generalBtn || !coderBtn) return;
+
+      generalBtn.classList.toggle('active', mode === 'general');
+      coderBtn.classList.toggle('active', mode === 'coder');
+    }
+
     function toggleSearch() {
       const searchArea = document.getElementById('search-area');
       const searchInput = document.getElementById('search-input');
@@ -6494,7 +6587,8 @@
       if (searchArea.classList.contains('searching')) {
         closeSearch();
       } else {
-        // Hide workflows and chat when search is open
+        // Hide mode toggle, workflows and chat when search is open
+        document.getElementById('mode-toggle-area').style.display = 'none';
         document.getElementById('workflows-area').style.display = 'none';
         document.getElementById('chat-area').style.display = 'none';
         searchArea.classList.add('searching');
@@ -6512,7 +6606,8 @@
       updateSearchResultsCount(0, 0);
       searchMatches = [];
       currentSearchIndex = -1;
-      // Restore workflows and chat visibility
+      // Restore mode toggle, workflows and chat visibility
+      document.getElementById('mode-toggle-area').style.display = '';
       document.getElementById('workflows-area').style.display = '';
       document.getElementById('chat-area').style.display = '';
     }

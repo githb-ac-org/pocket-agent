@@ -1304,6 +1304,24 @@ function setupIPC(): void {
     return { success: stopped };
   });
 
+  // Agent mode (General / Coder)
+  ipcMain.handle('agent:setMode', async (_, mode: string) => {
+    if (mode !== 'general' && mode !== 'coder') {
+      return { success: false, error: 'Invalid mode' };
+    }
+    AgentManager.setMode(mode);
+    SettingsManager.set('agent.mode', mode);
+    // Broadcast to chat window
+    if (chatWindow && !chatWindow.isDestroyed()) {
+      chatWindow.webContents.send('agent:modeChanged', mode);
+    }
+    return { success: true };
+  });
+
+  ipcMain.handle('agent:getMode', async () => {
+    return AgentManager.getMode();
+  });
+
   // iOS mobile companion
   ipcMain.handle('ios:pairing-code', async (_, regenerate?: boolean) => {
     if (!iosChannel) return { error: 'iOS channel not enabled' };

@@ -5,6 +5,14 @@ contextBridge.exposeInMainWorld('pocketAgent', {
   // Chat
   send: (message: string, sessionId?: string) => ipcRenderer.invoke('agent:send', message, sessionId),
   stop: (sessionId?: string) => ipcRenderer.invoke('agent:stop', sessionId),
+  // Mode
+  setMode: (mode: string) => ipcRenderer.invoke('agent:setMode', mode),
+  getMode: () => ipcRenderer.invoke('agent:getMode'),
+  onModeChanged: (callback: (mode: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, mode: string) => callback(mode);
+    ipcRenderer.on('agent:modeChanged', listener);
+    return () => ipcRenderer.removeListener('agent:modeChanged', listener);
+  },
   onStatus: (callback: (status: { type: string; toolName?: string; toolInput?: string; message?: string }) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, status: { type: string; toolName?: string; toolInput?: string; message?: string }) => callback(status);
     ipcRenderer.on('agent:status', listener);
@@ -204,6 +212,10 @@ declare global {
       send: (message: string, sessionId?: string) => Promise<{ success: boolean; response?: string; error?: string; tokensUsed?: number; suggestedPrompt?: string; media?: Array<{ type: string; filePath: string; mimeType: string }> }>;
       stop: (sessionId?: string) => Promise<{ success: boolean }>;
       onStatus: (callback: (status: { type: string; toolName?: string; toolInput?: string; message?: string }) => void) => () => void;
+      // Mode
+      setMode: (mode: string) => Promise<{ success: boolean; error?: string }>;
+      getMode: () => Promise<string>;
+      onModeChanged: (callback: (mode: string) => void) => () => void;
       saveAttachment: (name: string, dataUrl: string) => Promise<string>;
       extractText: (filePath: string) => Promise<string>;
       readMedia: (filePath: string) => Promise<string | null>;

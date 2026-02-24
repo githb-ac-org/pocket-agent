@@ -1,0 +1,687 @@
+/**
+ * Chat Engine — Lightweight agent loop for General mode
+ *
+ * Uses @anthropic-ai/sdk (Messages API) directly — in-process, minimal system prompt,
+ * only relevant tools, full context control. No subprocess, no MCP, no Claude Code preset.
+ */
+
+import Anthropic from '@anthropic-ai/sdk';
+import { MemoryManager } from '../memory';
+import { ToolsConfig } from '../tools';
+import { SettingsManager } from '../settings';
+import { loadIdentity } from '../config/identity';
+import { loadInstructions } from '../config/instructions';
+import { createChatClient, getProviderForModel } from './chat-providers';
+import { getChatToolDefinitions, getWebSearchTool, ChatToolSet } from './chat-tools';
+import type { AgentStatus, ImageContent, AttachmentInfo, ProcessResult, MediaAttachment } from './index';
+
+// Anthropic API message types
+type MessageParam = Anthropic.Messages.MessageParam;
+type ContentBlockParam = Anthropic.Messages.ContentBlockParam;
+type ToolResultBlockParam = Anthropic.Messages.ToolResultBlockParam;
+type TextBlockParam = Anthropic.Messages.TextBlockParam;
+
+// Thinking config (matches main agent)
+type ThinkingConfig = { type: 'enabled'; budget_tokens: number } | { type: 'disabled' };
+
+const THINKING_CONFIGS: Record<string, { thinking: ThinkingConfig; temperature?: number }> = {
+  'none':     { thinking: { type: 'disabled' } },
+  'minimal':  { thinking: { type: 'enabled', budget_tokens: 2048 } },
+  'normal':   { thinking: { type: 'enabled', budget_tokens: 10000 } },
+  'extended': { thinking: { type: 'enabled', budget_tokens: 30000 } },
+};
+
+const MAX_TOOL_ITERATIONS = 20;
+const MAX_CONTEXT_MESSAGES = 80; // Trim when conversation exceeds this
+
+interface ChatEngineConfig {
+  memory: MemoryManager;
+  toolsConfig: ToolsConfig;
+  statusEmitter: (status: AgentStatus) => void;
+}
+
+/**
+ * In-process chat engine using Anthropic Messages API directly.
+ */
+export class ChatEngine {
+  private memory: MemoryManager;
+  private toolsConfig: ToolsConfig;
+  private emitStatus: (status: AgentStatus) => void;
+  private conversationsBySession: Map<string, MessageParam[]> = new Map();
+  private abortControllersBySession: Map<string, AbortController> = new Map();
+  private processingBySession: Map<string, boolean> = new Map();
+  private messageQueueBySession: Map<string, Array<{
+    message: string;
+    channel: string;
+    images?: ImageContent[];
+    attachmentInfo?: AttachmentInfo;
+    resolve: (result: ProcessResult) => void;
+    reject: (error: Error) => void;
+  }>> = new Map();
+  private pendingMedia: MediaAttachment[] = [];
+
+  constructor(config: ChatEngineConfig) {
+    this.memory = config.memory;
+    this.toolsConfig = config.toolsConfig;
+    this.emitStatus = config.statusEmitter;
+  }
+
+  /**
+   * Process a user message through the Chat engine.
+   */
+  async processMessage(
+    userMessage: string,
+    channel: string,
+    sessionId: string = 'default',
+    images?: ImageContent[],
+    attachmentInfo?: AttachmentInfo
+  ): Promise<ProcessResult> {
+    // Queue if already processing
+    if (this.processingBySession.get(sessionId)) {
+      return this.queueMessage(userMessage, channel, sessionId, images, attachmentInfo);
+    }
+    return this.executeMessage(userMessage, channel, sessionId, images, attachmentInfo);
+  }
+
+  private queueMessage(
+    userMessage: string,
+    channel: string,
+    sessionId: string,
+    images?: ImageContent[],
+    attachmentInfo?: AttachmentInfo
+  ): Promise<ProcessResult> {
+    return new Promise((resolve, reject) => {
+      if (!this.messageQueueBySession.has(sessionId)) {
+        this.messageQueueBySession.set(sessionId, []);
+      }
+      const queue = this.messageQueueBySession.get(sessionId)!;
+      queue.push({ message: userMessage, channel, images, attachmentInfo, resolve, reject });
+
+      this.emitStatus({
+        type: 'queued',
+        sessionId,
+        queuePosition: queue.length,
+        queuedMessage: userMessage.slice(0, 100),
+        message: `in the litter queue (#${queue.length})`,
+      });
+    });
+  }
+
+  private async processQueue(sessionId: string): Promise<void> {
+    const queue = this.messageQueueBySession.get(sessionId);
+    if (!queue || queue.length === 0) return;
+
+    const next = queue.shift()!;
+    this.emitStatus({
+      type: 'queue_processing',
+      sessionId,
+      queuedMessage: next.message.slice(0, 100),
+      message: 'digging it up now...',
+    });
+
+    try {
+      const result = await this.executeMessage(next.message, next.channel, sessionId, next.images, next.attachmentInfo);
+      next.resolve(result);
+    } catch (error) {
+      next.reject(error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+
+  /**
+   * Execute a message against the Anthropic Messages API with tool loop.
+   */
+  private async executeMessage(
+    userMessage: string,
+    channel: string,
+    sessionId: string,
+    images?: ImageContent[],
+    attachmentInfo?: AttachmentInfo
+  ): Promise<ProcessResult> {
+    this.processingBySession.set(sessionId, true);
+    this.pendingMedia = [];
+
+    const abortController = new AbortController();
+    this.abortControllersBySession.set(sessionId, abortController);
+
+    try {
+      // Get or create conversation history
+      if (!this.conversationsBySession.has(sessionId)) {
+        this.loadConversationFromMemory(sessionId);
+      }
+      const conversation = this.conversationsBySession.get(sessionId)!;
+
+      // Build user message content
+      const userContent = this.buildUserContent(userMessage, images);
+      conversation.push({ role: 'user', content: userContent });
+
+      // Trim conversation if too long
+      this.trimConversation(sessionId);
+
+      // Build system prompt
+      const systemPrompt = this.buildSystemPrompt();
+
+      // Get model
+      const model = SettingsManager.get('agent.model') || 'claude-opus-4-6';
+
+      // Create client
+      const client = await createChatClient(model);
+
+      // Get tools
+      const toolSet = getChatToolDefinitions(this.toolsConfig);
+      const webSearch = getWebSearchTool(model);
+      const allTools = [...toolSet.apiTools];
+      if (webSearch) {
+        allTools.push(webSearch);
+      }
+
+      // Get thinking config
+      const provider = getProviderForModel(model);
+      const isAnthropic = provider === 'anthropic';
+      const thinkingLevel = SettingsManager.get('agent.thinkingLevel') || 'normal';
+      const thinkingEntry = THINKING_CONFIGS[thinkingLevel] || THINKING_CONFIGS['normal'];
+
+      this.emitStatus({ type: 'thinking', sessionId, message: '*stretches paws* thinking...' });
+
+      // Agentic tool loop
+      let response = '';
+      let iterations = 0;
+
+      while (iterations < MAX_TOOL_ITERATIONS) {
+        iterations++;
+
+        // Build request params
+        const params: Anthropic.Messages.MessageCreateParams = {
+          model,
+          max_tokens: 16384,
+          system: systemPrompt,
+          messages: conversation,
+          tools: allTools as Anthropic.Messages.MessageCreateParams['tools'],
+        };
+
+        // Add thinking for Anthropic models
+        if (isAnthropic && thinkingEntry.thinking.type === 'enabled') {
+          params.thinking = thinkingEntry.thinking;
+          params.temperature = 1; // Required when thinking is enabled
+        }
+
+        const result = await client.messages.create(params, {
+          signal: abortController.signal,
+        });
+
+        // Process response content blocks
+        // Cast to generic array since API may return block types not in SDK typings
+        // (e.g. server_tool_use, web_search_tool_result)
+        const assistantContent: ContentBlockParam[] = [];
+        let hasToolUse = false;
+        const toolResults: ToolResultBlockParam[] = [];
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const rawBlock of result.content as any[]) {
+          const blockType = rawBlock.type as string;
+
+          if (blockType === 'thinking' || blockType === 'redacted_thinking') {
+            // Thinking block — skip (not added to conversation)
+            continue;
+          }
+
+          if (blockType === 'text') {
+            response += (response ? '\n\n' : '') + rawBlock.text;
+            assistantContent.push({ type: 'text', text: rawBlock.text } as TextBlockParam);
+
+            // Emit only this turn's text (UI accumulates across events)
+            this.emitStatus({
+              type: 'partial_text',
+              sessionId,
+              partialText: rawBlock.text,
+              message: 'composing...',
+            });
+          } else if (blockType === 'tool_use') {
+            hasToolUse = true;
+            assistantContent.push(rawBlock as ContentBlockParam);
+
+            this.emitStatus({
+              type: 'tool_start',
+              sessionId,
+              toolName: rawBlock.name,
+              toolInput: this.formatToolInput(rawBlock.input),
+              message: `batting at ${rawBlock.name}...`,
+            });
+
+            // Execute tool
+            const toolResult = await this.executeTool(
+              rawBlock.id,
+              rawBlock.name,
+              rawBlock.input as Record<string, unknown>,
+              toolSet,
+              sessionId
+            );
+
+            toolResults.push(toolResult);
+
+            this.emitStatus({
+              type: 'tool_end',
+              sessionId,
+              message: 'caught it! processing...',
+            });
+          } else if (blockType === 'server_tool_use') {
+            // Server-side tool (web_search) — include in assistant content
+            assistantContent.push(rawBlock as ContentBlockParam);
+            this.emitStatus({
+              type: 'tool_start',
+              sessionId,
+              toolName: 'web_search',
+              message: 'prowling the web...',
+            });
+          } else if (blockType === 'web_search_tool_result') {
+            // Web search result — include in tool results
+            toolResults.push(rawBlock as ToolResultBlockParam);
+            this.emitStatus({
+              type: 'tool_end',
+              sessionId,
+              message: 'found some stuff!',
+            });
+          }
+        }
+
+        // Add assistant message to conversation
+        conversation.push({ role: 'assistant', content: assistantContent });
+
+        // If there were tool uses, add results and continue loop
+        if (hasToolUse || toolResults.length > 0) {
+          conversation.push({ role: 'user', content: toolResults as ContentBlockParam[] });
+          continue;
+        }
+
+        // No tool use — we're done (end_turn)
+        break;
+      }
+
+      this.emitStatus({ type: 'done', sessionId });
+
+      if (!response) {
+        response = 'Task completed (no details available).';
+      }
+
+      // Save to memory (same DB as Coder mode)
+      const isScheduledJob = channel.startsWith('cron:');
+      const isHeartbeat = response.toUpperCase().includes('HEARTBEAT_OK');
+
+      if (!(isScheduledJob && isHeartbeat)) {
+        let messageToSave = userMessage;
+
+        // Strip heartbeat suffix
+        const heartbeatSuffix = '\n\nIf nothing needs attention, reply with only HEARTBEAT_OK.';
+        if (messageToSave.endsWith(heartbeatSuffix)) {
+          messageToSave = messageToSave.slice(0, -heartbeatSuffix.length);
+        }
+
+        // Convert reminder prompts
+        const reminderMatch = messageToSave.match(/^\[SCHEDULED REMINDER - DELIVER NOW\]\nThe user previously asked to be reminded about: "(.+?)"\n\nDeliver this reminder/);
+        if (reminderMatch) {
+          messageToSave = `Reminder: ${reminderMatch[1]}`;
+        }
+
+        // Build metadata
+        let metadata: Record<string, unknown> | undefined;
+        if (channel.startsWith('cron:')) {
+          metadata = { source: 'scheduler', jobName: channel.slice(5) };
+        } else if (channel === 'telegram') {
+          const hasAttachment = attachmentInfo?.hasAttachment ?? (images && images.length > 0);
+          const attachmentType = attachmentInfo?.attachmentType ?? (images && images.length > 0 ? 'photo' : undefined);
+          metadata = { source: 'telegram', hasAttachment, attachmentType };
+        } else if (channel === 'ios') {
+          metadata = { source: 'ios' };
+        }
+
+        const userMsgId = this.memory.saveMessage('user', messageToSave, sessionId, metadata);
+        const assistantMetadata = metadata ? { source: metadata.source } : undefined;
+        const assistantMsgId = this.memory.saveMessage('assistant', response, sessionId, assistantMetadata);
+
+        // Embed asynchronously
+        this.memory.embedMessage(userMsgId).catch(e => console.error('[ChatEngine] Failed to embed user message:', e));
+        this.memory.embedMessage(assistantMsgId).catch(e => console.error('[ChatEngine] Failed to embed assistant message:', e));
+      }
+
+      return {
+        response,
+        tokensUsed: 0,
+        wasCompacted: false,
+        media: this.pendingMedia.length > 0 ? this.pendingMedia : undefined,
+      };
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+
+      if (errorMsg.includes('aborted') || errorMsg.includes('interrupted')) {
+        this.emitStatus({ type: 'done', sessionId });
+        return { response: '', tokensUsed: 0, wasCompacted: false };
+      }
+
+      console.error('[ChatEngine] Query failed:', errorMsg);
+
+      // Save error to memory
+      this.memory.saveMessage('user', userMessage, sessionId);
+      this.memory.saveMessage('assistant', errorMsg, sessionId, { isError: true });
+
+      throw error;
+    } finally {
+      this.processingBySession.set(sessionId, false);
+      this.abortControllersBySession.delete(sessionId);
+
+      setTimeout(() => {
+        this.processQueue(sessionId).catch((err) => {
+          console.error('[ChatEngine] Queue processing failed:', err);
+        });
+      }, 0);
+    }
+  }
+
+  /**
+   * Execute a tool by name and return a tool_result block.
+   */
+  private async executeTool(
+    toolUseId: string,
+    toolName: string,
+    input: Record<string, unknown>,
+    toolSet: ChatToolSet,
+    _sessionId: string
+  ): Promise<ToolResultBlockParam> {
+    const handler = toolSet.handlerMap.get(toolName);
+    if (!handler) {
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content: `Unknown tool: ${toolName}`,
+        is_error: true,
+      };
+    }
+
+    try {
+      const result = await handler(input);
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content: result,
+      };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content: `Tool error: ${msg}`,
+        is_error: true,
+      };
+    }
+  }
+
+  /**
+   * Build user content with optional images.
+   */
+  private buildUserContent(
+    message: string,
+    images?: ImageContent[]
+  ): string | ContentBlockParam[] {
+    if (!images || images.length === 0) {
+      return message;
+    }
+
+    const content: ContentBlockParam[] = [
+      { type: 'text', text: message } as TextBlockParam,
+    ];
+
+    for (const img of images) {
+      content.push({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: img.mediaType,
+          data: img.data,
+        },
+      } as ContentBlockParam);
+    }
+
+    return content;
+  }
+
+  /**
+   * Build system prompt from identity, instructions, profile, facts, soul, temporal.
+   */
+  private buildSystemPrompt(): string {
+    const parts: string[] = [];
+
+    // Identity
+    const identity = loadIdentity();
+    if (identity) {
+      parts.push(identity);
+    }
+
+    // Instructions
+    const instructions = loadInstructions();
+    if (instructions) {
+      parts.push(instructions);
+    }
+
+    // User profile
+    const profile = SettingsManager.getFormattedProfile();
+    if (profile) {
+      parts.push(profile);
+    }
+
+    // Temporal context
+    parts.push(this.buildTemporalContext());
+
+    // Facts
+    const facts = this.memory.getFactsForContext();
+    if (facts) {
+      parts.push(facts);
+    }
+
+    // Soul
+    const soul = this.memory.getSoulContext();
+    if (soul) {
+      parts.push(soul);
+    }
+
+    // Daily logs
+    const dailyLogs = this.memory.getDailyLogsContext(3);
+    if (dailyLogs) {
+      parts.push(dailyLogs);
+    }
+
+    // Capabilities (simplified for chat mode)
+    parts.push(this.buildCapabilitiesPrompt());
+
+    return parts.join('\n\n');
+  }
+
+  private buildTemporalContext(): string {
+    const now = new Date();
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const dayName = dayNames[now.getDay()];
+
+    const timeStr = now.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+
+    const dateStr = now.toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    });
+
+    return `## Current Time\nIt is ${dayName}, ${dateStr} at ${timeStr}.`;
+  }
+
+  private buildCapabilitiesPrompt(): string {
+    return `## Your Capabilities
+
+You are a persistent personal AI assistant with these tools available:
+
+### Memory & Facts
+- remember: Save a fact (category, key, value)
+- forget: Delete a fact
+- list_facts: List all facts or by category
+- memory_search: Search facts by keyword
+
+### Scheduling & Reminders
+- schedule_task: Create reminders with one-time, interval, or cron schedules
+- create_reminder: Quick reminder shortcut
+- list_scheduled_tasks: See all scheduled tasks
+- delete_scheduled_task: Remove a task
+
+### Calendar & Tasks
+- calendar_add, calendar_list, calendar_upcoming, calendar_delete
+- task_add, task_list, task_complete, task_delete, task_due
+
+### Browser Automation
+- browser: Navigate, screenshot, click, type, evaluate, extract, scroll, download
+
+### Web Access
+- web_search: Search the web for current information
+- web_fetch: Fetch and read content from URLs
+
+### Notifications
+- notify: Send native desktop notifications
+
+### Important
+- Save facts PROACTIVELY when user mentions personal info, preferences, projects, people, or work details
+- Categories: user_info, preferences, projects, people, work, notes, decisions`;
+  }
+
+  /**
+   * Load conversation history from SQLite into in-memory format.
+   */
+  loadConversationFromMemory(sessionId: string): void {
+    const messages = this.memory.getRecentMessages(MAX_CONTEXT_MESSAGES, sessionId);
+    const conversation: MessageParam[] = [];
+
+    for (const msg of messages) {
+      if (msg.role === 'user' || msg.role === 'assistant') {
+        conversation.push({
+          role: msg.role,
+          content: msg.content,
+        });
+      }
+    }
+
+    // Ensure conversation starts with a user message (API requirement)
+    if (conversation.length > 0 && conversation[0].role !== 'user') {
+      conversation.shift();
+    }
+
+    // Ensure alternating user/assistant (merge consecutive same-role messages)
+    const cleaned: MessageParam[] = [];
+    for (const msg of conversation) {
+      if (cleaned.length > 0 && cleaned[cleaned.length - 1].role === msg.role) {
+        // Merge with previous
+        const prev = cleaned[cleaned.length - 1];
+        const prevText = typeof prev.content === 'string' ? prev.content : '';
+        const curText = typeof msg.content === 'string' ? msg.content : '';
+        prev.content = prevText + '\n\n' + curText;
+      } else {
+        cleaned.push({ ...msg });
+      }
+    }
+
+    this.conversationsBySession.set(sessionId, cleaned);
+    console.log(`[ChatEngine] Loaded ${cleaned.length} messages for session ${sessionId}`);
+  }
+
+  /**
+   * Trim conversation when it gets too long.
+   */
+  private trimConversation(sessionId: string): void {
+    const conversation = this.conversationsBySession.get(sessionId);
+    if (!conversation || conversation.length <= MAX_CONTEXT_MESSAGES) return;
+
+    // Keep the most recent messages, ensuring we start with a user message
+    const trimTo = Math.floor(MAX_CONTEXT_MESSAGES * 0.75);
+    const trimmed = conversation.slice(-trimTo);
+
+    // Ensure starts with user message
+    while (trimmed.length > 0 && trimmed[0].role !== 'user') {
+      trimmed.shift();
+    }
+
+    this.conversationsBySession.set(sessionId, trimmed);
+    console.log(`[ChatEngine] Trimmed conversation for ${sessionId}: ${conversation.length} -> ${trimmed.length} messages`);
+  }
+
+  /**
+   * Stop a running query for a session.
+   */
+  stopQuery(sessionId?: string): boolean {
+    if (sessionId) {
+      // Clear queue
+      const queue = this.messageQueueBySession.get(sessionId);
+      if (queue) {
+        for (const item of queue) {
+          item.reject(new Error('Queue cleared'));
+        }
+        this.messageQueueBySession.delete(sessionId);
+      }
+
+      const controller = this.abortControllersBySession.get(sessionId);
+      if (controller && this.processingBySession.get(sessionId)) {
+        controller.abort();
+        return true;
+      }
+      return false;
+    }
+
+    // Stop any running query
+    for (const [sid, isProcessing] of this.processingBySession.entries()) {
+      if (isProcessing) {
+        const controller = this.abortControllersBySession.get(sid);
+        if (controller) {
+          controller.abort();
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Stop all running queries across all sessions.
+   */
+  stopAllQueries(): void {
+    for (const [sid, isProcessing] of this.processingBySession.entries()) {
+      if (isProcessing) {
+        const controller = this.abortControllersBySession.get(sid);
+        if (controller) {
+          console.log(`[ChatEngine] Stopping query for session ${sid}`);
+          controller.abort();
+        }
+      }
+    }
+  }
+
+  /**
+   * Check if a query is processing.
+   */
+  isQueryProcessing(sessionId?: string): boolean {
+    if (sessionId) {
+      return this.processingBySession.get(sessionId) || false;
+    }
+    for (const v of this.processingBySession.values()) {
+      if (v) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Clear conversation history for a session.
+   */
+  clearSession(sessionId: string): void {
+    this.conversationsBySession.delete(sessionId);
+  }
+
+  private formatToolInput(input: unknown): string {
+    if (!input) return '';
+    if (typeof input === 'string') return input.slice(0, 100);
+    const inp = input as Record<string, string | undefined>;
+    return (inp.query || inp.url || inp.category || inp.content || inp.action || '').slice(0, 80);
+  }
+}

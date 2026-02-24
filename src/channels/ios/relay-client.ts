@@ -48,7 +48,8 @@ import { SettingsManager } from '../../settings';
 
 const PAIRING_CODE_LENGTH = 6;
 const PAIRING_CODE_EXPIRY_MS = 5 * 60 * 1000;
-const RECONNECT_DELAY_MS = 3000;
+const RECONNECT_BASE_DELAY_MS = 3000;
+const RECONNECT_MAX_DELAY_MS = 5 * 60 * 1000; // Cap at 5 minutes
 const PING_INTERVAL_MS = 25000;
 
 interface VirtualClient {
@@ -64,6 +65,7 @@ export class iOSRelayClient {
   private instanceId: string;
   private shouldReconnect = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectAttempts = 0;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
 
   // Virtual clients tracked by relay clientId
@@ -315,6 +317,7 @@ export class iOSRelayClient {
 
       this.ws.on('open', () => {
         console.log('[iOS Relay] Connected to relay');
+        this.reconnectAttempts = 0;
         this.startPing();
         resolve();
       });
@@ -342,13 +345,18 @@ export class iOSRelayClient {
 
   private scheduleReconnect(): void {
     if (this.reconnectTimer) return;
-    console.log(`[iOS Relay] Reconnecting in ${RECONNECT_DELAY_MS}ms...`);
+    const delay = Math.min(
+      RECONNECT_BASE_DELAY_MS * Math.pow(2, this.reconnectAttempts),
+      RECONNECT_MAX_DELAY_MS,
+    );
+    this.reconnectAttempts++;
+    console.log(`[iOS Relay] Reconnecting in ${Math.round(delay / 1000)}s (attempt ${this.reconnectAttempts})...`);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect().catch((err) => {
         console.error('[iOS Relay] Reconnect failed:', err.message);
       });
-    }, RECONNECT_DELAY_MS);
+    }, delay);
   }
 
   private startPing(): void {
