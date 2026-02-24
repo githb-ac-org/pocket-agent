@@ -65,9 +65,12 @@ export async function createChatClient(model: string): Promise<Anthropic> {
     const { ClaudeOAuth } = await import('../auth/oauth');
     const token = await ClaudeOAuth.getAccessToken();
     if (token) {
+      // OAuth tokens use Authorization: Bearer header, not x-api-key.
+      // The oauth-2025-04-20 beta header is required for OAuth auth on the API.
       return new Anthropic({
-        apiKey: token,
+        apiKey: null,
         authToken: token,
+        defaultHeaders: { 'anthropic-beta': 'oauth-2025-04-20' },
       });
     }
     throw new Error('OAuth session expired. Please re-authenticate in Settings.');
