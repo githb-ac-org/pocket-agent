@@ -1259,7 +1259,9 @@ function setupIPC(): void {
 
   ipcMain.handle('sessions:create', async (_, name: string) => {
     try {
-      const session = memory?.createSession(name);
+      // Use the current global mode as default for new sessions
+      const mode = AgentManager.getMode();
+      const session = memory?.createSession(name, mode);
       // Notify iOS of updated session list
       if (iosChannel) {
         iosChannel.broadcast({ type: 'sessions', sessions: memory?.getSessions() || [], activeSessionId: '' });
@@ -1320,6 +1322,24 @@ function setupIPC(): void {
 
   ipcMain.handle('agent:getMode', async () => {
     return AgentManager.getMode();
+  });
+
+  // Per-session mode (locked after first message)
+  ipcMain.handle('agent:getSessionMode', async (_, sessionId: string) => {
+    return memory?.getSessionMode(sessionId) || 'coder';
+  });
+
+  ipcMain.handle('agent:setSessionMode', async (_, sessionId: string, mode: string) => {
+    if (mode !== 'general' && mode !== 'coder') {
+      return { success: false, error: 'Invalid mode' };
+    }
+    // Only allow mode change if session has no messages
+    const msgCount = memory?.getSessionMessageCount(sessionId) || 0;
+    if (msgCount > 0) {
+      return { success: false, error: 'Cannot change mode after messages have been sent' };
+    }
+    const success = memory?.setSessionMode(sessionId, mode) ?? false;
+    return { success };
   });
 
   // iOS mobile companion
@@ -1500,6 +1520,30 @@ function setupIPC(): void {
                 win.webContents.send('skin:changed', skinId);
               }
             }
+          });
+          iosChannel.setModeGetHandler((sessionId: string) => {
+            const mode = memory?.getSessionMode(sessionId) || 'coder';
+            const msgCount = memory?.getSessionMessageCount(sessionId) || 0;
+            return { mode, locked: msgCount > 0 };
+          });
+          iosChannel.setModeSwitchHandler((sessionId: string, mode: string) => {
+            if (mode !== 'general' && mode !== 'coder') {
+              const current = memory?.getSessionMode(sessionId) || 'coder';
+              return { mode: current, locked: true, error: 'Invalid mode' };
+            }
+            const msgCount = memory?.getSessionMessageCount(sessionId) || 0;
+            if (msgCount > 0) {
+              const current = memory?.getSessionMode(sessionId) || 'coder';
+              return { mode: current, locked: true, error: 'Cannot change mode after messages have been sent' };
+            }
+            memory?.setSessionMode(sessionId, mode as 'general' | 'coder');
+            // Also update global default for new sessions
+            AgentManager.setMode(mode);
+            SettingsManager.set('agent.mode', mode);
+            if (chatWindow && !chatWindow.isDestroyed()) {
+              chatWindow.webContents.send('agent:modeChanged', mode);
+            }
+            return { mode, locked: false };
           });
           await iosChannel.start();
           console.log(`[Main] iOS channel started (${iosChannel.getMode()} mode)`);
@@ -1776,6 +1820,11 @@ function setupIPC(): void {
       // Notify iOS when model changes
       if (key === 'agent.model' && iosChannel) {
         iosChannel.broadcast({ type: 'models', models: getAvailableModels(), activeModelId: value });
+      }
+
+      // Notify iOS when mode changes (desktop toggle)
+      if (key === 'agent.mode' && iosChannel) {
+        iosChannel.broadcast({ type: 'mode', mode: value });
       }
 
       // Broadcast skin change to all open windows + iOS
@@ -2389,6 +2438,29 @@ async function initializeAgent(): Promise<void> {
               win.webContents.send('skin:changed', skinId);
             }
           }
+        });
+        iosChannel.setModeGetHandler((sessionId: string) => {
+          const mode = memory?.getSessionMode(sessionId) || 'coder';
+          const msgCount = memory?.getSessionMessageCount(sessionId) || 0;
+          return { mode, locked: msgCount > 0 };
+        });
+        iosChannel.setModeSwitchHandler((sessionId: string, mode: string) => {
+          if (mode !== 'general' && mode !== 'coder') {
+            const current = memory?.getSessionMode(sessionId) || 'coder';
+            return { mode: current, locked: true, error: 'Invalid mode' };
+          }
+          const msgCount = memory?.getSessionMessageCount(sessionId) || 0;
+          if (msgCount > 0) {
+            const current = memory?.getSessionMode(sessionId) || 'coder';
+            return { mode: current, locked: true, error: 'Cannot change mode after messages have been sent' };
+          }
+          memory?.setSessionMode(sessionId, mode as 'general' | 'coder');
+          AgentManager.setMode(mode);
+          SettingsManager.set('agent.mode', mode);
+          if (chatWindow && !chatWindow.isDestroyed()) {
+            chatWindow.webContents.send('agent:modeChanged', mode);
+          }
+          return { mode, locked: false };
         });
 
         await iosChannel.start();

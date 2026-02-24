@@ -553,29 +553,8 @@ class AgentManagerClass extends EventEmitter {
   setMode(mode: 'general' | 'coder'): void {
     if (this.mode === mode) return;
     const previousMode = this.mode;
-
-    // Stop any in-flight queries before switching to avoid overlapping responses
-    for (const [sid, processing] of this.processingBySession.entries()) {
-      if (processing) {
-        console.log(`[AgentManager] Stopping in-flight query for session ${sid} before mode switch`);
-        this.stopQuery(sid);
-      }
-    }
-    // Also stop ChatEngine queries (it has its own processingBySession map)
-    if (this.chatEngine) {
-      this.chatEngine.stopAllQueries();
-    }
-
     this.mode = mode;
-    console.log(`[AgentManager] Mode changed: ${previousMode} -> ${mode}`);
-
-    // When switching to general, load conversation history for active sessions
-    if (mode === 'general' && this.chatEngine) {
-      for (const sid of this.processingBySession.keys()) {
-        this.chatEngine.loadConversationFromMemory(sid);
-      }
-    }
-
+    console.log(`[AgentManager] Default mode changed: ${previousMode} -> ${mode}`);
     this.emit('mode:changed', mode);
   }
 
@@ -590,8 +569,9 @@ class AgentManagerClass extends EventEmitter {
       throw new Error('AgentManager not initialized - call initialize() first');
     }
 
-    // Route to Chat engine in General mode
-    if (this.mode === 'general' && this.chatEngine) {
+    // Route by per-session mode (not global mode)
+    const sessionMode = this.memory.getSessionMode(sessionId);
+    if (sessionMode === 'general' && this.chatEngine) {
       return this.chatEngine.processMessage(userMessage, channel, sessionId, images, attachmentInfo);
     }
 
@@ -728,16 +708,6 @@ class AgentManagerClass extends EventEmitter {
           console.log(`[AgentManager] Resuming SDK session: ${sdkSessionId}`);
         } else {
           console.log('[AgentManager] Starting new persistent SDK session');
-
-          // Inject prior conversation history (e.g. from General mode) so SDK has context
-          const priorMessages = memory.getRecentMessages(30, sessionId);
-          if (priorMessages.length > 0) {
-            const historyLines = priorMessages.map(m =>
-              `[${m.role}]: ${m.content.length > 500 ? m.content.slice(0, 500) + '...' : m.content}`
-            );
-            userMessage = `[Prior conversation in this session]\n${historyLines.join('\n')}\n[End prior conversation]\n\n${userMessage}`;
-            console.log(`[AgentManager] Injected ${priorMessages.length} prior messages as context`);
-          }
         }
 
         const queryFn = await loadSDK();

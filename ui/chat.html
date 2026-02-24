@@ -1753,6 +1753,15 @@
       color: #fff;
     }
 
+    .mode-toggle.locked {
+      opacity: 0.6;
+      pointer-events: none;
+    }
+
+    .mode-toggle.locked .mode-btn {
+      cursor: default;
+    }
+
     /* Toolbar row (search + workflows side by side) */
     #toolbar-row {
       display: flex;
@@ -3802,17 +3811,15 @@
       // Load current model
       await updateModelBadge();
 
-      // Load current agent mode
-      await initAgentMode();
-
       // Refresh model badge when window gains focus (in case user changed it in settings)
       window.addEventListener('focus', updateModelBadge);
 
       // Check for updates (delayed to not slow down startup)
       setTimeout(checkForUpdates, 3000);
 
-      // Load sessions first, then load history for active session
+      // Load sessions first (sets currentSessionId), then init mode for correct session
       await loadSessions();
+      await initAgentMode();
       ensureStatusListener(currentSessionId);
       await loadHistory();
       updateStats();
@@ -4051,6 +4058,10 @@
       localStorage.setItem('currentSessionId', currentSessionId);
       ensureStatusListener(sessionId);
       renderTabs();
+
+      // Update mode toggle for this session
+      updateModeUIForSession(sessionId);
+
       messagesDiv.innerHTML = '';
       // Clear stale streaming bubble reference — the DOM element was just destroyed.
       // A fresh bubble will be created when partial_text events arrive for this session.
@@ -4163,6 +4174,10 @@
         messagesDiv.innerHTML = '';
         showEmptyState();
         updateStats();
+
+        // New session: update mode toggle (unlocked, shows session's mode)
+        updateModeUIForSession(result.session.id);
+
         input.focus();
         // Start rename immediately
         setTimeout(() => startRenameSession(result.session.id), 100);
@@ -4761,6 +4776,12 @@
         setButtonState(true);
         const statusEl = addStatusIndicator('*stretches paws* thinking...');
         statusElBySession.set(sessionId, statusEl);
+      }
+
+      // Lock mode toggle once a message is sent in this session
+      const toggle = document.querySelector('.mode-toggle');
+      if (toggle && sessionId === currentSessionId) {
+        toggle.classList.add('locked');
       }
 
       scrollToBottom();
@@ -6548,36 +6569,73 @@
 
     async function initAgentMode() {
       try {
-        const mode = await window.pocketAgent.getMode();
+        // Load per-session mode for the current session
+        const mode = await window.pocketAgent.getSessionMode(currentSessionId);
         currentAgentMode = mode || 'coder';
-        updateModeUI(currentAgentMode);
+        await updateModeUIForSession(currentSessionId);
       } catch (err) {
         console.error('Failed to load agent mode:', err);
       }
 
-      // Listen for mode changes from other sources
+      // Listen for global mode changes (affects new session defaults only)
       window.pocketAgent.onModeChanged((mode) => {
-        currentAgentMode = mode;
-        updateModeUI(mode);
+        // Global mode changed — doesn't affect current session, just new ones
+        console.log('[Chat] Global default mode changed:', mode);
       });
     }
 
-    function setAgentMode(mode) {
+    async function setAgentMode(mode) {
       if (mode === currentAgentMode) return;
       currentAgentMode = mode;
-      updateModeUI(mode);
+      updateModeButtons(mode);
+
+      // Set the mode on the current session (only works if no messages yet)
+      try {
+        const result = await window.pocketAgent.setSessionMode(currentSessionId, mode);
+        if (!result.success) {
+          console.warn('Cannot change session mode:', result.error);
+          // Revert UI to actual session mode
+          const actualMode = await window.pocketAgent.getSessionMode(currentSessionId);
+          currentAgentMode = actualMode;
+          updateModeButtons(actualMode);
+          return;
+        }
+      } catch (err) {
+        console.error('Failed to set session mode:', err);
+        return;
+      }
+
+      // Also update the global default for new sessions
       window.pocketAgent.setMode(mode).catch(err => {
-        console.error('Failed to set agent mode:', err);
+        console.error('Failed to set global default mode:', err);
       });
     }
 
-    function updateModeUI(mode) {
+    function updateModeButtons(mode) {
       const generalBtn = document.getElementById('mode-btn-general');
       const coderBtn = document.getElementById('mode-btn-coder');
       if (!generalBtn || !coderBtn) return;
 
       generalBtn.classList.toggle('active', mode === 'general');
       coderBtn.classList.toggle('active', mode === 'coder');
+    }
+
+    async function updateModeUIForSession(sessionId) {
+      try {
+        const mode = await window.pocketAgent.getSessionMode(sessionId);
+        currentAgentMode = mode || 'coder';
+        updateModeButtons(currentAgentMode);
+
+        // Lock toggle if session has messages
+        const toggle = document.querySelector('.mode-toggle');
+        if (toggle) {
+          const history = await window.pocketAgent.getHistory(1, sessionId);
+          const hasMessages = history && history.length > 0;
+          toggle.classList.toggle('locked', hasMessages);
+        }
+      } catch (err) {
+        console.error('Failed to update mode UI for session:', err);
+      }
     }
 
     function toggleSearch() {

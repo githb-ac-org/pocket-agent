@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('pocketAgent', {
   // Mode
   setMode: (mode: string) => ipcRenderer.invoke('agent:setMode', mode),
   getMode: () => ipcRenderer.invoke('agent:getMode'),
+  getSessionMode: (sessionId: string) => ipcRenderer.invoke('agent:getSessionMode', sessionId),
+  setSessionMode: (sessionId: string, mode: string) => ipcRenderer.invoke('agent:setSessionMode', sessionId, mode),
   onModeChanged: (callback: (mode: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, mode: string) => callback(mode);
     ipcRenderer.on('agent:modeChanged', listener);
@@ -199,6 +201,7 @@ contextBridge.exposeInMainWorld('pocketAgent', {
 interface Session {
   id: string;
   name: string;
+  mode?: 'general' | 'coder';
   created_at: string;
   updated_at: string;
   telegram_linked?: boolean;
@@ -215,6 +218,8 @@ declare global {
       // Mode
       setMode: (mode: string) => Promise<{ success: boolean; error?: string }>;
       getMode: () => Promise<string>;
+      getSessionMode: (sessionId: string) => Promise<string>;
+      setSessionMode: (sessionId: string, mode: string) => Promise<{ success: boolean; error?: string }>;
       onModeChanged: (callback: (mode: string) => void) => () => void;
       saveAttachment: (name: string, dataUrl: string) => Promise<string>;
       extractText: (filePath: string) => Promise<string>;

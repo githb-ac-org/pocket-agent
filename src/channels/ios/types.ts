@@ -10,7 +10,9 @@ export interface ClientMessage {
     | 'facts:graph' | 'customize:get' | 'customize:save'
     | 'routines:list' | 'routines:create' | 'routines:delete' | 'routines:toggle' | 'routines:run'
     | 'app:info'
-    | 'skin:set';
+    | 'skin:set'
+    | 'mode:get'
+    | 'mode:switch';
   id?: string;
 }
 
@@ -213,3 +215,13 @@ export type iOSRoutinesToggleHandler = (name: string, enabled: boolean) => boole
 export type iOSRoutinesRunHandler = (name: string) => Promise<{ success: boolean; error?: string }>;
 
 export type iOSAppInfoHandler = () => { version: string; name: string };
+
+export type iOSModeGetHandler = (sessionId: string) => { mode: string; locked: boolean };
+
+export type iOSModeSwitchHandler = (sessionId: string, mode: string) => { mode: string; locked: boolean; error?: string };
+
+export interface ServerModeMessage {
+  type: 'mode';
+  mode: 'general' | 'coder';
+  locked: boolean;
+}

@@ -64,6 +64,35 @@ export class ChatEngine {
     this.memory = config.memory;
     this.toolsConfig = config.toolsConfig;
     this.emitStatus = config.statusEmitter;
+
+    // Wire up the summarizer for smart context / compaction
+    this.memory.setSummarizer(async (messages) => {
+      const currentModel = SettingsManager.get('agent.model') || 'claude-haiku-4-5-20251001';
+      // Use haiku for summarization (fast + cheap), fall back to current model
+      const summaryModel = 'claude-haiku-4-5-20251001';
+      try {
+        const client = await createChatClient(summaryModel);
+        const prompt = messages.map(m => `[${m.role}]: ${m.content}`).join('\n');
+        const result = await client.messages.create({
+          model: summaryModel,
+          max_tokens: 1024,
+          messages: [{ role: 'user', content: `Summarize this conversation concisely, preserving key facts, decisions, and context:\n\n${prompt}` }],
+        });
+        return result.content[0].type === 'text' ? result.content[0].text : '';
+      } catch (err) {
+        console.error('[ChatEngine] Summarizer failed, falling back to current model:', err);
+        // Fallback to current model if haiku fails
+        const client = await createChatClient(currentModel);
+        const prompt = messages.map(m => `[${m.role}]: ${m.content}`).join('\n');
+        const result = await client.messages.create({
+          model: currentModel,
+          max_tokens: 1024,
+          messages: [{ role: 'user', content: `Summarize this conversation concisely, preserving key facts, decisions, and context:\n\n${prompt}` }],
+        });
+        return result.content[0].type === 'text' ? result.content[0].text : '';
+      }
+    });
+    console.log('[ChatEngine] Summarizer wired up');
   }
 
   /**
@@ -146,7 +175,7 @@ export class ChatEngine {
     try {
       // Get or create conversation history
       if (!this.conversationsBySession.has(sessionId)) {
-        this.loadConversationFromMemory(sessionId);
+        await this.loadConversationFromMemory(sessionId);
       }
       const conversation = this.conversationsBySession.get(sessionId)!;
 
@@ -154,8 +183,8 @@ export class ChatEngine {
       const userContent = this.buildUserContent(userMessage, images);
       conversation.push({ role: 'user', content: userContent });
 
-      // Trim conversation if too long
-      this.trimConversation(sessionId);
+      // Compact conversation if too long (uses smart context with rolling summaries)
+      const wasCompacted = await this.compactConversation(sessionId, userMessage);
 
       // Build system prompt
       const systemPrompt = this.buildSystemPrompt();
@@ -239,12 +268,14 @@ export class ChatEngine {
             hasToolUse = true;
             assistantContent.push(rawBlock as ContentBlockParam);
 
+            const isShell = rawBlock.name === 'shell_command';
             this.emitStatus({
               type: 'tool_start',
               sessionId,
               toolName: rawBlock.name,
               toolInput: this.formatToolInput(rawBlock.input),
-              message: `batting at ${rawBlock.name}...`,
+              message: isShell ? `running ${this.formatToolInput(rawBlock.input)}...` : `batting at ${rawBlock.name}...`,
+              isPocketCli: isShell,
             });
 
             // Execute tool
@@ -345,7 +376,7 @@ export class ChatEngine {
       return {
         response,
         tokensUsed: 0,
-        wasCompacted: false,
+        wasCompacted,
         media: this.pendingMedia.length > 0 ? this.pendingMedia : undefined,
       };
     } catch (error) {
@@ -537,6 +568,9 @@ You are a persistent personal AI assistant with these tools available:
 ### Browser Automation
 - browser: Navigate, screenshot, click, type, evaluate, extract, scroll, download
 
+### Shell Commands
+- shell_command: Execute shell commands (bash/PowerShell) for file operations, git, scripts, system tasks
+
 ### Web Access
 - web_search: Search the web for current information
 - web_fetch: Fetch and read content from URLs
@@ -551,30 +585,82 @@ You are a persistent personal AI assistant with these tools available:
 
   /**
    * Load conversation history from SQLite into in-memory format.
+   * Uses smart context (rolling summary + recent messages) for longer sessions.
    */
-  loadConversationFromMemory(sessionId: string): void {
-    const messages = this.memory.getRecentMessages(MAX_CONTEXT_MESSAGES, sessionId);
-    const conversation: MessageParam[] = [];
+  async loadConversationFromMemory(sessionId: string): Promise<void> {
+    const messageCount = this.memory.getSessionMessageCount(sessionId);
 
-    for (const msg of messages) {
-      if (msg.role === 'user' || msg.role === 'assistant') {
-        conversation.push({
-          role: msg.role,
-          content: msg.content,
-        });
+    // For short sessions, just load directly
+    if (messageCount <= MAX_CONTEXT_MESSAGES) {
+      const messages = this.memory.getRecentMessages(MAX_CONTEXT_MESSAGES, sessionId);
+      const conversation: MessageParam[] = [];
+
+      for (const msg of messages) {
+        if (msg.role === 'user' || msg.role === 'assistant') {
+          conversation.push({ role: msg.role, content: msg.content });
+        }
       }
+
+      // Clean: ensure starts with user, merge consecutive same-role
+      const cleaned = this.cleanConversation(conversation);
+      this.conversationsBySession.set(sessionId, cleaned);
+      console.log(`[ChatEngine] Loaded ${cleaned.length} messages for session ${sessionId}`);
+      return;
     }
 
-    // Ensure conversation starts with a user message (API requirement)
-    if (conversation.length > 0 && conversation[0].role !== 'user') {
+    // For longer sessions, use smart context with rolling summaries
+    try {
+      const smartContext = await this.memory.getSmartContext(sessionId, {
+        recentMessageLimit: 40,
+        rollingSummaryInterval: 30,
+        semanticRetrievalCount: 0, // no query yet
+      });
+
+      const conversation: MessageParam[] = [];
+
+      if (smartContext.rollingSummary) {
+        conversation.push({ role: 'user', content: '[System: Previous conversation summary]' });
+        conversation.push({ role: 'assistant', content: smartContext.rollingSummary });
+      }
+
+      for (const msg of smartContext.recentMessages) {
+        if (msg.role === 'user' || msg.role === 'assistant') {
+          conversation.push({ role: msg.role, content: msg.content });
+        }
+      }
+
+      const cleaned = this.cleanConversation(conversation);
+      this.conversationsBySession.set(sessionId, cleaned);
+      console.log(`[ChatEngine] Loaded ${cleaned.length} messages with smart context for session ${sessionId} (summary: ${smartContext.rollingSummary ? 'yes' : 'no'})`);
+    } catch (err) {
+      console.error('[ChatEngine] Smart context load failed, falling back to recent messages:', err);
+      // Fallback to simple load
+      const messages = this.memory.getRecentMessages(MAX_CONTEXT_MESSAGES, sessionId);
+      const conversation: MessageParam[] = [];
+      for (const msg of messages) {
+        if (msg.role === 'user' || msg.role === 'assistant') {
+          conversation.push({ role: msg.role, content: msg.content });
+        }
+      }
+      const cleaned = this.cleanConversation(conversation);
+      this.conversationsBySession.set(sessionId, cleaned);
+      console.log(`[ChatEngine] Fallback loaded ${cleaned.length} messages for session ${sessionId}`);
+    }
+  }
+
+  /**
+   * Clean conversation: ensure starts with user message, merge consecutive same-role messages.
+   */
+  private cleanConversation(conversation: MessageParam[]): MessageParam[] {
+    // Ensure starts with user message
+    while (conversation.length > 0 && conversation[0].role !== 'user') {
       conversation.shift();
     }
 
-    // Ensure alternating user/assistant (merge consecutive same-role messages)
+    // Merge consecutive same-role messages
     const cleaned: MessageParam[] = [];
     for (const msg of conversation) {
       if (cleaned.length > 0 && cleaned[cleaned.length - 1].role === msg.role) {
-        // Merge with previous
         const prev = cleaned[cleaned.length - 1];
         const prevText = typeof prev.content === 'string' ? prev.content : '';
         const curText = typeof msg.content === 'string' ? msg.content : '';
@@ -584,28 +670,61 @@ You are a persistent personal AI assistant with these tools available:
       }
     }
 
-    this.conversationsBySession.set(sessionId, cleaned);
-    console.log(`[ChatEngine] Loaded ${cleaned.length} messages for session ${sessionId}`);
+    return cleaned;
   }
 
   /**
-   * Trim conversation when it gets too long.
+   * Compact conversation using smart context (rolling summary + recent messages).
+   * Replaces naive truncation with summarization-aware compaction.
    */
-  private trimConversation(sessionId: string): void {
+  private async compactConversation(sessionId: string, currentQuery: string): Promise<boolean> {
     const conversation = this.conversationsBySession.get(sessionId);
-    if (!conversation || conversation.length <= MAX_CONTEXT_MESSAGES) return;
+    if (!conversation || conversation.length <= MAX_CONTEXT_MESSAGES) return false;
 
-    // Keep the most recent messages, ensuring we start with a user message
-    const trimTo = Math.floor(MAX_CONTEXT_MESSAGES * 0.75);
-    const trimmed = conversation.slice(-trimTo);
+    try {
+      // Use getSmartContext to get rolling summary + recent messages
+      const smartContext = await this.memory.getSmartContext(sessionId, {
+        recentMessageLimit: 40,
+        rollingSummaryInterval: 30,
+        semanticRetrievalCount: 5,
+        currentQuery,
+      });
 
-    // Ensure starts with user message
-    while (trimmed.length > 0 && trimmed[0].role !== 'user') {
-      trimmed.shift();
+      // Rebuild in-memory conversation from smart context
+      const newConversation: MessageParam[] = [];
+
+      // Prepend rolling summary as first context
+      if (smartContext.rollingSummary) {
+        newConversation.push({ role: 'user', content: '[System: Previous conversation summary]' });
+        newConversation.push({ role: 'assistant', content: smartContext.rollingSummary });
+      }
+
+      // Add recent messages
+      for (const msg of smartContext.recentMessages) {
+        if (msg.role === 'user' || msg.role === 'assistant') {
+          newConversation.push({ role: msg.role, content: msg.content });
+        }
+      }
+
+      // Ensure starts with user message
+      while (newConversation.length > 0 && newConversation[0].role !== 'user') {
+        newConversation.shift();
+      }
+
+      this.conversationsBySession.set(sessionId, newConversation);
+      console.log(`[ChatEngine] Compacted: ${conversation.length} -> ${newConversation.length} messages (summary: ${smartContext.rollingSummary ? 'yes' : 'no'})`);
+      return true;
+    } catch (err) {
+      console.error('[ChatEngine] Compaction failed, falling back to naive trim:', err);
+      // Fallback: naive trim
+      const trimTo = Math.floor(MAX_CONTEXT_MESSAGES * 0.75);
+      const trimmed = conversation.slice(-trimTo);
+      while (trimmed.length > 0 && trimmed[0].role !== 'user') {
+        trimmed.shift();
+      }
+      this.conversationsBySession.set(sessionId, trimmed);
+      return false;
     }
-
-    this.conversationsBySession.set(sessionId, trimmed);
-    console.log(`[ChatEngine] Trimmed conversation for ${sessionId}: ${conversation.length} -> ${trimmed.length} messages`);
   }
 
   /**

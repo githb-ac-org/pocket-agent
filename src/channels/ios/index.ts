@@ -17,6 +17,8 @@ import {
   iOSFactsGraphHandler, iOSCustomizeGetHandler, iOSCustomizeSaveHandler,
   iOSRoutinesListHandler, iOSRoutinesCreateHandler, iOSRoutinesDeleteHandler, iOSRoutinesToggleHandler, iOSRoutinesRunHandler,
   iOSAppInfoHandler,
+  iOSModeGetHandler,
+  iOSModeSwitchHandler,
 } from './types';
 import { SettingsManager } from '../../settings';
 
@@ -108,6 +110,8 @@ export class iOSChannel extends BaseChannel {
   setRoutinesRunHandler(handler: iOSRoutinesRunHandler): void { this.backend.setRoutinesRunHandler(handler); }
   setAppInfoHandler(handler: iOSAppInfoHandler): void { this.backend.setAppInfoHandler(handler); }
   setSkinHandler(handler: (skinId: string) => void): void { this.backend.setSkinHandler(handler); }
+  setModeGetHandler(handler: iOSModeGetHandler): void { this.backend.setModeGetHandler(handler); }
+  setModeSwitchHandler(handler: iOSModeSwitchHandler): void { this.backend.setModeSwitchHandler(handler); }
 
   getPairingCode(): string {
     return this.backend.getActivePairingCode();

@@ -780,8 +780,16 @@ export class CronScheduler {
       return false;
     }
 
+    // Resolve session ID — if the given session doesn't exist, use first available
+    let resolvedSessionId = sessionId;
+    const session = this.memory.getSession(resolvedSessionId);
+    if (!session) {
+      const sessions = this.memory.getSessions();
+      resolvedSessionId = sessions.length > 0 ? sessions[0].id : sessionId;
+    }
+
     // Save to database
-    const id = this.memory.saveCronJob(name, schedule, prompt, channel, sessionId);
+    const id = this.memory.saveCronJob(name, schedule, prompt, channel, resolvedSessionId);
 
     // Schedule it
     const job: ScheduledJob = {

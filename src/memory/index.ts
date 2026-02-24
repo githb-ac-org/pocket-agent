@@ -12,6 +12,7 @@ import {
 export interface Session {
   id: string;
   name: string;
+  mode?: 'general' | 'coder';
   created_at: string;
   updated_at: string;
   telegram_linked?: boolean;
@@ -417,6 +418,13 @@ export class MemoryManager {
       this.db.exec('ALTER TABLE sessions ADD COLUMN sdk_session_id TEXT');
       console.log('[Memory] Migrated sessions table: added sdk_session_id column');
     }
+
+    // Migration: add mode column to sessions for per-session mode lock
+    const sessColumnsForMode = this.db.pragma('table_info(sessions)') as Array<{ name: string }>;
+    if (!sessColumnsForMode.some(c => c.name === 'mode')) {
+      this.db.exec("ALTER TABLE sessions ADD COLUMN mode TEXT DEFAULT 'coder'");
+      console.log('[Memory] Migrated sessions table: added mode column');
+    }
   }
 
   /**
@@ -482,9 +490,11 @@ export class MemoryManager {
     const DEFAULT_SESSION_ID = 'default';
     const DEFAULT_SESSION_NAME = 'Chat';
 
-    // Check if default session exists
+    // Only create default session if NO sessions exist at all
+    // (Don't recreate it if user deleted it and has other sessions)
+    const sessionCount = (this.db.prepare('SELECT COUNT(*) as c FROM sessions').get() as { c: number }).c;
     const existing = this.db.prepare('SELECT id FROM sessions WHERE id = ?').get(DEFAULT_SESSION_ID);
-    if (!existing) {
+    if (!existing && sessionCount === 0) {
       // Create default session
       this.db.prepare(`
         INSERT INTO sessions (id, name, created_at, updated_at)
@@ -493,18 +503,20 @@ export class MemoryManager {
       console.log('[Memory] Created default session');
     }
 
-    // Migrate orphan messages (no session_id) to default session
-    const orphanCount = (this.db.prepare('SELECT COUNT(*) as c FROM messages WHERE session_id IS NULL').get() as { c: number }).c;
-    if (orphanCount > 0) {
-      this.db.prepare('UPDATE messages SET session_id = ? WHERE session_id IS NULL').run(DEFAULT_SESSION_ID);
-      console.log(`[Memory] Migrated ${orphanCount} messages to default session`);
-    }
+    // Migrate orphan messages/summaries to default session (only if it exists)
+    const defaultExists = this.db.prepare('SELECT id FROM sessions WHERE id = ?').get(DEFAULT_SESSION_ID);
+    if (defaultExists) {
+      const orphanCount = (this.db.prepare('SELECT COUNT(*) as c FROM messages WHERE session_id IS NULL').get() as { c: number }).c;
+      if (orphanCount > 0) {
+        this.db.prepare('UPDATE messages SET session_id = ? WHERE session_id IS NULL').run(DEFAULT_SESSION_ID);
+        console.log(`[Memory] Migrated ${orphanCount} messages to default session`);
+      }
 
-    // Migrate orphan summaries to default session
-    const orphanSumCount = (this.db.prepare('SELECT COUNT(*) as c FROM summaries WHERE session_id IS NULL').get() as { c: number }).c;
-    if (orphanSumCount > 0) {
-      this.db.prepare('UPDATE summaries SET session_id = ? WHERE session_id IS NULL').run(DEFAULT_SESSION_ID);
-      console.log(`[Memory] Migrated ${orphanSumCount} summaries to default session`);
+      const orphanSumCount = (this.db.prepare('SELECT COUNT(*) as c FROM summaries WHERE session_id IS NULL').get() as { c: number }).c;
+      if (orphanSumCount > 0) {
+        this.db.prepare('UPDATE summaries SET session_id = ? WHERE session_id IS NULL').run(DEFAULT_SESSION_ID);
+        console.log(`[Memory] Migrated ${orphanSumCount} summaries to default session`);
+      }
     }
   }
 
@@ -611,7 +623,7 @@ export class MemoryManager {
    * Create a new session
    * @throws Error if session name already exists
    */
-  createSession(name: string): Session {
+  createSession(name: string, mode: 'general' | 'coder' = 'coder'): Session {
     // Check for duplicate name
     const existing = this.getSessionByName(name);
     if (existing) {
@@ -620,9 +632,9 @@ export class MemoryManager {
 
     const id = `session-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     this.db.prepare(`
-      INSERT INTO sessions (id, name, created_at, updated_at)
-      VALUES (?, ?, (strftime('%Y-%m-%dT%H:%M:%fZ')), (strftime('%Y-%m-%dT%H:%M:%fZ')))
-    `).run(id, name);
+      INSERT INTO sessions (id, name, mode, created_at, updated_at)
+      VALUES (?, ?, ?, (strftime('%Y-%m-%dT%H:%M:%fZ')), (strftime('%Y-%m-%dT%H:%M:%fZ')))
+    `).run(id, name, mode);
 
     return this.getSession(id)!;
   }
@@ -632,7 +644,7 @@ export class MemoryManager {
    */
   getSessionByName(name: string): Session | null {
     const row = this.db.prepare(`
-      SELECT id, name, created_at, updated_at
+      SELECT id, name, mode, created_at, updated_at
       FROM sessions
       WHERE name = ?
     `).get(name) as Session | undefined;
@@ -645,7 +657,7 @@ export class MemoryManager {
    */
   getSession(id: string): Session | null {
     const row = this.db.prepare(`
-      SELECT id, name, created_at, updated_at
+      SELECT id, name, mode, created_at, updated_at
       FROM sessions
       WHERE id = ?
     `).get(id) as Session | undefined;
@@ -661,6 +673,7 @@ export class MemoryManager {
     interface SessionRow {
       id: string;
       name: string;
+      mode: string | null;
       created_at: string;
       updated_at: string;
       telegram_linked: number;
@@ -670,6 +683,7 @@ export class MemoryManager {
       SELECT
         s.id,
         s.name,
+        s.mode,
         s.created_at,
         s.updated_at,
         CASE WHEN t.chat_id IS NOT NULL THEN 1 ELSE 0 END as telegram_linked,
@@ -682,6 +696,7 @@ export class MemoryManager {
     return rows.map(row => ({
       id: row.id,
       name: row.name,
+      mode: (row.mode as 'general' | 'coder') || 'coder',
       created_at: row.created_at,
       updated_at: row.updated_at,
       telegram_linked: !!row.telegram_linked,
@@ -712,12 +727,6 @@ export class MemoryManager {
    * Delete a session and all its related data
    */
   deleteSession(id: string): boolean {
-    // Don't allow deleting the default session
-    if (id === 'default') {
-      console.warn('[Memory] Cannot delete the default session');
-      return false;
-    }
-
     // Delete all related data first (due to foreign key constraints)
     // Order matters: delete child records before parent records
 
@@ -760,6 +769,25 @@ export class MemoryManager {
   getSessionMessageCount(sessionId: string): number {
     const row = this.db.prepare('SELECT COUNT(*) as c FROM messages WHERE session_id = ?').get(sessionId) as { c: number };
     return row.c;
+  }
+
+  /**
+   * Get the mode for a session (defaults to 'coder' for legacy sessions)
+   */
+  getSessionMode(sessionId: string): 'general' | 'coder' {
+    const row = this.db.prepare('SELECT mode FROM sessions WHERE id = ?').get(sessionId) as { mode: string | null } | undefined;
+    return (row?.mode as 'general' | 'coder') || 'coder';
+  }
+
+  /**
+   * Set the mode for a session (only allowed when session has no messages)
+   */
+  setSessionMode(sessionId: string, mode: 'general' | 'coder'): boolean {
+    const result = this.db.prepare(`
+      UPDATE sessions SET mode = ?, updated_at = (strftime('%Y-%m-%dT%H:%M:%fZ'))
+      WHERE id = ?
+    `).run(mode, sessionId);
+    return result.changes > 0;
   }
 
   // ============ TELEGRAM CHAT SESSION METHODS ============

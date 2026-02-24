@@ -42,6 +42,8 @@ import {
   iOSRoutinesToggleHandler,
   iOSRoutinesRunHandler,
   iOSAppInfoHandler,
+  iOSModeGetHandler,
+  iOSModeSwitchHandler,
 } from './types';
 import { loadWorkflowCommands } from '../../config/commands-loader';
 import { SettingsManager } from '../../settings';
@@ -103,6 +105,8 @@ export class iOSRelayClient {
   private onRunRoutine: iOSRoutinesRunHandler | null = null;
   private onGetAppInfo: iOSAppInfoHandler | null = null;
   private onSkinSet: ((skinId: string) => void) | null = null;
+  private onGetMode: iOSModeGetHandler | null = null;
+  private onSwitchMode: iOSModeSwitchHandler | null = null;
 
   private _isRunning = false;
 
@@ -185,6 +189,8 @@ export class iOSRelayClient {
   setRoutinesRunHandler(handler: iOSRoutinesRunHandler): void { this.onRunRoutine = handler; }
   setAppInfoHandler(handler: iOSAppInfoHandler): void { this.onGetAppInfo = handler; }
   setSkinHandler(handler: (skinId: string) => void): void { this.onSkinSet = handler; }
+  setModeGetHandler(handler: iOSModeGetHandler): void { this.onGetMode = handler; }
+  setModeSwitchHandler(handler: iOSModeSwitchHandler): void { this.onSwitchMode = handler; }
 
   generatePairingCode(): string {
     if (this.activePairingCode) {
@@ -722,6 +728,21 @@ export class iOSRelayClient {
         if ('skinId' in message) {
           const skinId = (message as { skinId: string }).skinId;
           this.onSkinSet?.(skinId);
+        }
+        break;
+      }
+      case 'mode:get': {
+        const sessionId = client.device.sessionId || 'default';
+        const modeResult = this.onGetMode?.(sessionId) || { mode: 'coder', locked: false };
+        this.sendToRelay(client.relayClientId, { type: 'mode', mode: modeResult.mode, locked: modeResult.locked });
+        break;
+      }
+      case 'mode:switch': {
+        if ('mode' in message) {
+          const newMode = (message as { mode: string }).mode;
+          const sessionId = client.device.sessionId || 'default';
+          const result = this.onSwitchMode?.(sessionId, newMode) || { mode: newMode, locked: false };
+          this.sendToRelay(client.relayClientId, { type: 'mode', mode: result.mode, locked: result.locked });
         }
         break;
       }

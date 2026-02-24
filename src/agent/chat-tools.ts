@@ -2,10 +2,12 @@
  * Chat mode tool adapter
  *
  * Converts existing tool definitions to Anthropic Messages API format
- * and adds web_search / web_fetch capabilities.
+ * and adds web_search / web_fetch / shell_command capabilities.
  */
 
 import Anthropic from '@anthropic-ai/sdk';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import { getCustomTools, ToolsConfig } from '../tools';
 import { wrapToolHandler } from '../tools/diagnostics';
 import { getProviderForModel } from './chat-providers';
@@ -51,6 +53,11 @@ export function getChatToolDefinitions(config: ToolsConfig): ChatToolSet {
   const webFetchDef = getWebFetchTool();
   apiTools.push(webFetchDef.definition);
   handlerMap.set('web_fetch', webFetchDef.handler);
+
+  // Add shell_command tool
+  const shellDef = getShellCommandTool();
+  apiTools.push(shellDef.definition);
+  handlerMap.set('shell_command', shellDef.handler);
 
   return { apiTools, handlerMap };
 }
@@ -133,6 +140,68 @@ function getWebFetchTool(): { definition: Tool; handler: (input: Record<string, 
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       return `Error fetching ${url}: ${msg}`;
+    }
+  };
+
+  return { definition, handler };
+}
+
+const execAsync = promisify(exec);
+const IS_WINDOWS = process.platform === 'win32';
+const HOME_DIR = process.env.HOME || process.env.USERPROFILE || '';
+
+/**
+ * Shell command tool — runs a command in the system shell and returns output.
+ */
+function getShellCommandTool(): { definition: Tool; handler: (input: Record<string, unknown>) => Promise<string> } {
+  const definition: Tool = {
+    name: 'shell_command',
+    description: 'Execute a shell command and return its output. Use this for file operations, git commands, running scripts, system tasks, and any CLI operations. Commands run in bash (macOS/Linux) or PowerShell (Windows).',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        command: {
+          type: 'string',
+          description: 'The shell command to execute',
+        },
+        timeout_ms: {
+          type: 'number',
+          description: 'Timeout in milliseconds (default: 30000, max: 120000)',
+        },
+      },
+      required: ['command'],
+    },
+  };
+
+  const handler = async (input: Record<string, unknown>): Promise<string> => {
+    const command = input.command as string;
+    const timeoutMs = Math.min((input.timeout_ms as number) || 30000, 120000);
+
+    const shellOpts = IS_WINDOWS
+      ? { shell: 'powershell.exe' as string, env: process.env, timeout: timeoutMs }
+      : {
+          shell: '/bin/bash' as string,
+          env: { ...process.env, PATH: `${process.env.PATH}:/usr/local/bin:/opt/homebrew/bin:${HOME_DIR}/.local/bin` },
+          timeout: timeoutMs,
+        };
+
+    try {
+      const { stdout, stderr } = await execAsync(command, shellOpts);
+      let result = stdout || '';
+      if (stderr) {
+        result += (result ? '\n' : '') + `[stderr]: ${stderr}`;
+      }
+      // Truncate very long output
+      if (result.length > 50000) {
+        result = result.slice(0, 50000) + '\n\n[Output truncated at 50000 chars]';
+      }
+      return result || '(no output)';
+    } catch (error) {
+      const err = error as Error & { stdout?: string; stderr?: string; code?: number };
+      let msg = `Command failed (exit code ${err.code || 'unknown'})`;
+      if (err.stderr) msg += `\n[stderr]: ${err.stderr}`;
+      if (err.stdout) msg += `\n[stdout]: ${err.stdout}`;
+      return msg;
     }
   };
 
