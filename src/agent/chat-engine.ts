@@ -7,7 +7,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { MemoryManager } from '../memory';
-import { ToolsConfig } from '../tools';
+import { ToolsConfig, setCurrentSessionId, runWithSessionId } from '../tools';
 import { SettingsManager } from '../settings';
 import { loadIdentity } from '../config/identity';
 import { loadInstructions } from '../config/instructions';
@@ -160,6 +160,18 @@ export class ChatEngine {
    * Execute a message against the Anthropic Messages API with tool loop.
    */
   private async executeMessage(
+    userMessage: string,
+    channel: string,
+    sessionId: string,
+    images?: ImageContent[],
+    attachmentInfo?: AttachmentInfo
+  ): Promise<ProcessResult> {
+    // Set session context so tool handlers (scheduler, calendar, tasks) use the correct session
+    setCurrentSessionId(sessionId);
+    return runWithSessionId(sessionId, () => this.executeMessageInner(userMessage, channel, sessionId, images, attachmentInfo));
+  }
+
+  private async executeMessageInner(
     userMessage: string,
     channel: string,
     sessionId: string,
