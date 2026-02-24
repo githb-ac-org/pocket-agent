@@ -198,8 +198,8 @@ export class ChatEngine {
       // Compact conversation if too long (uses smart context with rolling summaries)
       const wasCompacted = await this.compactConversation(sessionId, userMessage);
 
-      // Build system prompt
-      const systemPrompt = this.buildSystemPrompt();
+      // Build system prompt (pass sessionId for temporal context)
+      const systemPrompt = this.buildSystemPrompt(sessionId);
 
       // Get model
       const model = SettingsManager.get('agent.model') || 'claude-opus-4-6';
@@ -488,7 +488,7 @@ export class ChatEngine {
   /**
    * Build system prompt from identity, instructions, profile, facts, soul, temporal.
    */
-  private buildSystemPrompt(): string {
+  private buildSystemPrompt(sessionId?: string): string {
     const parts: string[] = [];
 
     // Identity
@@ -509,8 +509,9 @@ export class ChatEngine {
       parts.push(profile);
     }
 
-    // Temporal context
-    parts.push(this.buildTemporalContext());
+    // Temporal context (with last message awareness)
+    const lastUserMsg = sessionId ? this.getLastUserMessageTimestamp(sessionId) : undefined;
+    parts.push(this.buildTemporalContext(lastUserMsg));
 
     // Facts
     const facts = this.memory.getFactsForContext();
@@ -536,7 +537,39 @@ export class ChatEngine {
     return parts.join('\n\n');
   }
 
-  private buildTemporalContext(): string {
+  private getLastUserMessageTimestamp(sessionId: string): string | undefined {
+    try {
+      const messages = this.memory.getRecentMessages(1, sessionId);
+      if (messages.length > 0) {
+        return messages[0].timestamp;
+      }
+    } catch {
+      // Ignore errors
+    }
+    return undefined;
+  }
+
+  private parseDbTimestamp(timestamp: string): Date {
+    // If already has timezone indicator, parse directly
+    if (/Z$|[+-]\d{2}:?\d{2}$/.test(timestamp)) {
+      return new Date(timestamp);
+    }
+
+    // Check if user has configured a timezone
+    const userTimezone = SettingsManager.get('profile.timezone');
+
+    if (userTimezone) {
+      // User has timezone set - treat DB timestamps as UTC
+      const normalized = timestamp.replace(' ', 'T');
+      return new Date(normalized + 'Z');
+    } else {
+      // No timezone configured - use system local time
+      const normalized = timestamp.replace(' ', 'T');
+      return new Date(normalized);
+    }
+  }
+
+  private buildTemporalContext(lastMessageTimestamp?: string): string {
     const now = new Date();
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const dayName = dayNames[now.getDay()];
@@ -553,7 +586,34 @@ export class ChatEngine {
       year: 'numeric',
     });
 
-    return `## Current Time\nIt is ${dayName}, ${dateStr} at ${timeStr}.`;
+    const lines = [
+      '## Current Time',
+      `It is ${dayName}, ${dateStr} at ${timeStr}.`,
+    ];
+
+    // Add time since last message if available
+    if (lastMessageTimestamp) {
+      try {
+        const lastDate = this.parseDbTimestamp(lastMessageTimestamp);
+        const diffMs = now.getTime() - lastDate.getTime();
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMs / 3600000);
+        const diffDays = Math.floor(diffMs / 86400000);
+
+        let timeSince = '';
+        if (diffMins < 1) timeSince = 'just now';
+        else if (diffMins < 60) timeSince = `${diffMins} minute${diffMins !== 1 ? 's' : ''} ago`;
+        else if (diffHours < 24) timeSince = `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+        else if (diffDays < 7) timeSince = `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+        else timeSince = lastDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+        lines.push(`Last message from user was ${timeSince}.`);
+      } catch {
+        // Ignore timestamp parsing errors
+      }
+    }
+
+    return lines.join('\n');
   }
 
   private buildCapabilitiesPrompt(): string {
