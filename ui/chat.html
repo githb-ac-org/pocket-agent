@@ -6078,7 +6078,15 @@
     }
 
     const mentionHighlight = document.getElementById('mention-highlight');
-    const MENTION_RE = /@([\w-]+)/g;
+
+    function gchatAllUsernames() {
+      const names = new Set();
+      for (const msg of globalChatMessages) {
+        if (msg.username) names.add(msg.username.toLowerCase());
+      }
+      return names;
+    }
+
     function updateMentionHighlight() {
       if (!globalChatMode) {
         mentionHighlight.innerHTML = '';
@@ -6086,23 +6094,29 @@
         return;
       }
       const val = input.value;
-      if (!val || !MENTION_RE.test(val)) {
-        MENTION_RE.lastIndex = 0;
+      const known = gchatAllUsernames();
+      const escaped = val.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const highlighted = escaped.replace(/@([\w-]+)/g, (match, name) => {
+        if (known.has(name.toLowerCase())) return '<span class="mention-hl">' + match + '</span>';
+        return match;
+      });
+      if (highlighted === escaped) {
         mentionHighlight.innerHTML = '';
         input.classList.remove('mention-active');
         return;
       }
-      MENTION_RE.lastIndex = 0;
       input.classList.add('mention-active');
-      mentionHighlight.innerHTML = val
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        .replace(MENTION_RE, '<span class="mention-hl">@$1</span>');
+      mentionHighlight.innerHTML = highlighted;
       mentionHighlight.scrollTop = input.scrollTop;
     }
 
     function gchatRenderMentionText(text) {
+      const known = gchatAllUsernames();
       const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      return escaped.replace(/@([\w-]+)/g, '<span class="gchat-mention">@$1</span>');
+      return escaped.replace(/@([\w-]+)/g, (match, name) => {
+        if (known.has(name.toLowerCase())) return '<span class="gchat-mention">' + match + '</span>';
+        return match;
+      });
     }
 
     function gchatRenderReplyBanner() {
