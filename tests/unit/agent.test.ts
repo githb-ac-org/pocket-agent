@@ -77,18 +77,6 @@ describe('AgentManager', () => {
       expect(context).toContain('**coffee**: Espresso');
     });
 
-    it('should get conversation context', async () => {
-      memory.saveMessage('user', 'Hello');
-      memory.saveMessage('assistant', 'Hi there!');
-      memory.saveMessage('user', 'How are you?');
-
-      const context = await memory.getConversationContext(150000);
-
-      expect(context.messages.length).toBe(3);
-      expect(context.totalTokens).toBeGreaterThan(0);
-      expect(context.summarizedCount).toBe(0);
-    });
-
     it('should set summarizer callback', () => {
       const mockSummarizer = vi.fn().mockResolvedValue('Summary text');
       memory.setSummarizer(mockSummarizer);

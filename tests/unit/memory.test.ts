@@ -160,36 +160,6 @@ describe('MemoryManager', () => {
       });
     });
 
-    describe('getConversationContext', () => {
-      it('should return empty context when no messages exist', async () => {
-        const context = await memory.getConversationContext();
-
-        expect(context.messages).toEqual([]);
-        expect(context.totalTokens).toBe(0);
-        expect(context.summarizedCount).toBe(0);
-      });
-
-      it('should return all messages when under token limit', async () => {
-        memory.saveMessage('user', 'Hello');
-        memory.saveMessage('assistant', 'Hi there!');
-
-        const context = await memory.getConversationContext(150000);
-
-        expect(context.messages.length).toBe(2);
-        expect(context.summarizedCount).toBe(0);
-      });
-
-      it('should include role and content in returned messages', async () => {
-        memory.saveMessage('user', 'Hello');
-        memory.saveMessage('assistant', 'Hi!');
-
-        const context = await memory.getConversationContext();
-
-        expect(context.messages[0]).toMatchObject({ role: 'user', content: 'Hello' });
-        expect(context.messages[1]).toMatchObject({ role: 'assistant', content: 'Hi!' });
-      });
-    });
-
     describe('clearConversation', () => {
       it('should delete all messages', () => {
         memory.saveMessage('user', 'First');
@@ -561,41 +531,6 @@ describe('MemoryManager', () => {
 
         expect(stats.estimatedTokens).toBe(expectedTokens);
       });
-    });
-  });
-
-  // ============ SUMMARIZER ============
-
-  describe('Summarizer', () => {
-    it('should use basic summary when no summarizer is set', async () => {
-      // Add enough messages to trigger summarization
-      for (let i = 0; i < 5; i++) {
-        memory.saveMessage('user', `Message ${i}`);
-      }
-
-      // Get context with very small token limit to force summarization
-      const context = await memory.getConversationContext(100);
-
-      // Should still work without error
-      expect(context).toBeDefined();
-      expect(context.messages).toBeDefined();
-    });
-
-    it('should call custom summarizer when set', async () => {
-      const mockSummarizer = vi.fn().mockResolvedValue('Custom summary');
-      memory.setSummarizer(mockSummarizer);
-
-      // Add many messages
-      for (let i = 0; i < 100; i++) {
-        memory.saveMessage('user', `This is a longer message number ${i} with more content to increase token count`);
-      }
-
-      // Get context with smaller token limit to potentially trigger summarization
-      await memory.getConversationContext(1000);
-
-      // The summarizer may or may not be called depending on message count
-      // Just verify no errors occurred
-      expect(true).toBe(true);
     });
   });
 

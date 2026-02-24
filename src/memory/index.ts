@@ -55,13 +55,6 @@ export interface CronJob {
   job_type?: 'routine' | 'reminder';
 }
 
-export interface ConversationContext {
-  messages: Array<{ role: string; content: string; timestamp?: string }>;
-  totalTokens: number;
-  summarizedCount: number;
-  summary?: string;
-}
-
 export interface SmartContextOptions {
   recentMessageLimit: number;      // Number of recent messages to include
   rollingSummaryInterval: number;  // Create summaries every N messages
@@ -137,7 +130,6 @@ export type SummarizerFn = (messages: Message[]) => Promise<string>;
 
 // Token estimation: ~4 characters per token
 const CHARS_PER_TOKEN = 4;
-const DEFAULT_TOKEN_LIMIT = 150000;
 
 // Search weights
 const VECTOR_WEIGHT = 0.7;
@@ -1000,84 +992,6 @@ export class MemoryManager {
     return row.count;
   }
 
-  async getConversationContext(
-    tokenLimit: number = DEFAULT_TOKEN_LIMIT,
-    sessionId: string = 'default'
-  ): Promise<ConversationContext> {
-    const reservedTokens = 10000;
-    const availableTokens = tokenLimit - reservedTokens;
-
-    // Limit query to reasonable number of messages (avoids loading entire history into memory)
-    // 1000 messages at ~300 tokens each = ~300k tokens, well above our typical limit
-    const MAX_MESSAGES_TO_FETCH = 1000;
-
-    const recentMessagesQuery = this.db.prepare(`
-      SELECT id, role, content, timestamp, token_count, session_id
-      FROM messages
-      WHERE session_id = ?
-      ORDER BY id DESC
-      LIMIT ?
-    `).all(sessionId, MAX_MESSAGES_TO_FETCH) as Message[];
-
-    if (recentMessagesQuery.length === 0) {
-      return { messages: [], totalTokens: 0, summarizedCount: 0 };
-    }
-
-    // Get total count to know if there are older messages beyond our limit
-    const totalCount = this.getMessageCount(sessionId);
-
-    const recentMessages: Message[] = [];
-    let tokenCount = 0;
-
-    for (let i = 0; i < recentMessagesQuery.length; i++) {
-      const msg = recentMessagesQuery[i];
-      const msgTokens = msg.token_count || estimateTokens(msg.content);
-
-      if (tokenCount + msgTokens > availableTokens) {
-        break;
-      }
-
-      recentMessages.unshift(msg);
-      tokenCount += msgTokens;
-    }
-
-    // Calculate how many messages are older than what we're including
-    const olderMessageCount = totalCount - recentMessages.length;
-
-    if (olderMessageCount <= 0) {
-      return {
-        messages: recentMessages.map(m => ({ role: m.role, content: m.content, timestamp: m.timestamp })),
-        totalTokens: tokenCount,
-        summarizedCount: 0,
-      };
-    }
-
-    const oldestRecentId = recentMessages[0]?.id || 0;
-    const summary = await this.getOrCreateSummary(oldestRecentId, sessionId);
-
-    const contextMessages: Array<{ role: string; content: string }> = [];
-
-    if (summary) {
-      console.log(`[Memory] Including summary for ${olderMessageCount} older messages`);
-      contextMessages.push({
-        role: 'system',
-        content: `[Previous conversation summary]\n${summary}`,
-      });
-      tokenCount += estimateTokens(summary);
-    }
-
-    contextMessages.push(
-      ...recentMessages.map(m => ({ role: m.role, content: m.content, timestamp: m.timestamp }))
-    );
-
-    return {
-      messages: contextMessages,
-      totalTokens: tokenCount,
-      summarizedCount: olderMessageCount,
-      summary,
-    };
-  }
-
   /**
    * Get smart context using rolling summaries, recent messages, and semantic retrieval.
    * This is more efficient than loading all messages into context.
@@ -1422,81 +1336,6 @@ export class MemoryManager {
     }
 
     return embedded;
-  }
-
-  private async getOrCreateSummary(beforeMessageId: number, sessionId: string = 'default'): Promise<string | undefined> {
-    if (beforeMessageId <= 1) {
-      return undefined;
-    }
-
-    const existingSummary = this.db.prepare(`
-      SELECT content FROM summaries
-      WHERE end_message_id = ? AND session_id = ?
-      ORDER BY id DESC
-      LIMIT 1
-    `).get(beforeMessageId - 1, sessionId) as { content: string } | undefined;
-
-    if (existingSummary) {
-      console.log(`[Memory] Retrieved existing summary for session ${sessionId}, messages up to ID ${beforeMessageId - 1}`);
-      return existingSummary.content;
-    }
-
-    const messagesToSummarize = this.db.prepare(`
-      SELECT id, role, content, timestamp
-      FROM messages
-      WHERE id < ? AND session_id = ?
-      ORDER BY id ASC
-    `).all(beforeMessageId, sessionId) as Message[];
-
-    if (messagesToSummarize.length === 0) {
-      return undefined;
-    }
-
-    const partialSummary = this.db.prepare(`
-      SELECT id, end_message_id, content FROM summaries
-      WHERE end_message_id < ? AND session_id = ?
-      ORDER BY end_message_id DESC
-      LIMIT 1
-    `).get(beforeMessageId, sessionId) as { id: number; end_message_id: number; content: string } | undefined;
-
-    let summary: string;
-    let startId: number;
-
-    if (partialSummary && this.summarizer) {
-      const newMessages = messagesToSummarize.filter(m => m.id > partialSummary.end_message_id);
-      if (newMessages.length === 0) {
-        return partialSummary.content;
-      }
-
-      const combinedContent = [
-        { role: 'system' as const, content: `Previous summary: ${partialSummary.content}` },
-        ...newMessages,
-      ];
-      summary = await this.summarizer(combinedContent as Message[]);
-      startId = 1;
-    } else if (this.summarizer) {
-      summary = await this.summarizer(messagesToSummarize);
-      startId = messagesToSummarize[0].id;
-    } else {
-      summary = this.createBasicSummary(messagesToSummarize);
-      startId = messagesToSummarize[0].id;
-    }
-
-    const endId = messagesToSummarize[messagesToSummarize.length - 1].id;
-    console.log(`[Memory] Created new summary for session ${sessionId}, messages ${startId}-${endId} (${messagesToSummarize.length} messages, ${estimateTokens(summary)} tokens)`);
-    this.db.prepare(`
-      INSERT INTO summaries (start_message_id, end_message_id, content, token_count, session_id)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(startId, endId, summary, estimateTokens(summary), sessionId);
-
-    // Clean up old summaries that are now superseded (keep only the 3 most recent per session)
-    this.db.prepare(`
-      DELETE FROM summaries WHERE session_id = ? AND id NOT IN (
-        SELECT id FROM summaries WHERE session_id = ? ORDER BY end_message_id DESC LIMIT 3
-      )
-    `).run(sessionId, sessionId);
-
-    return summary;
   }
 
   private createBasicSummary(messages: Message[]): string {

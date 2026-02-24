@@ -21,8 +21,11 @@ type ContentBlockParam = Anthropic.Messages.ContentBlockParam;
 type ToolResultBlockParam = Anthropic.Messages.ToolResultBlockParam;
 type TextBlockParam = Anthropic.Messages.TextBlockParam;
 
-// Thinking config (matches main agent)
-type ThinkingConfig = { type: 'enabled'; budget_tokens: number } | { type: 'disabled' };
+// Thinking config (matches main agent, plus adaptive for 4.6 models)
+type ThinkingConfig =
+  | { type: 'enabled'; budget_tokens: number }
+  | { type: 'disabled' }
+  | { type: 'adaptive' };
 
 const THINKING_CONFIGS: Record<string, { thinking: ThinkingConfig; temperature?: number }> = {
   'none':     { thinking: { type: 'disabled' } },
@@ -33,6 +36,13 @@ const THINKING_CONFIGS: Record<string, { thinking: ThinkingConfig; temperature?:
 
 const MAX_TOOL_ITERATIONS = 20;
 const MAX_CONTEXT_MESSAGES = 80; // Trim when conversation exceeds this
+
+// Tool output truncation limits (safety net — per-tool limits fire first)
+const TOOL_OUTPUT_MAX_CHARS = 30_000;
+const TOOL_OUTPUT_MAX_LINES = 2000;
+
+// Models that support adaptive thinking (skip thinking on simple queries)
+const ADAPTIVE_THINKING_MODELS = new Set(['claude-opus-4-6', 'claude-sonnet-4-6']);
 
 interface ChatEngineConfig {
   memory: MemoryManager;
@@ -223,31 +233,86 @@ export class ChatEngine {
 
       this.emitStatus({ type: 'thinking', sessionId, message: '*stretches paws* thinking...' });
 
+      // Prompt caching: wrap system prompt in array format with cache_control for Anthropic
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const systemParam: any = isAnthropic
+        ? [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }]
+        : systemPrompt;
+
+      // Determine effective thinking mode for logging
+      let effectiveThinking = 'disabled';
+      if (isAnthropic && thinkingEntry.thinking.type !== 'disabled') {
+        effectiveThinking = ADAPTIVE_THINKING_MODELS.has(model) && thinkingEntry.thinking.type === 'enabled'
+          ? 'adaptive'
+          : `budget:${(thinkingEntry.thinking as { budget_tokens: number }).budget_tokens}`;
+      }
+      console.log(`[ChatEngine] Session config — model: ${model}, thinking: ${effectiveThinking}, caching: ${isAnthropic ? 'on' : 'off'}`);
+
       // Agentic tool loop
       let response = '';
       let iterations = 0;
+      let totalInputTokens = 0;
+      let totalOutputTokens = 0;
+      let totalCacheRead = 0;
+      let totalCacheCreation = 0;
 
       while (iterations < MAX_TOOL_ITERATIONS) {
         iterations++;
+
+        // Apply cache breakpoints to last user message (Anthropic only)
+        if (isAnthropic) {
+          this.applyCacheBreakpoints(conversation);
+        }
 
         // Build request params
         const params: Anthropic.Messages.MessageCreateParams = {
           model,
           max_tokens: 16384,
-          system: systemPrompt,
+          system: systemParam,
           messages: conversation,
           tools: allTools as Anthropic.Messages.MessageCreateParams['tools'],
         };
 
         // Add thinking for Anthropic models
-        if (isAnthropic && thinkingEntry.thinking.type === 'enabled') {
-          params.thinking = thinkingEntry.thinking;
+        if (isAnthropic && thinkingEntry.thinking.type !== 'disabled') {
+          // Use adaptive thinking for 4.6 models (lets model skip thinking on simple queries)
+          if (ADAPTIVE_THINKING_MODELS.has(model) && thinkingEntry.thinking.type === 'enabled') {
+            params.thinking = { type: 'adaptive' };
+          } else {
+            params.thinking = thinkingEntry.thinking;
+          }
           params.temperature = 1; // Required when thinking is enabled
         }
 
-        const result = await client.messages.create(params, {
-          signal: abortController.signal,
-        });
+        let result: Anthropic.Messages.Message;
+        try {
+          result = await client.messages.create(params, {
+            signal: abortController.signal,
+          });
+        } finally {
+          // Clean up cache markers to keep conversation state clean
+          if (isAnthropic) {
+            this.removeCacheBreakpoints(conversation);
+          }
+        }
+
+        // Log per-turn token usage and cache stats
+        const usage = result.usage;
+        const inputTokens = usage.input_tokens || 0;
+        const outputTokens = usage.output_tokens || 0;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const cacheRead = (usage as any).cache_read_input_tokens || 0;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const cacheCreation = (usage as any).cache_creation_input_tokens || 0;
+
+        totalInputTokens += inputTokens;
+        totalOutputTokens += outputTokens;
+        totalCacheRead += cacheRead;
+        totalCacheCreation += cacheCreation;
+
+        const totalIn = inputTokens + cacheRead + cacheCreation;
+        const cacheHitPct = totalIn > 0 ? Math.round((cacheRead / totalIn) * 100) : 0;
+        console.log(`[ChatEngine] Turn ${iterations} — in: ${inputTokens}, out: ${outputTokens}, cache_read: ${cacheRead}, cache_create: ${cacheCreation}, cache_hit: ${cacheHitPct}%`);
 
         // Process response content blocks
         // Cast to generic array since API may return block types not in SDK typings
@@ -316,8 +381,8 @@ export class ChatEngine {
               message: 'prowling the web...',
             });
           } else if (blockType === 'web_search_tool_result') {
-            // Web search result — include in tool results
-            toolResults.push(rawBlock as ToolResultBlockParam);
+            // Web search result — stays in assistant content (server-side tool, not a user tool_result)
+            assistantContent.push(rawBlock as ContentBlockParam);
             this.emitStatus({
               type: 'tool_end',
               sessionId,
@@ -338,6 +403,12 @@ export class ChatEngine {
         // No tool use — we're done (end_turn)
         break;
       }
+
+      // Log completion summary
+      const totalTokens = totalInputTokens + totalOutputTokens;
+      const overallTotalIn = totalInputTokens + totalCacheRead + totalCacheCreation;
+      const overallCacheHit = overallTotalIn > 0 ? Math.round((totalCacheRead / overallTotalIn) * 100) : 0;
+      console.log(`[ChatEngine] Done — ${iterations} turn(s), ${totalTokens} total tokens (in: ${totalInputTokens}, out: ${totalOutputTokens}), cache_hit: ${overallCacheHit}%, cache_read: ${totalCacheRead}, cache_create: ${totalCacheCreation}`);
 
       this.emitStatus({ type: 'done', sessionId });
 
@@ -387,7 +458,7 @@ export class ChatEngine {
 
       return {
         response,
-        tokensUsed: 0,
+        tokensUsed: totalInputTokens + totalOutputTokens,
         wasCompacted,
         media: this.pendingMedia.length > 0 ? this.pendingMedia : undefined,
       };
@@ -439,7 +510,8 @@ export class ChatEngine {
     }
 
     try {
-      const result = await handler(input);
+      const rawResult = await handler(input);
+      const result = this.truncateToolOutput(toolName, rawResult);
       return {
         type: 'tool_result',
         tool_use_id: toolUseId,
@@ -454,6 +526,107 @@ export class ChatEngine {
         is_error: true,
       };
     }
+  }
+
+  /**
+   * Add cache_control breakpoint to the last real user message (skipping tool_result messages).
+   * This makes the conversation prefix cacheable across turns.
+   */
+  private applyCacheBreakpoints(conversation: MessageParam[]): void {
+    // Walk backwards to find the last user message with text content (not tool_result)
+    for (let i = conversation.length - 1; i >= 0; i--) {
+      const msg = conversation[i];
+      if (msg.role !== 'user') continue;
+
+      const content = msg.content;
+
+      // String content — it's a real user message
+      if (typeof content === 'string') {
+        // Convert to array format so we can add cache_control
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (msg as any).content = [{ type: 'text', text: content, cache_control: { type: 'ephemeral' } }];
+        return;
+      }
+
+      // Array content — check if it has text blocks (not just tool_result)
+      if (Array.isArray(content)) {
+        const hasText = content.some((b: ContentBlockParam) => b.type === 'text');
+        if (!hasText) continue; // tool_result-only message, keep looking
+
+        // Add cache_control to the last text block
+        for (let j = content.length - 1; j >= 0; j--) {
+          if (content[j].type === 'text') {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (content[j] as any).cache_control = { type: 'ephemeral' };
+            return;
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Remove cache_control markers from conversation after API call.
+   */
+  private removeCacheBreakpoints(conversation: MessageParam[]): void {
+    for (const msg of conversation) {
+      if (msg.role !== 'user') continue;
+
+      const content = msg.content;
+
+      // Check if we converted a string to array format
+      if (Array.isArray(content) && content.length === 1 && content[0].type === 'text') {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const block = content[0] as any;
+        if (block.cache_control) {
+          delete block.cache_control;
+          // Convert back to string format for cleanliness
+          msg.content = block.text;
+          continue;
+        }
+      }
+
+      // Array content — just remove cache_control from text blocks
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          if ((block as any).cache_control) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            delete (block as any).cache_control;
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Truncate tool output to prevent context bloat.
+   * Per-tool limits (web_fetch 10K, shell_command 50K) fire first; this is a safety net.
+   */
+  private truncateToolOutput(toolName: string, output: string): string {
+    let truncated = output;
+    let wasTruncated = false;
+
+    // Line limit
+    const lines = truncated.split('\n');
+    if (lines.length > TOOL_OUTPUT_MAX_LINES) {
+      truncated = lines.slice(0, TOOL_OUTPUT_MAX_LINES).join('\n');
+      wasTruncated = true;
+    }
+
+    // Character limit
+    if (truncated.length > TOOL_OUTPUT_MAX_CHARS) {
+      truncated = truncated.slice(0, TOOL_OUTPUT_MAX_CHARS);
+      wasTruncated = true;
+    }
+
+    if (wasTruncated) {
+      const notice = `\n\n[Output truncated — original was ${output.length.toLocaleString()} chars / ${lines.length.toLocaleString()} lines]`;
+      truncated += notice;
+      console.log(`[ChatEngine] Truncated ${toolName} output: ${output.length} chars / ${lines.length} lines → ${truncated.length} chars`);
+    }
+
+    return truncated;
   }
 
   /**
