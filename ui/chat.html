@@ -6395,18 +6395,24 @@
           sysMsg.textContent = 'Chat was cleared by admin';
           container.appendChild(sysMsg);
         } else if (data.type === 'tier_update') {
+          const tuLower = data.username.toLowerCase();
+          // Also map the display-cased username
           userMinTierMap.set(data.username, data.minTier);
           // Update tier in message data so re-renders preserve the change
           globalChatMessages.forEach(m => {
-            if (m.username === data.username) m.tier = data.tier;
+            if (m.username.toLowerCase() === tuLower) {
+              m.tier = data.tier;
+              userMinTierMap.set(m.username, data.minTier);
+            }
           });
-          // Update existing bubbles for this user
-          document.querySelectorAll('[data-chat-username="' + data.username + '"]').forEach(nameEl => {
+          // Update existing bubbles for this user (case-insensitive)
+          document.querySelectorAll('[data-chat-username]').forEach(nameEl => {
+            if (nameEl.dataset.chatUsername.toLowerCase() !== tuLower) return;
             const tierInfo = TIER_CONFIG[data.tier] || TIER_CONFIG[0];
             nameEl.className = '';
             if (data.tier > 0 && tierInfo.cssClass) {
               nameEl.className = tierInfo.cssClass;
-              if (data.tier >= 9) nameEl.setAttribute('data-text', data.username);
+              if (data.tier >= 9) nameEl.setAttribute('data-text', nameEl.dataset.chatUsername);
               else nameEl.removeAttribute('data-text');
             }
             // Update badge in same sender div
@@ -6423,13 +6429,13 @@
             }
           });
           // If it's current user, update self tier
-          if (data.username === globalChatUsername) {
+          if (globalChatUsername.toLowerCase() === tuLower) {
             globalChatSelfTier = data.tier;
             updateHeaderTierBadge();
           }
           // Update popover if it's showing for this user
-          if (adminTierPopoverEl && adminTierPopoverEl.dataset.username === data.username) {
-            updateAdminTierPopoverContent(data.username, data.tier, data.minTier);
+          if (adminTierPopoverEl && adminTierPopoverEl.dataset.username.toLowerCase() === tuLower) {
+            updateAdminTierPopoverContent(adminTierPopoverEl.dataset.username, data.tier, data.minTier);
           }
         } else if (data.type === 'username_changed') {
           const oldName = data.oldUsername;
