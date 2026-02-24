@@ -6431,6 +6431,26 @@
           if (adminTierPopoverEl && adminTierPopoverEl.dataset.username === data.username) {
             updateAdminTierPopoverContent(data.username, data.tier, data.minTier);
           }
+        } else if (data.type === 'username_changed') {
+          const oldName = data.oldUsername;
+          const newName = data.newUsername;
+          // Update cached messages
+          globalChatMessages.forEach(m => {
+            if (m.username === oldName) m.username = newName;
+          });
+          // Transfer minTier mapping
+          if (userMinTierMap.has(oldName)) {
+            userMinTierMap.set(newName, userMinTierMap.get(oldName));
+            userMinTierMap.delete(oldName);
+          }
+          // Update popover if showing for the old username
+          if (adminTierPopoverEl && adminTierPopoverEl.dataset.username === oldName) {
+            adminTierPopoverEl.dataset.username = newName;
+            const header = adminTierPopoverEl.querySelector('.atp-header');
+            if (header) header.textContent = newName;
+          }
+          // Re-render chat to reflect updated usernames
+          if (globalChatMode) renderGlobalChatMessages();
         } else if (data.type === 'counts') {
           updateChatCounts(data.online, data.inChat);
         } else if (data.type === 'error') {
