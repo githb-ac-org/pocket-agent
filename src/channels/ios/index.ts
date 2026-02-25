@@ -162,6 +162,7 @@ export class iOSChannel extends BaseChannel {
       response,
       sessionId,
       media,
+      timestamp: new Date().toISOString(),
     });
   }
 

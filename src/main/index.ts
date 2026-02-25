@@ -2513,6 +2513,7 @@ async function initializeAgent(): Promise<void> {
           prompt,
           response,
           sessionId,
+          timestamp: new Date().toISOString(),
         });
         // Push notification (reaches backgrounded/closed devices)
         iosChannel.sendPushNotifications(

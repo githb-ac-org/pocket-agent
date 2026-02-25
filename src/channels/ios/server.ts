@@ -722,6 +722,7 @@ export class iOSWebSocketServer {
         sessionId: message.sessionId,
         tokensUsed: result.tokensUsed,
         media: result.media,
+        timestamp: new Date().toISOString(),
       };
       client.ws.send(JSON.stringify(response));
     } catch (error) {

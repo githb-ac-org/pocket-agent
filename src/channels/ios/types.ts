@@ -70,6 +70,7 @@ export interface ServerResponseMessage {
   sessionId: string;
   tokensUsed?: number;
   media?: Array<{ type: string; filePath: string; mimeType: string }>;
+  timestamp: string;
 }
 
 export interface ServerPairResultMessage {
@@ -104,6 +105,7 @@ export interface ServerSyncMessage {
   sessionId: string;
   tokensUsed?: number;
   media?: Array<{ type: string; filePath: string; mimeType: string }>;
+  timestamp: string;
 }
 
 export interface ServerSchedulerMessage {
@@ -112,6 +114,7 @@ export interface ServerSchedulerMessage {
   prompt: string;
   response: string;
   sessionId: string;
+  timestamp: string;
 }
 
 export interface ServerErrorMessage {

@@ -794,6 +794,7 @@ export class iOSRelayClient {
         sessionId: message.sessionId,
         tokensUsed: result.tokensUsed,
         media: result.media,
+        timestamp: new Date().toISOString(),
       };
       this.sendToRelay(client.relayClientId, response);
     } catch (error) {
