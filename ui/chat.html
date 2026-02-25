@@ -2652,6 +2652,115 @@
       height: 14px;
     }
 
+    /* Reaction picker — appears on hover beside bubble */
+    .gchat-react-picker {
+      display: flex;
+      gap: 2px;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+
+    .global-chat-wrapper:hover .gchat-react-picker {
+      opacity: 1;
+    }
+
+    .gchat-react-picker button {
+      width: 26px;
+      height: 26px;
+      border: none;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.08);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      font-size: 13px;
+      transition: background 0.15s ease, transform 0.15s ease;
+      flex-shrink: 0;
+    }
+
+    .gchat-react-picker button:hover {
+      background: rgba(255,255,255,0.18);
+      transform: scale(1.15);
+    }
+
+    /* Reaction display below bubble */
+    .gchat-reactions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      padding: 4px 0 0 0;
+    }
+
+    .gchat-reaction {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.05);
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--text-secondary);
+      transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+    }
+
+    .gchat-reaction:hover {
+      background: rgba(255,255,255,0.1);
+      border-color: rgba(255,255,255,0.2);
+    }
+
+    .gchat-reaction:active {
+      transform: scale(0.95);
+    }
+
+    .gchat-reaction.active {
+      background: rgba(168, 85, 247, 0.15);
+      border-color: rgba(168, 85, 247, 0.4);
+      color: #c084fc;
+    }
+
+    .gchat-reaction .reaction-emoji {
+      font-size: 14px;
+      line-height: 1;
+    }
+
+    .gchat-reaction .reaction-count {
+      font-size: 11px;
+      font-weight: 600;
+      min-width: 6px;
+      text-align: center;
+    }
+
+    .gchat-reaction {
+      position: relative;
+    }
+
+    .gchat-reaction-tooltip {
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 5px 10px;
+      font-size: 11px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+      z-index: 10;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+
+    .gchat-reaction:hover .gchat-reaction-tooltip {
+      opacity: 1;
+    }
+
     /* Reply banner above input */
     .gchat-reply-banner {
       display: flex;
@@ -4022,6 +4131,7 @@
     ];
     const CHAT_WS_URL = 'wss://pocket-agent-chat-production.up.railway.app';
     const CHAT_API_URL = 'https://pocket-agent-chat-production.up.railway.app';
+    const GCHAT_REACTIONS = ['🔥', '👍', '😂', '💀'];
 
     // Allowed file types
     const ALLOWED_EXTENSIONS = new Set([
@@ -6215,6 +6325,68 @@
       container.scrollTop = container.scrollHeight;
     }
 
+    function gchatToggleReaction(msg, emoji, wrapper) {
+      if (!msg.reactions) msg.reactions = {};
+
+      // Find existing reaction by this user
+      let existingEmoji = null;
+      for (const [e, users] of Object.entries(msg.reactions)) {
+        if (users && users.includes(globalChatUsername)) {
+          existingEmoji = e;
+          break;
+        }
+      }
+
+      if (existingEmoji === emoji) {
+        // Same emoji — remove it
+        const users = msg.reactions[emoji];
+        users.splice(users.indexOf(globalChatUsername), 1);
+        if (users.length === 0) delete msg.reactions[emoji];
+      } else {
+        // Remove old reaction if switching
+        if (existingEmoji && msg.reactions[existingEmoji]) {
+          const oldUsers = msg.reactions[existingEmoji];
+          oldUsers.splice(oldUsers.indexOf(globalChatUsername), 1);
+          if (oldUsers.length === 0) delete msg.reactions[existingEmoji];
+        }
+        // Add new reaction
+        if (!msg.reactions[emoji]) msg.reactions[emoji] = [];
+        msg.reactions[emoji].push(globalChatUsername);
+      }
+
+      gchatUpdateReactionDisplay(msg, wrapper);
+      sendChatWs({ type: 'reaction', messageTs: msg.ts, emoji });
+    }
+
+    function gchatUpdateReactionDisplay(msg, wrapper) {
+      let container = wrapper.querySelector('.gchat-reactions');
+      if (!container) return;
+
+      container.innerHTML = '';
+      const reactions = msg.reactions || {};
+      let hasAny = false;
+
+      for (const [emoji, users] of Object.entries(reactions)) {
+        if (!users || users.length === 0) continue;
+        hasAny = true;
+        const btn = document.createElement('button');
+        btn.className = 'gchat-reaction';
+        if (users.includes(globalChatUsername)) btn.classList.add('active');
+        btn.innerHTML = '<span class="reaction-emoji">' + emoji + '</span><span class="reaction-count">' + users.length + '</span>';
+        const tooltip = document.createElement('div');
+        tooltip.className = 'gchat-reaction-tooltip';
+        tooltip.textContent = users.join(', ');
+        btn.appendChild(tooltip);
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          gchatToggleReaction(msg, emoji, wrapper);
+        };
+        container.appendChild(btn);
+      }
+
+      container.style.display = hasAny ? '' : 'none';
+    }
+
     function createGlobalChatBubble(msg) {
       const isSelf = msg.username === globalChatUsername;
       const tier = msg.tier || 0;
@@ -6224,6 +6396,7 @@
       // Wrapper holds sender label above + bubble below
       const wrapper = document.createElement('div');
       wrapper.className = `global-chat-wrapper ${isSelf ? 'self' : 'other'}`;
+      wrapper.dataset.messageTs = msg.ts;
 
       // Sender label (outside bubble)
       const sender = document.createElement('div');
@@ -6301,7 +6474,28 @@
         bubbleRow.appendChild(replyBtn);
       }
 
+      // Reaction picker (appears on hover)
+      const reactPicker = document.createElement('div');
+      reactPicker.className = 'gchat-react-picker';
+      GCHAT_REACTIONS.forEach(emoji => {
+        const btn = document.createElement('button');
+        btn.textContent = emoji;
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          gchatToggleReaction(msg, emoji, wrapper);
+        };
+        reactPicker.appendChild(btn);
+      });
+      bubbleRow.appendChild(reactPicker);
+
       wrapper.appendChild(bubbleRow);
+
+      // Reaction display (below bubble, outside)
+      const reactionsDiv = document.createElement('div');
+      reactionsDiv.className = 'gchat-reactions';
+      reactionsDiv.style.display = 'none';
+      wrapper.appendChild(reactionsDiv);
+      gchatUpdateReactionDisplay(msg, wrapper);
 
       return wrapper;
     }
@@ -6369,12 +6563,13 @@
               admin: !!m.admin,
               tier: m.tier || 0,
               replyTo: m.replyTo || undefined,
+              reactions: m.reactions || {},
             };
           });
           if (globalChatMode) renderGlobalChatMessages();
         } else if (data.type === 'message') {
           if (data.minTier !== undefined) userMinTierMap.set(data.username, data.minTier);
-          addGlobalChatMessage({ username: data.username, text: data.text, ts: data.ts, admin: !!data.admin, tier: data.tier || 0, replyTo: data.replyTo || undefined });
+          addGlobalChatMessage({ username: data.username, text: data.text, ts: data.ts, admin: !!data.admin, tier: data.tier || 0, replyTo: data.replyTo || undefined, reactions: data.reactions || {} });
           if (globalChatUsername && data.username !== globalChatUsername) {
             const isReplyToMe = data.replyTo?.username === globalChatUsername;
             const isMentionOfMe = data.text && data.text.includes('@' + globalChatUsername);
@@ -6386,10 +6581,34 @@
             chatUnreadCount++;
             updateUnreadBadge();
           }
+        } else if (data.type === 'reaction') {
+          // Handle reaction updates from server
+          const rMsg = globalChatMessages.find(m => m.ts === data.messageTs);
+          if (rMsg) {
+            if (!rMsg.reactions) rMsg.reactions = {};
+            if (!rMsg.reactions[data.emoji]) rMsg.reactions[data.emoji] = [];
+
+            const rUsers = rMsg.reactions[data.emoji];
+            if (data.action === 'add') {
+              if (!rUsers.includes(data.username)) rUsers.push(data.username);
+            } else if (data.action === 'remove') {
+              rMsg.reactions[data.emoji] = rUsers.filter(u => u !== data.username);
+              if (rMsg.reactions[data.emoji].length === 0) delete rMsg.reactions[data.emoji];
+            }
+
+            // Update DOM
+            const rWrapper = document.querySelector('[data-message-ts="' + data.messageTs + '"]');
+            if (rWrapper) gchatUpdateReactionDisplay(rMsg, rWrapper);
+
+            // Play notification if someone reacted to our message
+            if (data.action === 'add' && data.username !== globalChatUsername && rMsg.username === globalChatUsername) {
+              playReplySound();
+            }
+          }
         } else if (data.type === 'message_ack') {
           // Server confirmed our message was saved — add it to chat
           if (data.minTier !== undefined) userMinTierMap.set(data.username, data.minTier);
-          addGlobalChatMessage({ username: data.username, text: data.text, ts: data.ts, admin: !!data.admin, tier: data.tier || 0, replyTo: data.replyTo || undefined });
+          addGlobalChatMessage({ username: data.username, text: data.text, ts: data.ts, admin: !!data.admin, tier: data.tier || 0, replyTo: data.replyTo || undefined, reactions: data.reactions || {} });
         } else if (data.type === 'chat_cleared') {
           globalChatMessages = [];
           const container = document.getElementById('global-chat-messages');
