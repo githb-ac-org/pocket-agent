@@ -4691,14 +4691,8 @@
       const emptyState = messagesDiv.querySelector('.empty-state');
       if (emptyState) emptyState.remove();
 
-      // Add the user prompt with scheduled badge
-      if (data.prompt) {
-        const promptEl = addMessage('user', data.prompt);
-        if (data.jobName) {
-          promptEl.classList.add('scheduled');
-          promptEl.dataset.badge = data.jobName;
-        }
-      }
+      // Routine prompts are hidden from the UI - the user only sees the agent's response
+      // The prompt is still processed by the agent and saved to the database for history
 
       // Add the agent's response with scheduled badge
       const msgEl = addMessage('assistant', data.response);
@@ -4877,6 +4871,11 @@
             if (msgDate !== lastDate) {
               addTimestamp(msgDate);
               lastDate = msgDate;
+            }
+
+            // Hide routine prompts — only show the agent's response
+            if (msg.role === 'user' && msg.metadata?.source === 'scheduler') {
+              continue;
             }
 
             // Strip workflow content from user messages — show badge + user text only

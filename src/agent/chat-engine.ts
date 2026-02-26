@@ -201,15 +201,20 @@ export class ChatEngine {
       }
       const conversation = this.conversationsBySession.get(sessionId)!;
 
-      // Build user message content
-      const userContent = this.buildUserContent(userMessage, images);
+      // Build user message content with inline timestamp so the model always
+      // sees the current time adjacent to the query (not just in the system prompt,
+      // which can be overlooked in long conversations).
+      const now = new Date();
+      const timeTag = `[${now.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}]`;
+      const timestampedMessage = `${timeTag} ${userMessage}`;
+      const userContent = this.buildUserContent(timestampedMessage, images);
       conversation.push({ role: 'user', content: userContent });
 
       // Compact conversation if too long (uses smart context with rolling summaries)
       const wasCompacted = await this.compactConversation(sessionId, userMessage);
 
-      // Build system prompt (pass sessionId for temporal context)
-      const systemPrompt = this.buildSystemPrompt(sessionId);
+      // Build system prompt — split into static (cacheable) and dynamic (fresh per-turn)
+      const { staticPrompt, dynamicPrompt } = this.buildSystemPrompt(sessionId);
 
       // Get model
       const model = SettingsManager.get('agent.model') || 'claude-opus-4-6';
@@ -233,11 +238,15 @@ export class ChatEngine {
 
       this.emitStatus({ type: 'thinking', sessionId, message: '*stretches paws* thinking...' });
 
-      // Prompt caching: wrap system prompt in array format with cache_control for Anthropic
+      // Prompt caching: static block is cached, dynamic block (time, facts, soul) is never cached.
+      // This prevents stale time from being served from the ~5min ephemeral cache.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const systemParam: any = isAnthropic
-        ? [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }]
-        : systemPrompt;
+        ? [
+            { type: 'text', text: staticPrompt, cache_control: { type: 'ephemeral' } },
+            { type: 'text', text: dynamicPrompt },
+          ]
+        : `${staticPrompt}\n\n${dynamicPrompt}`;
 
       // Determine effective thinking mode for logging
       let effectiveThinking = 'disabled';
@@ -659,55 +668,61 @@ export class ChatEngine {
   }
 
   /**
-   * Build system prompt from identity, instructions, profile, facts, soul, temporal.
+   * Build system prompt split into static (cacheable) and dynamic (per-turn) parts.
+   *
+   * Static: identity, instructions, profile, capabilities — rarely change.
+   * Dynamic: temporal, facts, soul, daily logs — change every turn.
+   *
+   * Prompt caching caches the system prompt for ~5 minutes. If temporal context
+   * is inside the cached block, the model sees stale time in long conversations.
+   * Splitting ensures the model always gets fresh dynamic context.
    */
-  private buildSystemPrompt(sessionId?: string): string {
-    const parts: string[] = [];
+  private buildSystemPrompt(sessionId?: string): { staticPrompt: string; dynamicPrompt: string } {
+    // === Static context (cached) ===
+    const staticParts: string[] = [];
 
-    // Identity
     const identity = loadIdentity();
     if (identity) {
-      parts.push(identity);
+      staticParts.push(identity);
     }
 
-    // Instructions
     const instructions = loadInstructions();
     if (instructions) {
-      parts.push(instructions);
+      staticParts.push(instructions);
     }
 
-    // User profile
     const profile = SettingsManager.getFormattedProfile();
     if (profile) {
-      parts.push(profile);
+      staticParts.push(profile);
     }
 
-    // Temporal context (with last message awareness)
-    const lastUserMsg = sessionId ? this.getLastUserMessageTimestamp(sessionId) : undefined;
-    parts.push(this.buildTemporalContext(lastUserMsg));
+    staticParts.push(this.buildCapabilitiesPrompt());
 
-    // Facts
+    // === Dynamic context (never cached) ===
+    const dynamicParts: string[] = [];
+
+    const lastUserMsg = sessionId ? this.getLastUserMessageTimestamp(sessionId) : undefined;
+    dynamicParts.push(this.buildTemporalContext(lastUserMsg));
+
     const facts = this.memory.getFactsForContext();
     if (facts) {
-      parts.push(facts);
+      dynamicParts.push(facts);
     }
 
-    // Soul
     const soul = this.memory.getSoulContext();
     if (soul) {
-      parts.push(soul);
+      dynamicParts.push(soul);
     }
 
-    // Daily logs
     const dailyLogs = this.memory.getDailyLogsContext(3);
     if (dailyLogs) {
-      parts.push(dailyLogs);
+      dynamicParts.push(dailyLogs);
     }
 
-    // Capabilities (simplified for chat mode)
-    parts.push(this.buildCapabilitiesPrompt());
-
-    return parts.join('\n\n');
+    return {
+      staticPrompt: staticParts.join('\n\n'),
+      dynamicPrompt: dynamicParts.join('\n\n'),
+    };
   }
 
   private getLastUserMessageTimestamp(sessionId: string): string | undefined {

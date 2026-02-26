@@ -89,8 +89,10 @@ export class CronScheduler {
     this.dbPath = dbPath || null;
 
     // Open persistent DB connection for reminder checks (avoids creating new connection every 30s)
+    // WAL mode allows this connection to see rows inserted by the tool handler's separate connection
     if (this.dbPath) {
       this.db = new Database(this.dbPath);
+      this.db.pragma('journal_mode = WAL');
     }
 
     await this.loadJobsFromDatabase();

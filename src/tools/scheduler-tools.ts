@@ -283,6 +283,7 @@ export async function handleCreateRoutineTool(input: unknown): Promise<string> {
     }
 
     const db = new Database(dbPath);
+    db.pragma('journal_mode = WAL');
 
     // Ensure table has the new columns
     try {
@@ -441,6 +442,7 @@ export async function handleCreateReminderTool(input: unknown): Promise<string> 
     }
 
     const db = new Database(dbPath);
+    db.pragma('journal_mode = WAL');
 
     // Ensure table has the new columns (including job_type)
     try {

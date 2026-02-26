@@ -38,7 +38,9 @@ function getDb(): Database.Database | null {
     if (!fs.existsSync(getDbPath())) {
       return null;
     }
-    return new Database(getDbPath());
+    const db = new Database(getDbPath());
+    db.pragma('journal_mode = WAL');
+    return db;
   } catch {
     return null;
   }

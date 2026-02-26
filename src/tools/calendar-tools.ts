@@ -46,6 +46,7 @@ function getDb(): Database.Database | null {
   }
 
   sharedDb = new Database(dbPath);
+  sharedDb.pragma('journal_mode = WAL');
   ensureTable(sharedDb);
   dbInitialized = true;
   return sharedDb;
