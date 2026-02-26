@@ -4105,6 +4105,8 @@
     let globalChatMessages = [];
     let chatWs = null;
     let chatWsReconnectTimer = null;
+    let chatWsReconnectDelay = 1000; // start at 1s, exponential backoff
+    const CHAT_WS_MAX_RECONNECT_DELAY = 30000;
     let chatAdminKey = '';
     let chatIsAdmin = false;
     let globalChatSelfTier = 0;
@@ -6519,6 +6521,7 @@
       chatWs = new WebSocket(CHAT_WS_URL);
 
       chatWs.onopen = () => {
+        chatWsReconnectDelay = 1000; // reset backoff on successful connect
         const dot = document.getElementById('chat-status-dot');
         if (dot) dot.classList.add('connected');
         const joinPayload = { type: 'join', username: globalChatUsername };
@@ -6553,6 +6556,10 @@
             showTierToast(info.badge + ' You reached ' + info.name + '!');
           }
         } else if (data.type === 'history') {
+          // Track latest known timestamp so we can count missed messages on reconnect
+          const prevLatestTs = globalChatMessages.length > 0
+            ? globalChatMessages[globalChatMessages.length - 1].ts
+            : 0;
           globalChatMessages = (data.messages || []).map(m => {
             if (m.minTier !== undefined) userMinTierMap.set(m.username, m.minTier);
             return {
@@ -6565,7 +6572,18 @@
               reactions: m.reactions || {},
             };
           });
-          if (globalChatMode) renderGlobalChatMessages();
+          if (globalChatMode) {
+            renderGlobalChatMessages();
+          } else if (prevLatestTs > 0) {
+            // Reconnected while not viewing chat — count new messages as unread
+            const missed = globalChatMessages.filter(
+              m => m.ts > prevLatestTs && m.username !== globalChatUsername
+            ).length;
+            if (missed > 0) {
+              chatUnreadCount += missed;
+              updateUnreadBadge();
+            }
+          }
         } else if (data.type === 'message') {
           if (data.minTier !== undefined) userMinTierMap.set(data.username, data.minTier);
           addGlobalChatMessage({ username: data.username, text: data.text, ts: data.ts, admin: !!data.admin, tier: data.tier || 0, replyTo: data.replyTo || undefined, reactions: data.reactions || {} });
@@ -6704,16 +6722,23 @@
           showChatToast('username reserved — check admin key in settings');
           return;
         }
-        chatWsReconnectTimer = setTimeout(connectChatWs, 3000);
+        // Exponential backoff with jitter
+        const jitter = chatWsReconnectDelay * 0.2 * (Math.random() - 0.5); // ±10%
+        chatWsReconnectTimer = setTimeout(connectChatWs, chatWsReconnectDelay + jitter);
+        chatWsReconnectDelay = Math.min(chatWsReconnectDelay * 2, CHAT_WS_MAX_RECONNECT_DELAY);
       };
 
-      chatWs.onerror = () => {};
+      chatWs.onerror = (err) => {
+        console.warn('[Chat WS] Error:', err.type || err);
+      };
     }
 
     function sendChatWs(data) {
       if (chatWs && chatWs.readyState === WebSocket.OPEN) {
         chatWs.send(JSON.stringify(data));
+        return true;
       }
+      return false;
     }
 
     function enterChatActive() {
@@ -6791,6 +6816,12 @@
 
       // Capture reply context before clearing
       const replyTo = gchatReplyTo ? { username: gchatReplyTo.username, text: gchatTruncate(gchatReplyTo.text, 200) } : undefined;
+
+      // Check connection before clearing input
+      if (!chatWs || chatWs.readyState !== WebSocket.OPEN) {
+        showChatToast('chat is offline — reconnecting...');
+        return;
+      }
 
       // Don't optimistically add — wait for server echo so all users see the same state
       input.value = '';
@@ -7118,7 +7149,6 @@
 
     async function toggleGlobalChat() {
       globalChatMode = !globalChatMode;
-      const chatToggle = document.getElementById('chat-toggle-btn');
       const tabsCont = document.getElementById('tabs-container');
       const chatHeader = document.getElementById('global-chat-header');
       const messagesEl = document.getElementById('messages');
@@ -7129,8 +7159,7 @@
       const statsEl = document.getElementById('stats');
       const chatOnlineStats = document.getElementById('chat-online-stats');
       const chatUsernameBadge = document.getElementById('chat-username-badge');
-      const searchArea = document.getElementById('search-area');
-      const workflowsArea = document.getElementById('workflows-area');
+      const toolbarRow = document.getElementById('toolbar-row');
       const bgTasksArea = document.getElementById('background-tasks-area');
       const attachBtn = document.querySelector('.attach-btn');
       const workflowBadge = document.getElementById('workflow-badge-container');
@@ -7155,17 +7184,13 @@
         statsEl.style.display = 'none';
         chatUsernameBadge.style.display = '';
         chatOnlineStats.style.display = '';
-        document.getElementById('mode-toggle-area').style.display = 'none';
-        searchArea.style.display = 'none';
-        workflowsArea.style.display = 'none';
-        bgTasksArea.style.display = 'none';
+        toolbarRow.style.display = 'none';
         if (attachBtn) attachBtn.style.display = 'none';
         if (workflowBadge) workflowBadge.style.display = 'none';
         if (scrollTopBtn) scrollTopBtn.style.display = 'none';
         if (scrollBottomBtn) scrollBottomBtn.style.display = 'none';
         document.getElementById('gchat-scroll-top-btn').style.display = '';
         document.getElementById('gchat-scroll-bottom-btn').style.display = '';
-        chatToggle.classList.add('active');
         input.placeholder = 'say something...';
 
         // Show admin gear if admin
@@ -7192,9 +7217,7 @@
         statsEl.style.display = '';
         chatUsernameBadge.style.display = 'none';
         chatOnlineStats.style.display = 'none';
-        document.getElementById('mode-toggle-area').style.display = '';
-        searchArea.style.display = '';
-        workflowsArea.style.display = '';
+        toolbarRow.style.display = '';
         // Only show bg tasks area if there are active tasks
         if (getBackgroundTaskCount(currentSessionId) > 0) {
           bgTasksArea.style.display = '';
@@ -7207,7 +7230,6 @@
         document.getElementById('gchat-scroll-bottom-btn').style.display = 'none';
         gchatScrollTopBtn.classList.remove('visible');
         gchatScrollBottomBtn.classList.remove('visible');
-        chatToggle.classList.remove('active');
         input.placeholder = "what's on your mind? \u{1F431}";
       }
     }

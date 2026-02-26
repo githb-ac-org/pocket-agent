@@ -19,6 +19,9 @@ import {
   iOSAppInfoHandler,
   iOSModeGetHandler,
   iOSModeSwitchHandler,
+  iOSCalendarListHandler, iOSCalendarAddHandler, iOSCalendarDeleteHandler, iOSCalendarUpcomingHandler,
+  iOSTasksListHandler, iOSTasksAddHandler, iOSTasksCompleteHandler, iOSTasksDeleteHandler, iOSTasksDueHandler,
+  iOSChatInfoHandler,
 } from './types';
 import { SettingsManager } from '../../settings';
 
@@ -112,6 +115,16 @@ export class iOSChannel extends BaseChannel {
   setSkinHandler(handler: (skinId: string) => void): void { this.backend.setSkinHandler(handler); }
   setModeGetHandler(handler: iOSModeGetHandler): void { this.backend.setModeGetHandler(handler); }
   setModeSwitchHandler(handler: iOSModeSwitchHandler): void { this.backend.setModeSwitchHandler(handler); }
+  setCalendarListHandler(handler: iOSCalendarListHandler): void { this.backend.setCalendarListHandler(handler); }
+  setCalendarAddHandler(handler: iOSCalendarAddHandler): void { this.backend.setCalendarAddHandler(handler); }
+  setCalendarDeleteHandler(handler: iOSCalendarDeleteHandler): void { this.backend.setCalendarDeleteHandler(handler); }
+  setCalendarUpcomingHandler(handler: iOSCalendarUpcomingHandler): void { this.backend.setCalendarUpcomingHandler(handler); }
+  setTasksListHandler(handler: iOSTasksListHandler): void { this.backend.setTasksListHandler(handler); }
+  setTasksAddHandler(handler: iOSTasksAddHandler): void { this.backend.setTasksAddHandler(handler); }
+  setTasksCompleteHandler(handler: iOSTasksCompleteHandler): void { this.backend.setTasksCompleteHandler(handler); }
+  setTasksDeleteHandler(handler: iOSTasksDeleteHandler): void { this.backend.setTasksDeleteHandler(handler); }
+  setTasksDueHandler(handler: iOSTasksDueHandler): void { this.backend.setTasksDueHandler(handler); }
+  setChatInfoHandler(handler: iOSChatInfoHandler): void { this.backend.setChatInfoHandler(handler); }
 
   getPairingCode(): string {
     return this.backend.getActivePairingCode();

@@ -17,6 +17,8 @@ import { loadInstructions, saveInstructions, getInstructionsPath, DEFAULT_INSTRU
 import { DEFAULT_COMMANDS } from '../config/commands';
 import { loadWorkflowCommands } from '../config/commands-loader';
 import { closeTaskDb } from '../tools';
+import { handleCalendarListTool, handleCalendarAddTool, handleCalendarDeleteTool, handleCalendarUpcomingTool } from '../tools/calendar-tools';
+import { handleTaskListTool, handleTaskAddTool, handleTaskCompleteTool, handleTaskDeleteTool, handleTaskDueTool } from '../tools/task-tools';
 import { getBrowserManager } from '../browser';
 import { isMacOS, getPermissionsStatus, openPermissionSettings } from '../permissions';
 import type { PermissionType } from '../permissions';
@@ -1496,10 +1498,25 @@ function setupIPC(): void {
           iosChannel.setSoulHandler(() => memory?.getAllSoulAspects() || []);
           iosChannel.setSoulDeleteHandler((id) => { memory?.deleteSoulAspectById(id); return true; });
           iosChannel.setFactsGraphHandler(async () => memory?.getFactsGraphData() || { nodes: [] as never[], links: [] as never[] });
-          iosChannel.setCustomizeGetHandler(() => ({ identity: loadIdentity(), instructions: loadInstructions() }));
-          iosChannel.setCustomizeSaveHandler((identity, instructions) => {
+          iosChannel.setCustomizeGetHandler(() => ({
+            identity: loadIdentity(), instructions: loadInstructions(),
+            profile: {
+              name: SettingsManager.get('profile.name') || '', occupation: SettingsManager.get('profile.occupation') || '',
+              location: SettingsManager.get('profile.location') || '', timezone: SettingsManager.get('profile.timezone') || '',
+              birthday: SettingsManager.get('profile.birthday') || '', custom: SettingsManager.get('profile.custom') || '',
+            },
+          }));
+          iosChannel.setCustomizeSaveHandler((identity, instructions, profile) => {
             if (identity !== undefined) saveIdentity(identity);
             if (instructions !== undefined) saveInstructions(instructions);
+            if (profile) {
+              if (profile.name !== undefined) SettingsManager.set('profile.name', profile.name);
+              if (profile.occupation !== undefined) SettingsManager.set('profile.occupation', profile.occupation);
+              if (profile.location !== undefined) SettingsManager.set('profile.location', profile.location);
+              if (profile.timezone !== undefined) SettingsManager.set('profile.timezone', profile.timezone);
+              if (profile.birthday !== undefined) SettingsManager.set('profile.birthday', profile.birthday);
+              if (profile.custom !== undefined) SettingsManager.set('profile.custom', profile.custom);
+            }
           });
           iosChannel.setRoutinesListHandler(() => scheduler?.getAllJobs() || []);
           iosChannel.setRoutinesCreateHandler(async (name, schedule, prompt, channel, sessionId) => {
@@ -1545,6 +1562,47 @@ function setupIPC(): void {
             }
             return { mode, locked: false };
           });
+          // Calendar & Tasks handlers
+          iosChannel.setCalendarListHandler(async () => {
+            const result = JSON.parse(await handleCalendarListTool({}));
+            return result.events || [];
+          });
+          iosChannel.setCalendarAddHandler(async (title, startTime, endTime, location, description, reminderMinutes) => {
+            const result = JSON.parse(await handleCalendarAddTool({ title, start_time: startTime, end_time: endTime, location, description, reminder_minutes: reminderMinutes }));
+            return result.success ? result : null;
+          });
+          iosChannel.setCalendarDeleteHandler(async (id) => {
+            const result = JSON.parse(await handleCalendarDeleteTool({ id }));
+            return result.success || false;
+          });
+          iosChannel.setCalendarUpcomingHandler(async (hours) => {
+            const result = JSON.parse(await handleCalendarUpcomingTool({ hours }));
+            return result.events || [];
+          });
+          iosChannel.setTasksListHandler(async (status) => {
+            const result = JSON.parse(await handleTaskListTool({ status: status || 'all' }));
+            return result.tasks || [];
+          });
+          iosChannel.setTasksAddHandler(async (title, dueDate, priority, description, reminderMinutes) => {
+            const result = JSON.parse(await handleTaskAddTool({ title, due: dueDate, priority, description, reminder_minutes: reminderMinutes }));
+            return result.success ? result : null;
+          });
+          iosChannel.setTasksCompleteHandler(async (id) => {
+            const result = JSON.parse(await handleTaskCompleteTool({ id }));
+            return result.success || false;
+          });
+          iosChannel.setTasksDeleteHandler(async (id) => {
+            const result = JSON.parse(await handleTaskDeleteTool({ id }));
+            return result.success || false;
+          });
+          iosChannel.setTasksDueHandler(async (hours) => {
+            const result = JSON.parse(await handleTaskDueTool({ hours }));
+            return [...(result.overdue || []), ...(result.upcoming || [])];
+          });
+          iosChannel.setChatInfoHandler(() => ({
+            username: SettingsManager.get('chat.username') || '',
+            adminKey: SettingsManager.get('chat.adminKey') || '',
+          }));
           await iosChannel.start();
           console.log(`[Main] iOS channel started (${iosChannel.getMode()} mode)`);
         }
@@ -2414,10 +2472,25 @@ async function initializeAgent(): Promise<void> {
         iosChannel.setSoulHandler(() => memory?.getAllSoulAspects() || []);
         iosChannel.setSoulDeleteHandler((id) => { memory?.deleteSoulAspectById(id); return true; });
         iosChannel.setFactsGraphHandler(async () => memory?.getFactsGraphData() || { nodes: [] as never[], links: [] as never[] });
-        iosChannel.setCustomizeGetHandler(() => ({ identity: loadIdentity(), instructions: loadInstructions() }));
-        iosChannel.setCustomizeSaveHandler((identity, instructions) => {
+        iosChannel.setCustomizeGetHandler(() => ({
+          identity: loadIdentity(), instructions: loadInstructions(),
+          profile: {
+            name: SettingsManager.get('profile.name') || '', occupation: SettingsManager.get('profile.occupation') || '',
+            location: SettingsManager.get('profile.location') || '', timezone: SettingsManager.get('profile.timezone') || '',
+            birthday: SettingsManager.get('profile.birthday') || '', custom: SettingsManager.get('profile.custom') || '',
+          },
+        }));
+        iosChannel.setCustomizeSaveHandler((identity, instructions, profile) => {
           if (identity !== undefined) saveIdentity(identity);
           if (instructions !== undefined) saveInstructions(instructions);
+          if (profile) {
+            if (profile.name !== undefined) SettingsManager.set('profile.name', profile.name);
+            if (profile.occupation !== undefined) SettingsManager.set('profile.occupation', profile.occupation);
+            if (profile.location !== undefined) SettingsManager.set('profile.location', profile.location);
+            if (profile.timezone !== undefined) SettingsManager.set('profile.timezone', profile.timezone);
+            if (profile.birthday !== undefined) SettingsManager.set('profile.birthday', profile.birthday);
+            if (profile.custom !== undefined) SettingsManager.set('profile.custom', profile.custom);
+          }
         });
         iosChannel.setRoutinesListHandler(() => scheduler?.getAllJobs() || []);
         iosChannel.setRoutinesCreateHandler(async (name, schedule, prompt, channel, sessionId) => {
@@ -2462,6 +2535,47 @@ async function initializeAgent(): Promise<void> {
           }
           return { mode, locked: false };
         });
+        // Calendar & Tasks handlers
+        iosChannel.setCalendarListHandler(async () => {
+          const result = JSON.parse(await handleCalendarListTool({}));
+          return result.events || [];
+        });
+        iosChannel.setCalendarAddHandler(async (title, startTime, endTime, location, description, reminderMinutes) => {
+          const result = JSON.parse(await handleCalendarAddTool({ title, start_time: startTime, end_time: endTime, location, description, reminder_minutes: reminderMinutes }));
+          return result.success ? result : null;
+        });
+        iosChannel.setCalendarDeleteHandler(async (id) => {
+          const result = JSON.parse(await handleCalendarDeleteTool({ id }));
+          return result.success || false;
+        });
+        iosChannel.setCalendarUpcomingHandler(async (hours) => {
+          const result = JSON.parse(await handleCalendarUpcomingTool({ hours }));
+          return result.events || [];
+        });
+        iosChannel.setTasksListHandler(async (status) => {
+          const result = JSON.parse(await handleTaskListTool({ status: status || 'all' }));
+          return result.tasks || [];
+        });
+        iosChannel.setTasksAddHandler(async (title, dueDate, priority, description, reminderMinutes) => {
+          const result = JSON.parse(await handleTaskAddTool({ title, due: dueDate, priority, description, reminder_minutes: reminderMinutes }));
+          return result.success ? result : null;
+        });
+        iosChannel.setTasksCompleteHandler(async (id) => {
+          const result = JSON.parse(await handleTaskCompleteTool({ id }));
+          return result.success || false;
+        });
+        iosChannel.setTasksDeleteHandler(async (id) => {
+          const result = JSON.parse(await handleTaskDeleteTool({ id }));
+          return result.success || false;
+        });
+        iosChannel.setTasksDueHandler(async (hours) => {
+          const result = JSON.parse(await handleTaskDueTool({ hours }));
+          return [...(result.overdue || []), ...(result.upcoming || [])];
+        });
+        iosChannel.setChatInfoHandler(() => ({
+          username: SettingsManager.get('chat.username') || '',
+          adminKey: SettingsManager.get('chat.adminKey') || '',
+        }));
 
         await iosChannel.start();
         const mode = iosChannel.getMode();

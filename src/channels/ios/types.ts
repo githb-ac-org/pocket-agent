@@ -12,7 +12,10 @@ export interface ClientMessage {
     | 'app:info'
     | 'skin:set'
     | 'mode:get'
-    | 'mode:switch';
+    | 'mode:switch'
+    | 'calendar:list' | 'calendar:add' | 'calendar:delete' | 'calendar:upcoming'
+    | 'tasks:list' | 'tasks:add' | 'tasks:complete' | 'tasks:delete' | 'tasks:due'
+    | 'chat:info';
   id?: string;
 }
 
@@ -203,9 +206,9 @@ export type iOSSoulDeleteHandler = (id: number) => boolean;
 
 export type iOSFactsGraphHandler = () => Promise<{ nodes: Array<{ id: number; subject: string; category: string; content: string; group: number }>; links: Array<{ source: number; target: number; type: string; strength: number }> }>;
 
-export type iOSCustomizeGetHandler = () => { identity: string; instructions: string };
+export type iOSCustomizeGetHandler = () => { identity: string; instructions: string; profile?: { name: string; occupation: string; location: string; timezone: string; birthday: string; custom: string } };
 
-export type iOSCustomizeSaveHandler = (identity?: string, instructions?: string) => void;
+export type iOSCustomizeSaveHandler = (identity?: string, instructions?: string, profile?: { name?: string; occupation?: string; location?: string; timezone?: string; birthday?: string; custom?: string }) => void;
 
 export type iOSRoutinesListHandler = () => Array<{ id: number; name: string; schedule_type?: string; schedule: string | null; run_at?: string | null; interval_ms?: number | null; prompt: string; channel: string; enabled: boolean; delete_after_run?: boolean; context_messages?: number; next_run_at?: string | null; session_id?: string | null; job_type?: string }>;
 
@@ -222,6 +225,42 @@ export type iOSAppInfoHandler = () => { version: string; name: string };
 export type iOSModeGetHandler = (sessionId: string) => { mode: string; locked: boolean };
 
 export type iOSModeSwitchHandler = (sessionId: string, mode: string) => { mode: string; locked: boolean; error?: string };
+
+// === Calendar & Tasks handler types ===
+
+export interface CalendarEvent {
+  id: number;
+  title: string;
+  description?: string | null;
+  start_time: string;
+  end_time?: string | null;
+  all_day?: number;
+  location?: string | null;
+  reminder_minutes?: number;
+}
+
+export interface TaskItem {
+  id: number;
+  title: string;
+  description?: string | null;
+  due_date?: string | null;
+  priority: string;
+  status: string;
+  reminder_minutes?: number | null;
+}
+
+export type iOSCalendarListHandler = () => Promise<CalendarEvent[]>;
+export type iOSCalendarAddHandler = (title: string, startTime: string, endTime?: string, location?: string, description?: string, reminderMinutes?: number, allDay?: boolean) => Promise<CalendarEvent | null>;
+export type iOSCalendarDeleteHandler = (id: number) => Promise<boolean>;
+export type iOSCalendarUpcomingHandler = (hours?: number) => Promise<CalendarEvent[]>;
+
+export type iOSTasksListHandler = (status?: string) => Promise<TaskItem[]>;
+export type iOSTasksAddHandler = (title: string, dueDate?: string, priority?: string, description?: string, reminderMinutes?: number) => Promise<TaskItem | null>;
+export type iOSTasksCompleteHandler = (id: number) => Promise<boolean>;
+export type iOSTasksDeleteHandler = (id: number) => Promise<boolean>;
+export type iOSTasksDueHandler = (hours?: number) => Promise<TaskItem[]>;
+
+export type iOSChatInfoHandler = () => { username: string; adminKey: string };
 
 export interface ServerModeMessage {
   type: 'mode';
