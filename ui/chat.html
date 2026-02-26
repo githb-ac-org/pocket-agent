@@ -2826,6 +2826,38 @@
       height: 14px;
     }
 
+    /* Typing indicator */
+    #gchat-typing-indicator {
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-secondary, rgba(255,255,255,0.45));
+      padding: 2px 0 4px;
+      user-select: none;
+    }
+
+    .gchat-typing-text {
+      margin-right: 2px;
+    }
+
+    .gchat-typing-dot {
+      display: inline-block;
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: var(--text-secondary, rgba(255,255,255,0.45));
+      margin: 0 1px;
+      animation: gchatTypingDot 1.4s infinite ease-in-out both;
+    }
+
+    .gchat-typing-dot:nth-child(1) { animation-delay: 0s; }
+    .gchat-typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .gchat-typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes gchatTypingDot {
+      0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+      40% { opacity: 1; transform: scale(1); }
+    }
+
     /* Reply preview inside bubble */
     .gchat-reply-preview {
       display: flex;
@@ -3940,6 +3972,15 @@
     </div>
   </div>
 
+  <div id="gchat-typing-indicator" style="display:none">
+    <span class="gchat-typing-text"></span>
+    <span class="gchat-typing-dots">
+      <span class="gchat-typing-dot"></span>
+      <span class="gchat-typing-dot"></span>
+      <span class="gchat-typing-dot"></span>
+    </span>
+  </div>
+
   <div id="input-area">
     <div class="input-container">
       <button class="attach-btn" onclick="playNormalClick(); triggerAttach()" title="Drop a file">
@@ -4117,6 +4158,8 @@
     let mentionQuery = '';
     let mentionStartPos = -1;
     let mentionSelectedIndex = 0;
+    const chatTypingUsers = new Map(); // username → timeoutId
+    let chatTypingThrottleUntil = 0;
 
     const TIER_CONFIG = [
       { name: '', threshold: 0, badge: '', cssClass: '' },
@@ -6584,7 +6627,25 @@
               updateUnreadBadge();
             }
           }
+        } else if (data.type === 'typing') {
+          if (data.username === globalChatUsername) return;
+          // Clear existing timeout for this user
+          const prev = chatTypingUsers.get(data.username);
+          if (prev) clearTimeout(prev);
+          // Set a 4s timeout to auto-clear
+          const tid = setTimeout(() => {
+            chatTypingUsers.delete(data.username);
+            updateTypingIndicator();
+          }, 4000);
+          chatTypingUsers.set(data.username, tid);
+          updateTypingIndicator();
         } else if (data.type === 'message') {
+          // Clear typing for the user who sent the message
+          if (chatTypingUsers.has(data.username)) {
+            clearTimeout(chatTypingUsers.get(data.username));
+            chatTypingUsers.delete(data.username);
+            updateTypingIndicator();
+          }
           if (data.minTier !== undefined) userMinTierMap.set(data.username, data.minTier);
           addGlobalChatMessage({ username: data.username, text: data.text, ts: data.ts, admin: !!data.admin, tier: data.tier || 0, replyTo: data.replyTo || undefined, reactions: data.reactions || {} });
           if (globalChatUsername && data.username !== globalChatUsername) {
@@ -6713,6 +6774,7 @@
 
       chatWs.onclose = (event) => {
         console.log('[Chat WS] Closed, code:', event.code, 'reason:', event.reason);
+        clearAllTypingState();
         const dot = document.getElementById('chat-status-dot');
         if (dot) dot.classList.remove('connected');
         clearTimeout(chatWsReconnectTimer);
@@ -7126,6 +7188,29 @@
       sendChatWs({ type: 'set_min_tier', targetUsername: username, minTier: clamped });
     }
 
+    function updateTypingIndicator() {
+      const el = document.getElementById('gchat-typing-indicator');
+      if (!el) return;
+      if (!globalChatMode || chatTypingUsers.size === 0) {
+        el.style.display = 'none';
+        return;
+      }
+      const names = Array.from(chatTypingUsers.keys());
+      const textEl = el.querySelector('.gchat-typing-text');
+      if (names.length === 1) {
+        textEl.textContent = names[0] + ' is typing';
+      } else {
+        textEl.textContent = names.join(', ') + ' are typing';
+      }
+      el.style.display = '';
+    }
+
+    function clearAllTypingState() {
+      for (const tid of chatTypingUsers.values()) clearTimeout(tid);
+      chatTypingUsers.clear();
+      updateTypingIndicator();
+    }
+
     function updateChatCounts(online, inChat) {
       const el = document.getElementById('chat-online-stats');
       if (el) el.textContent = `${online} online · ${inChat} in chat`;
@@ -7202,6 +7287,7 @@
       } else {
         // Exit chat mode
         leaveChatActive();
+        clearAllTypingState();
         hideAdminTierPopover();
         gchatClearReply();
         gchatDismissMentionList();
@@ -7812,6 +7898,15 @@
         clearSuggestion();
       }
       autoResizeTextarea();
+
+      // Send typing indicator in global chat (throttled to 1 per 3s)
+      if (globalChatMode) {
+        const now = Date.now();
+        if (now >= chatTypingThrottleUntil && input.value.trim()) {
+          chatTypingThrottleUntil = now + 3000;
+          sendChatWs({ type: 'typing' });
+        }
+      }
 
       // @Mention detection in global chat
       if (globalChatMode) {
