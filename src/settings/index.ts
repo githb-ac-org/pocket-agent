@@ -115,26 +115,6 @@ export const SETTINGS_SCHEMA: SettingDefinition[] = [
     description: 'Claude model to use for conversations',
     type: 'string',
   },
-  // DEPRECATED: SDK handles compaction natively via persistSession + resume
-  {
-    key: 'agent.compactionThreshold',
-    defaultValue: '120000',
-    encrypted: false,
-    category: 'agent',
-    label: 'Compaction Threshold',
-    description: 'Deprecated - SDK handles this natively',
-    type: 'number',
-  },
-  // DEPRECATED: SDK handles context window natively via persistSession + resume
-  {
-    key: 'agent.maxContextTokens',
-    defaultValue: '150000',
-    encrypted: false,
-    category: 'agent',
-    label: 'Max Context Tokens',
-    description: 'Deprecated - SDK handles this natively',
-    type: 'number',
-  },
   {
     key: 'agent.mode',
     defaultValue: 'coder',
@@ -152,36 +132,6 @@ export const SETTINGS_SCHEMA: SettingDefinition[] = [
     label: 'Thinking Level',
     description: 'How much reasoning to show (none, minimal, normal, extended)',
     type: 'string',
-  },
-  // DEPRECATED: SDK handles conversation history natively via persistSession + resume
-  {
-    key: 'agent.recentMessageLimit',
-    defaultValue: '20',
-    encrypted: false,
-    category: 'agent',
-    label: 'Recent Message Limit',
-    description: 'Deprecated - SDK handles this natively',
-    type: 'number',
-  },
-  // DEPRECATED: SDK handles summarization natively via auto-compaction
-  {
-    key: 'agent.rollingSummaryInterval',
-    defaultValue: '50',
-    encrypted: false,
-    category: 'agent',
-    label: 'Rolling Summary Interval',
-    description: 'Deprecated - SDK handles this natively',
-    type: 'number',
-  },
-  // DEPRECATED: SDK handles context retrieval natively via persistSession + resume
-  {
-    key: 'agent.semanticRetrievalCount',
-    defaultValue: '5',
-    encrypted: false,
-    category: 'agent',
-    label: 'Semantic Retrieval Count',
-    description: 'Deprecated - SDK handles this natively',
-    type: 'number',
   },
 
   // Telegram settings
@@ -257,6 +207,15 @@ export const SETTINGS_SCHEMA: SettingDefinition[] = [
     category: 'ios',
     label: 'Local Port',
     description: 'WebSocket server port for local connections (set relay URL to "local" to use)',
+    type: 'string',
+  },
+  {
+    key: 'ios.pairedDevices',
+    defaultValue: '[]',
+    encrypted: true,
+    category: 'ios',
+    label: 'Paired Devices',
+    description: 'Auth tokens for paired iOS devices',
     type: 'string',
   },
 
@@ -706,6 +665,24 @@ class SettingsManagerClass {
     const result: Record<string, string> = {};
     for (const [key, value] of this.cache) {
       result[key] = value;
+    }
+    return result;
+  }
+
+  /**
+   * Get all settings with encrypted values redacted.
+   * Safe to send to renderer processes.
+   */
+  getAllSafe(): Record<string, string> {
+    const result: Record<string, string> = {};
+    for (const [key, value] of this.cache) {
+      const def = SETTINGS_SCHEMA.find(s => s.key === key);
+      if (def?.encrypted && value) {
+        // Send a masked placeholder so the UI knows a value is set
+        result[key] = '••••••••';
+      } else {
+        result[key] = value;
+      }
     }
     return result;
   }

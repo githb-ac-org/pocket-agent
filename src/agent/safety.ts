@@ -7,7 +7,7 @@
 
 import path from 'path';
 
-export interface ValidationResult {
+interface ValidationResult {
   allowed: boolean;
   reason?: string;
 }
@@ -486,7 +486,7 @@ const DANGEROUS_BROWSER_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
 /**
  * Validate a Bash command against dangerous patterns
  */
-export function validateBashCommand(command: string): ValidationResult {
+function validateBashCommand(command: string): ValidationResult {
   const normalizedCommand = command.trim();
 
   for (const { pattern, reason } of DANGEROUS_BASH_PATTERNS) {
@@ -503,7 +503,7 @@ export function validateBashCommand(command: string): ValidationResult {
 /**
  * Validate a file path for write operations
  */
-export function validateWritePath(filePath: string): ValidationResult {
+function validateWritePath(filePath: string): ValidationResult {
   // Expand ~ to home directory for pattern matching (cross-platform)
   const homeDir = process.env.HOME || process.env.USERPROFILE || (process.platform === 'win32' ? 'C:\\Users\\user' : '/home/user');
   const expandedPath = filePath.replace(/^~/, homeDir);
@@ -525,7 +525,7 @@ export function validateWritePath(filePath: string): ValidationResult {
 /**
  * Validate a browser URL
  */
-export function validateBrowserUrl(url: string): ValidationResult {
+function validateBrowserUrl(url: string): ValidationResult {
   for (const { pattern, reason } of DANGEROUS_BROWSER_PATTERNS) {
     if (pattern.test(url)) {
       console.warn(`[Safety] BLOCKED browser URL: ${reason}`);

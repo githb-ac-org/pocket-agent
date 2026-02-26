@@ -34,6 +34,23 @@ function getFilesDirectory(): string {
 }
 
 /**
+ * Schedule deletion of a temporary file after a delay (default 5 minutes).
+ * Gives the agent enough time to read the file, then cleans up.
+ */
+export function scheduleFileCleanup(filePath: string, delayMs: number = 5 * 60 * 1000): void {
+  setTimeout(() => {
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log(`[Telegram] Cleaned up temp file: ${filePath}`);
+      }
+    } catch {
+      // Ignore cleanup errors — file may already be gone
+    }
+  }, delayMs);
+}
+
+/**
  * Get image extension from file path or default to jpg
  */
 function getImageExtension(filePath: string): string {
@@ -58,6 +75,7 @@ export async function handlePhotoMessage(
   if (!chatId || !photo || photo.length === 0) return;
 
   const { onMessageCallback, sendResponse } = deps;
+  let savedFilePath: string | null = null;
 
   try {
     const result = await withTyping(ctx, async () => {
@@ -88,6 +106,7 @@ export async function handlePhotoMessage(
       const timestamp = Date.now();
       const filename = `telegram_${timestamp}_photo${ext}`;
       const localPath = path.join(filesDir, filename);
+      savedFilePath = localPath;
 
       fs.writeFileSync(localPath, buffer);
 
@@ -144,7 +163,12 @@ export async function handlePhotoMessage(
     if (result.wasCompacted) {
       await ctx.reply('(your chat has been compacted)');
     }
+
+    // Schedule cleanup of the downloaded file
+    if (savedFilePath) scheduleFileCleanup(savedFilePath);
   } catch (error) {
+    // Still clean up on error
+    if (savedFilePath) scheduleFileCleanup(savedFilePath);
     console.error('[Telegram] Photo error:', error);
     const errorMsg = error instanceof Error ? error.message : 'Unknown error';
     await ctx.reply(`Error processing photo: ${errorMsg}`);

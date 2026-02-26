@@ -7,33 +7,6 @@ import { Bot, Api } from 'grammy';
 import { ReactionData, ReactionEmoji } from '../types';
 
 /**
- * Track reaction history for context
- */
-const reactionHistory: Map<string, ReactionData[]> = new Map();
-
-/**
- * Get reaction history key
- */
-function getHistoryKey(chatId: number, messageId: number): string {
-  return `${chatId}:${messageId}`;
-}
-
-/**
- * Add reaction to history
- */
-function recordReaction(data: ReactionData): void {
-  const key = getHistoryKey(data.chatId, data.messageId);
-  const history = reactionHistory.get(key) || [];
-  history.push(data);
-  reactionHistory.set(key, history);
-
-  // Keep history manageable (last 100 reactions per message)
-  if (history.length > 100) {
-    history.shift();
-  }
-}
-
-/**
  * Handle a message_reaction update
  */
 export interface ReactionHandler {
@@ -48,8 +21,6 @@ export function createReactionHandler(
 ): ReactionHandler {
   return {
     onReaction: async (data: ReactionData) => {
-      recordReaction(data);
-
       console.log(
         `[Telegram] Reaction: ${data.emoji} ${data.isAdded ? 'added' : 'removed'} ` +
         `on message ${data.messageId} in chat ${data.chatId} by user ${data.userId}`

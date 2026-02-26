@@ -60,37 +60,4 @@ export class InlineKeyboardBuilder {
   }
 }
 
-/**
- * Create a confirmation dialog keyboard
- */
-export function confirmationKeyboard(actionId: string, yesLabel = 'Yes', noLabel = 'No'): InlineKeyboard {
-  return new InlineKeyboardBuilder()
-    .addRow([
-      { text: yesLabel, callbackData: `confirm:${actionId}:yes` },
-      { text: noLabel, callbackData: `confirm:${actionId}:no` },
-    ])
-    .build();
-}
-
-/**
- * Create a simple options keyboard from a list of items
- */
-export function optionsKeyboard(
-  options: Array<{ label: string; value: string }>,
-  actionPrefix: string,
-  columns: number = 2
-): InlineKeyboard {
-  const builder = new InlineKeyboardBuilder();
-
-  for (let i = 0; i < options.length; i += columns) {
-    const rowOptions = options.slice(i, i + columns);
-    const buttons = rowOptions.map(opt => ({
-      text: opt.label,
-      callbackData: `${actionPrefix}:${opt.value}`,
-    }));
-    builder.addRow(buttons);
-  }
-
-  return builder.build();
-}
 

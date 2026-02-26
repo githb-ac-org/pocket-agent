@@ -865,7 +865,8 @@ export class iOSRelayClient {
       }
       case 'chat:info': {
         const info = this.onChatInfo?.() || { username: '', adminKey: '' };
-        this.sendToRelay(client.relayClientId, { type: 'chat:info', ...info });
+        // Never send adminKey to clients — only send the username
+        this.sendToRelay(client.relayClientId, { type: 'chat:info', username: info.username });
         break;
       }
     }

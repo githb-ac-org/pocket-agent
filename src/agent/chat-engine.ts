@@ -1023,21 +1023,6 @@ You are a persistent personal AI assistant with these tools available:
   }
 
   /**
-   * Stop all running queries across all sessions.
-   */
-  stopAllQueries(): void {
-    for (const [sid, isProcessing] of this.processingBySession.entries()) {
-      if (isProcessing) {
-        const controller = this.abortControllersBySession.get(sid);
-        if (controller) {
-          console.log(`[ChatEngine] Stopping query for session ${sid}`);
-          controller.abort();
-        }
-      }
-    }
-  }
-
-  /**
    * Check if a query is processing.
    */
   isQueryProcessing(sessionId?: string): boolean {

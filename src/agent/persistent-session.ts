@@ -30,7 +30,6 @@ interface SDKQuery extends AsyncGenerator<unknown, void> {
   interrupt(): Promise<void>;
   close(): void;
   setModel(model?: string): Promise<void>;
-  setMaxThinkingTokens(maxThinkingTokens: number | null): Promise<void>;
 }
 
 interface SDKUserMessage {
@@ -279,15 +278,6 @@ export class PersistentSDKSession extends EventEmitter {
       console.log(`[PersistentSession:${this.sessionId}] Model changed to: ${model}`);
     } catch (err) {
       console.error(`[PersistentSession:${this.sessionId}] setModel error:`, err);
-    }
-  }
-
-  async setMaxThinkingTokens(tokens: number | null): Promise<void> {
-    if (!this.query || !this.alive) return;
-    try {
-      await this.query.setMaxThinkingTokens(tokens);
-    } catch (err) {
-      console.error(`[PersistentSession:${this.sessionId}] setMaxThinkingTokens error:`, err);
     }
   }
 

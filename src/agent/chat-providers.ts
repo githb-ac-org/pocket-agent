@@ -2,27 +2,14 @@
  * Chat mode provider abstraction
  *
  * Creates Anthropic SDK clients for different providers without mutating env vars.
- * Reuses the MODEL_PROVIDERS mapping from the main agent module.
+ * Uses the shared MODEL_PROVIDERS mapping from providers.ts.
  */
 
 import Anthropic from '@anthropic-ai/sdk';
 import { SettingsManager } from '../settings';
+import { getProviderForModel } from './providers';
 
-type ProviderType = 'anthropic' | 'moonshot' | 'glm';
-
-const MODEL_PROVIDERS: Record<string, ProviderType> = {
-  'claude-opus-4-6': 'anthropic',
-  'claude-opus-4-5-20251101': 'anthropic',
-  'claude-sonnet-4-6': 'anthropic',
-  'claude-haiku-4-5-20251001': 'anthropic',
-  'kimi-k2.5': 'moonshot',
-  'glm-5': 'glm',
-  'glm-4.7': 'glm',
-};
-
-export function getProviderForModel(model: string): ProviderType {
-  return MODEL_PROVIDERS[model] || 'anthropic';
-}
+export { getProviderForModel };
 
 /**
  * Create an Anthropic SDK client configured for the given model's provider.

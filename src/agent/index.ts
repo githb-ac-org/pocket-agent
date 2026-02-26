@@ -11,113 +11,56 @@ import path from 'path';
 import { buildCanUseToolCallback, buildPreToolUseHook, setStatusEmitter } from './safety';
 import { PersistentSDKSession, TurnResult } from './persistent-session';
 import { ChatEngine } from './chat-engine';
-
-// Provider configuration for different LLM backends
-type ProviderType = 'anthropic' | 'moonshot' | 'glm';
-
-interface ProviderConfig {
-  baseUrl?: string;
-}
-
-const PROVIDER_CONFIGS: Record<ProviderType, ProviderConfig> = {
-  'anthropic': {
-    // No baseUrl = uses default Anthropic endpoint
-  },
-  'moonshot': {
-    baseUrl: 'https://api.moonshot.ai/anthropic/',
-  },
-  'glm': {
-    baseUrl: 'https://api.z.ai/api/anthropic/',
-  },
-};
-
-// Model to provider mapping
-const MODEL_PROVIDERS: Record<string, ProviderType> = {
-  // Anthropic models
-  'claude-opus-4-6': 'anthropic',
-  'claude-opus-4-5-20251101': 'anthropic',
-  'claude-sonnet-4-6': 'anthropic',
-  'claude-haiku-4-5-20251001': 'anthropic',
-  // Moonshot/Kimi models
-  'kimi-k2.5': 'moonshot',
-  // Z.AI GLM models
-  'glm-5': 'glm',
-  'glm-4.7': 'glm',
-};
+import { PROVIDER_CONFIGS, getProviderForModel } from './providers';
 
 /**
- * Get the provider type for a model
+ * Build provider-specific environment variables for the selected model.
+ * Returns a partial env object to merge — does NOT mutate process.env,
+ * avoiding race conditions when multiple sessions configure concurrently.
  */
-function getProviderForModel(model: string): ProviderType {
-  return MODEL_PROVIDERS[model] || 'anthropic';
-}
-
-/**
- * Configure environment variables for the selected provider
- * This is called before each SDK query to ensure correct routing
- */
-async function configureProviderEnvironment(model: string): Promise<void> {
+async function buildProviderEnv(model: string): Promise<Record<string, string | undefined>> {
   const provider = getProviderForModel(model);
   const config = PROVIDER_CONFIGS[provider];
 
-  // Clear all provider-related env vars first
-  delete process.env.ANTHROPIC_BASE_URL;
-  delete process.env.ANTHROPIC_AUTH_TOKEN;
-  delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  // Start with cleared provider vars
+  const env: Record<string, string | undefined> = {
+    ANTHROPIC_BASE_URL: undefined,
+    ANTHROPIC_AUTH_TOKEN: undefined,
+    CLAUDE_CODE_OAUTH_TOKEN: undefined,
+  };
+
   if (provider === 'moonshot') {
-    // Moonshot requires base URL and uses Bearer token auth
     const moonshotKey = SettingsManager.get('moonshot.apiKey');
     if (!moonshotKey) {
       throw new Error('Moonshot API key not configured. Please add your key in Settings > Keys.');
     }
-
-    process.env.ANTHROPIC_BASE_URL = config.baseUrl;
-    process.env.ANTHROPIC_AUTH_TOKEN = moonshotKey;
-    // Set ANTHROPIC_API_KEY so the SDK subprocess passes its auth check.
-    // The request sends both x-api-key and Authorization: Bearer headers;
-    // OpenAI-compatible providers use Bearer and ignore x-api-key.
-    process.env.ANTHROPIC_API_KEY = moonshotKey;
-
+    env.ANTHROPIC_BASE_URL = config.baseUrl;
+    env.ANTHROPIC_AUTH_TOKEN = moonshotKey;
+    env.ANTHROPIC_API_KEY = moonshotKey;
     console.log('[AgentManager] Provider configured: Moonshot (Kimi)');
   } else if (provider === 'glm') {
-    // Z.AI GLM requires base URL and uses Bearer token auth
     const glmKey = SettingsManager.get('glm.apiKey');
     if (!glmKey) {
       throw new Error('Z.AI GLM API key not configured. Please add your key in Settings > LLM.');
     }
-
-    process.env.ANTHROPIC_BASE_URL = config.baseUrl;
-    process.env.ANTHROPIC_AUTH_TOKEN = glmKey;
-    // Set ANTHROPIC_API_KEY so the SDK subprocess passes its auth check.
-    // The request sends both x-api-key and Authorization: Bearer headers;
-    // OpenAI-compatible providers use Bearer and ignore x-api-key.
-    process.env.ANTHROPIC_API_KEY = glmKey;
-
+    env.ANTHROPIC_BASE_URL = config.baseUrl;
+    env.ANTHROPIC_AUTH_TOKEN = glmKey;
+    env.ANTHROPIC_API_KEY = glmKey;
     console.log('[AgentManager] Provider configured: Z.AI GLM');
   } else {
-    // Anthropic provider - restore correct API key and clear non-Anthropic vars
-    delete process.env.ANTHROPIC_BASE_URL;
-    delete process.env.ANTHROPIC_AUTH_TOKEN;
-
-    // Restore Anthropic API key (may have been overwritten by non-Anthropic provider key)
+    // Anthropic provider
     const anthropicKey = SettingsManager.get('anthropic.apiKey');
     if (anthropicKey) {
-      process.env.ANTHROPIC_API_KEY = anthropicKey;
+      env.ANTHROPIC_API_KEY = anthropicKey;
     } else {
-      // No API key — check for OAuth token
       const authMethod = SettingsManager.get('auth.method');
       if (authMethod === 'oauth') {
-        // Refresh token if needed before using it
         const { ClaudeOAuth } = await import('../auth/oauth');
         const freshToken = await ClaudeOAuth.getAccessToken();
         if (freshToken) {
-          // OAuth tokens require Bearer auth, not x-api-key.
-          // CLAUDE_CODE_OAUTH_TOKEN tells the SDK to use OAuth mode:
-          // apiKey=null (no x-api-key header), authToken=token (Authorization: Bearer).
-          // ANTHROPIC_API_KEY must NOT be set — it would be sent as x-api-key and rejected.
-          process.env.CLAUDE_CODE_OAUTH_TOKEN = freshToken;
-          delete process.env.ANTHROPIC_API_KEY;
-          delete process.env.ANTHROPIC_AUTH_TOKEN;
+          env.CLAUDE_CODE_OAUTH_TOKEN = freshToken;
+          env.ANTHROPIC_API_KEY = undefined;
+          env.ANTHROPIC_AUTH_TOKEN = undefined;
           console.log('[AgentManager] Using OAuth token for Anthropic auth');
         } else {
           throw new Error('OAuth session expired. Please re-authenticate in Settings.');
@@ -126,9 +69,10 @@ async function configureProviderEnvironment(model: string): Promise<void> {
         throw new Error('No API key configured. Please add your key in Settings.');
       }
     }
-
     console.log('[AgentManager] Provider configured: Anthropic');
   }
+
+  return env;
 }
 
 /**
@@ -670,6 +614,7 @@ class AgentManagerClass extends EventEmitter {
     try {
       const existingSession = this.persistentSessions.get(sessionId);
       let turnResult: TurnResult;
+      let hadSdkSessionBeforeStart = false;
 
       if (existingSession?.isAlive()) {
         // === Existing session: send via streamInput ===
@@ -703,6 +648,7 @@ class AgentManagerClass extends EventEmitter {
         let sdkSessionId = this.sdkSessionIdBySession.get(sessionId)
           || memory.getSdkSessionId(sessionId)
           || undefined;
+        hadSdkSessionBeforeStart = !!sdkSessionId;
 
         if (sdkSessionId) {
           console.log(`[AgentManager] Resuming SDK session: ${sdkSessionId}`);
@@ -826,7 +772,9 @@ class AgentManagerClass extends EventEmitter {
       }
 
       // === Check for stale/crashed session errors and retry without resume ===
-      const wasResuming = this.sdkSessionIdBySession.has(sessionId);
+      // Use the flag captured BEFORE session.start() — the sdkSessionIdBySession map
+      // is populated mid-call by the 'sdkSessionId' event, so checking it here would always be true.
+      const wasResuming = hadSdkSessionBeforeStart;
       if (turnResult.errors && turnResult.errors.length > 0) {
         console.log(`[AgentManager] Turn errors: ${JSON.stringify(turnResult.errors)}, response length: ${turnResult.response.length}, wasResuming: ${wasResuming}`);
       }
@@ -1298,11 +1246,10 @@ class AgentManagerClass extends EventEmitter {
    */
   private async buildPersistentOptions(memory: MemoryManager, sessionId: string, sdkSessionId?: string): Promise<SDKOptions> {
     // === Static context (set once at session creation) ===
+    // NOTE: CLAUDE.md (this.instructions) is NOT included here because the SDK
+    // already reads it from the workspace via cwd + settingSources: ['project'].
+    // Including it here would inject it twice.
     const staticParts: string[] = [];
-
-    if (this.instructions) {
-      staticParts.push(this.instructions);
-    }
 
     if (this.identity) {
       staticParts.push(this.identity);
@@ -1328,10 +1275,11 @@ class AgentManagerClass extends EventEmitter {
     const thinkingEntry = THINKING_CONFIGS[thinkingLevel] || THINKING_CONFIGS['normal'];
     const isAnthropicModel = provider === 'anthropic';
 
-    // Configure provider environment and capture env vars
-    await configureProviderEnvironment(this.model);
+    // Build provider env vars without mutating process.env (race-safe)
+    const providerEnv = await buildProviderEnv(this.model);
     const env: Record<string, string | undefined> = {
       ...process.env,
+      ...providerEnv,
       CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
     };
     delete env.CLAUDE_CONFIG_DIR;
@@ -2374,24 +2322,12 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
     return this.memory?.getAllFacts() || [];
   }
 
-  getAllDailyLogs(): DailyLog[] {
-    return this.memory?.getAllDailyLogs() || [];
-  }
-
-  getRecentDailyLogs(days: number = 3): DailyLog[] {
-    return this.memory?.getRecentDailyLogs(days) || [];
-  }
-
   getDailyLogsSince(days: number = 3): DailyLog[] {
     return this.memory?.getDailyLogsSince(days) || [];
   }
 
   getRecentMessages(limit: number = 10, sessionId: string = 'default'): Message[] {
     return this.memory?.getRecentMessages(limit, sessionId) || [];
-  }
-
-  getToolsConfig(): ToolsConfig | null {
-    return this.toolsConfig;
   }
 
   cleanup(): void {
@@ -2402,4 +2338,3 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
 }
 
 export const AgentManager = AgentManagerClass.getInstance();
-export { AgentManagerClass };

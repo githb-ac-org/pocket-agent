@@ -50,8 +50,7 @@ export type { MessageCallback, SessionLinkCallback, AttachmentType };
 
 // Re-export utilities for external use
 export { markdownToTelegramHtml, splitMessage } from './formatting';
-export { InlineKeyboardBuilder, confirmationKeyboard, optionsKeyboard } from './keyboards/inline';
-export { ReplyKeyboardBuilder, defaultKeyboard, contextKeyboard } from './keyboards/reply';
+export { InlineKeyboardBuilder } from './keyboards/inline';
 
 /**
  * TelegramBot - Main Telegram channel implementation
@@ -119,10 +118,13 @@ export class TelegramBot extends BaseChannel {
    * Setup all message handlers
    */
   private setupHandlers(): void {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const self = this;
     // Command handler dependencies
+    // Use getter so the callback is resolved at call-time, not at setup-time
     const commandDeps: CommandHandlerDeps = {
       bot: this.bot,
-      onSessionLinkCallback: this.onSessionLinkCallback,
+      get onSessionLinkCallback() { return self.onSessionLinkCallback; },
       sendResponse: this.sendResponse.bind(this),
     };
 
@@ -350,39 +352,10 @@ export class TelegramBot extends BaseChannel {
   }
 
   /**
-   * @deprecated Use syncToChat with explicit chatId instead
-   */
-  async syncFromDesktop(userMessage: string, response: string): Promise<number> {
-    const text = `[Desktop]\n\nYou: ${userMessage}\n\nAssistant: ${response}`;
-    return this.broadcast(text);
-  }
-
-  /**
    * Get list of active chat IDs
    */
   getActiveChatIds(): number[] {
     return this.chatTracker.getAll();
-  }
-
-  /**
-   * Add a user to the allowlist (runtime only, doesn't persist)
-   */
-  addAllowedUser(userId: number): void {
-    // This now needs to go through settings to persist
-    const current = SettingsManager.getArray('telegram.allowedUserIds');
-    if (!current.includes(String(userId))) {
-      current.push(String(userId));
-      SettingsManager.set('telegram.allowedUserIds', JSON.stringify(current));
-    }
-  }
-
-  /**
-   * Remove a user from the allowlist
-   */
-  removeAllowedUser(userId: number): void {
-    const current = SettingsManager.getArray('telegram.allowedUserIds');
-    const filtered = current.filter(id => id !== String(userId));
-    SettingsManager.set('telegram.allowedUserIds', JSON.stringify(filtered));
   }
 
   /**

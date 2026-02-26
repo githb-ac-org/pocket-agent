@@ -345,7 +345,6 @@ function ensureAgentWorkspace(): string {
   if (isVersionUpdate) {
     const identityPath = path.join(workspace, 'identity.md');
     const claudeMdPath = path.join(workspace, 'CLAUDE.md');
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const backupDir = path.join(workspace, '.backups');
 
     // Create backup directory
@@ -353,23 +352,26 @@ function ensureAgentWorkspace(): string {
       fs.mkdirSync(backupDir, { recursive: true });
     }
 
-    // Backup and repopulate identity.md
+    // Identity: only create if missing — never overwrite user customizations
     if (fs.existsSync(identityPath)) {
-      const backupPath = path.join(backupDir, `identity-${previousVersion || 'unknown'}-${timestamp}.md`);
-      fs.copyFileSync(identityPath, backupPath);
-      console.log(`[Main] Backed up identity.md to: ${backupPath}`);
+      // Save a backup of the latest defaults so users can reference what changed
+      const defaultsBackup = path.join(backupDir, `identity-defaults-${currentVersion}.md`);
+      fs.writeFileSync(defaultsBackup, DEFAULT_IDENTITY);
+      console.log(`[Main] Saved default identity.md for reference: ${defaultsBackup}`);
+    } else {
+      fs.writeFileSync(identityPath, DEFAULT_IDENTITY);
+      console.log('[Main] Created identity.md with defaults (first install)');
     }
-    fs.writeFileSync(identityPath, DEFAULT_IDENTITY);
-    console.log('[Main] Repopulated identity.md with latest defaults');
 
-    // Backup and repopulate CLAUDE.md
+    // Instructions: only create if missing — never overwrite user customizations
     if (fs.existsSync(claudeMdPath)) {
-      const backupPath = path.join(backupDir, `CLAUDE-${previousVersion || 'unknown'}-${timestamp}.md`);
-      fs.copyFileSync(claudeMdPath, backupPath);
-      console.log(`[Main] Backed up CLAUDE.md to: ${backupPath}`);
+      const defaultsBackup = path.join(backupDir, `CLAUDE-defaults-${currentVersion}.md`);
+      fs.writeFileSync(defaultsBackup, DEFAULT_INSTRUCTIONS);
+      console.log(`[Main] Saved default CLAUDE.md for reference: ${defaultsBackup}`);
+    } else {
+      fs.writeFileSync(claudeMdPath, DEFAULT_INSTRUCTIONS);
+      console.log('[Main] Created CLAUDE.md with defaults (first install)');
     }
-    fs.writeFileSync(claudeMdPath, DEFAULT_INSTRUCTIONS);
-    console.log('[Main] Repopulated CLAUDE.md with latest defaults');
 
     // Populate default workflow commands
     // If .claude is a symlink from a previous install, replace it with a real directory
@@ -1400,8 +1402,12 @@ function setupIPC(): void {
               }
             };
             AgentManager.on('status', desktopStatusHandler);
-            const result = await AgentManager.processMessage(messageText, 'ios', message.sessionId);
-            AgentManager.off('status', desktopStatusHandler);
+            let result;
+            try {
+              result = await AgentManager.processMessage(messageText, 'ios', message.sessionId);
+            } finally {
+              AgentManager.off('status', desktopStatusHandler);
+            }
             if (chatWindow && !chatWindow.isDestroyed() && result.response) {
               chatWindow.webContents.send('ios:message', {
                 userMessage: messageText, response: result.response,
@@ -1698,7 +1704,14 @@ function setupIPC(): void {
   });
 
   ipcMain.handle('app:openPath', async (_, filePath: string) => {
-    await shell.openPath(filePath);
+    // Security: only allow opening paths within the Pocket-agent documents directory
+    const allowedDir = path.join(app.getPath('documents'), 'Pocket-agent');
+    const resolvedPath = path.resolve(filePath);
+    if (!resolvedPath.startsWith(allowedDir)) {
+      console.warn('[Main] Blocked openPath outside allowed directory:', filePath);
+      return;
+    }
+    await shell.openPath(resolvedPath);
   });
 
   // Open an image in the default viewer — handles both local paths and URLs
@@ -1851,7 +1864,7 @@ function setupIPC(): void {
 
   // Settings
   ipcMain.handle('settings:getAll', async () => {
-    return SettingsManager.getAll();
+    return SettingsManager.getAllSafe();
   });
 
   ipcMain.handle('settings:getThemes', async () => {
@@ -2340,14 +2353,16 @@ async function initializeAgent(): Promise<void> {
             }
           };
           AgentManager.on('status', desktopStatusHandler);
-
-          const result = await AgentManager.processMessage(
-            messageText,
-            'ios',
-            message.sessionId
-          );
-
-          AgentManager.off('status', desktopStatusHandler);
+          let result;
+          try {
+            result = await AgentManager.processMessage(
+              messageText,
+              'ios',
+              message.sessionId
+            );
+          } finally {
+            AgentManager.off('status', desktopStatusHandler);
+          }
 
           // Sync to desktop UI (skip if response is empty, e.g. aborted)
           if (chatWindow && !chatWindow.isDestroyed() && result.response) {

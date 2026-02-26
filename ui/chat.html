@@ -6269,13 +6269,21 @@
       mentionHighlight.scrollTop = input.scrollTop;
     }
 
-    function gchatRenderMentionText(text) {
+    function gchatRenderMentionNodes(text, container) {
       const known = gchatAllUsernames();
-      const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      return escaped.replace(/@([\w-]+)/g, (match, name) => {
-        if (known.has(name.toLowerCase())) return '<span class="gchat-mention">' + match + '</span>';
-        return match;
-      });
+      // Split on @mentions, build DOM nodes instead of innerHTML to prevent XSS
+      const parts = text.split(/(@[\w-]+)/g);
+      for (const part of parts) {
+        const mentionMatch = part.match(/^@([\w-]+)$/);
+        if (mentionMatch && known.has(mentionMatch[1].toLowerCase())) {
+          const span = document.createElement('span');
+          span.className = 'gchat-mention';
+          span.textContent = part;
+          container.appendChild(span);
+        } else {
+          container.appendChild(document.createTextNode(part));
+        }
+      }
     }
 
     function gchatRenderReplyBanner() {
@@ -6503,7 +6511,7 @@
       }
 
       const text = document.createElement('span');
-      text.innerHTML = gchatRenderMentionText(msg.text);
+      gchatRenderMentionNodes(msg.text, text);
       div.appendChild(text);
       bubbleRow.appendChild(div);
 
