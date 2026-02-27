@@ -10,7 +10,7 @@ import { createTelegramBot, TelegramBot } from '../channels/telegram';
 import { createiOSChannel, destroyiOSChannel, iOSChannel } from '../channels/ios';
 import type { ConnectedDevice, ClientChatMessage } from '../channels/ios/types';
 import { transcribeAudio } from '../utils/transcribe';
-import { SettingsManager } from '../settings';
+import { SettingsManager, SETTINGS_SCHEMA } from '../settings';
 import { THEMES } from '../settings/themes';
 import { loadIdentity, saveIdentity, getIdentityPath, DEFAULT_IDENTITY } from '../config/identity';
 import { loadInstructions, saveInstructions, getInstructionsPath, DEFAULT_INSTRUCTIONS } from '../config/instructions';
@@ -1875,7 +1875,16 @@ function setupIPC(): void {
     return SettingsManager.get('ui.skin') || 'default';
   });
 
+  // Keys that are encrypted but must be accessible from the renderer
+  const RENDERER_ALLOWED_ENCRYPTED_KEYS = new Set(['chat.adminKey']);
+
   ipcMain.handle('settings:get', async (_, key: string) => {
+    // Block encrypted settings from being sent to renderer (except explicitly allowed ones)
+    const def = SETTINGS_SCHEMA.find(s => s.key === key);
+    if (def?.encrypted && !RENDERER_ALLOWED_ENCRYPTED_KEYS.has(key)) {
+      const value = SettingsManager.get(key);
+      return value ? '••••••••' : '';
+    }
     return SettingsManager.get(key);
   });
 
@@ -2108,12 +2117,23 @@ function setupIPC(): void {
   });
 
   // Shell commands — platform-aware shell selection
+  // Allowlisted command prefixes for security (only Pocket CLI operations)
+  const ALLOWED_COMMAND_PREFIXES = IS_WINDOWS
+    ? ['(Get-Command pocket', 'Invoke-RestMethod https://api.github.com/repos/KenKaiii/', '$installDir = Join-Path']
+    : ['which pocket', 'strings ', 'curl -fsSL https://api.github.com/repos/KenKaiii/pocket-agent-cli/', 'curl -fsSL https://raw.githubusercontent.com/KenKaiii/pocket-agent-cli/main/scripts/install.sh -o /tmp/pocket-cli-install.sh && sed'];
+
   ipcMain.handle('shell:runCommand', async (event, command: string) => {
     // Security: only allow calls from local file origins (not remote/injected content)
     const senderUrl = event.sender.getURL();
     if (!senderUrl.startsWith('file://')) {
       console.warn('[Shell] Blocked runCommand from non-local origin:', senderUrl);
       throw new Error('Access denied: shell commands only allowed from local UI');
+    }
+    // Security: only allow known command patterns
+    const isAllowed = ALLOWED_COMMAND_PREFIXES.some(prefix => command.startsWith(prefix));
+    if (!isAllowed) {
+      console.warn('[Shell] Blocked non-allowlisted command:', command.slice(0, 80));
+      throw new Error('Access denied: command not in allowlist');
     }
     const execAsync = promisify(exec);
     const shellOpts: Record<string, unknown> = IS_WINDOWS

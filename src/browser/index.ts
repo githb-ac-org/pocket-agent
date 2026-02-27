@@ -142,17 +142,6 @@ export class BrowserManager {
   }
 
   /**
-   * Get status of all tiers
-   */
-  getStatus(): Record<string, unknown> {
-    return {
-      electron: this.electronTier?.getState() || { active: false },
-      cdp: this.cdpTier?.getState() || { connected: false },
-      lastTier: this.lastTier,
-    };
-  }
-
-  /**
    * Force CDP reconnection after system wake/unlock.
    * No-op if CDP tier hasn't been initialized (never used).
    */

@@ -34,17 +34,6 @@ export function createAuthMiddleware() {
 }
 
 /**
- * Check if a user ID is in the allowlist
- */
-export function isUserAllowed(userId: number): boolean {
-  const allowedUsers = SettingsManager.getArray('telegram.allowedUserIds')
-    .map(id => parseInt(id, 10))
-    .filter(id => !isNaN(id));
-
-  return allowedUsers.includes(userId);
-}
-
-/**
  * Get the current allowlist
  */
 export function getAllowedUsers(): number[] {

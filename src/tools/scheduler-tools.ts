@@ -283,97 +283,99 @@ export async function handleCreateRoutineTool(input: unknown): Promise<string> {
     }
 
     const db = new Database(dbPath);
-    db.pragma('journal_mode = WAL');
-
-    // Ensure table has the new columns
     try {
-      db.exec(`ALTER TABLE cron_jobs ADD COLUMN schedule_type TEXT DEFAULT 'cron'`);
-    } catch { /* column exists */ }
-    try {
-      db.exec(`ALTER TABLE cron_jobs ADD COLUMN run_at TEXT`);
-    } catch { /* column exists */ }
-    try {
-      db.exec(`ALTER TABLE cron_jobs ADD COLUMN interval_ms INTEGER`);
-    } catch { /* column exists */ }
-    try {
-      db.exec(`ALTER TABLE cron_jobs ADD COLUMN delete_after_run INTEGER DEFAULT 0`);
-    } catch { /* column exists */ }
-    try {
-      db.exec(`ALTER TABLE cron_jobs ADD COLUMN next_run_at TEXT`);
-    } catch { /* column exists */ }
-    try {
-      db.exec(`ALTER TABLE cron_jobs ADD COLUMN session_id TEXT`);
-    } catch { /* column exists */ }
-    try {
-      db.exec(`ALTER TABLE cron_jobs ADD COLUMN job_type TEXT DEFAULT 'routine'`);
-    } catch { /* column exists */ }
+      db.pragma('journal_mode = WAL');
 
-    const sessionId = getCurrentSessionId();
+      // Ensure table has the new columns
+      try {
+        db.exec(`ALTER TABLE cron_jobs ADD COLUMN schedule_type TEXT DEFAULT 'cron'`);
+      } catch { /* column exists */ }
+      try {
+        db.exec(`ALTER TABLE cron_jobs ADD COLUMN run_at TEXT`);
+      } catch { /* column exists */ }
+      try {
+        db.exec(`ALTER TABLE cron_jobs ADD COLUMN interval_ms INTEGER`);
+      } catch { /* column exists */ }
+      try {
+        db.exec(`ALTER TABLE cron_jobs ADD COLUMN delete_after_run INTEGER DEFAULT 0`);
+      } catch { /* column exists */ }
+      try {
+        db.exec(`ALTER TABLE cron_jobs ADD COLUMN next_run_at TEXT`);
+      } catch { /* column exists */ }
+      try {
+        db.exec(`ALTER TABLE cron_jobs ADD COLUMN session_id TEXT`);
+      } catch { /* column exists */ }
+      try {
+        db.exec(`ALTER TABLE cron_jobs ADD COLUMN job_type TEXT DEFAULT 'routine'`);
+      } catch { /* column exists */ }
 
-    // Auto-enable delete-after for one-time "at" jobs
-    const deleteAfterRun = parsed.type === 'at' ? 1 : 0;
+      const sessionId = getCurrentSessionId();
 
-    // Channel is always 'desktop' - routing broadcasts to all configured channels
-    const targetChannel = 'desktop';
+      // Auto-enable delete-after for one-time "at" jobs
+      const deleteAfterRun = parsed.type === 'at' ? 1 : 0;
 
-    const nextRunAt = calculateNextRun(
-      parsed.type,
-      parsed.schedule || null,
-      parsed.runAt || null,
-      parsed.intervalMs || null
-    );
+      // Channel is always 'desktop' - routing broadcasts to all configured channels
+      const targetChannel = 'desktop';
 
-    // Check if exists - update or insert
-    const existing = db.prepare('SELECT id FROM cron_jobs WHERE name = ?').get(name);
-
-    if (existing) {
-      db.prepare(`
-        UPDATE cron_jobs SET
-          schedule_type = ?, schedule = ?, run_at = ?, interval_ms = ?,
-          prompt = ?, channel = ?, enabled = 1,
-          delete_after_run = ?, next_run_at = ?, session_id = ?, job_type = ?,
-          updated_at = datetime('now')
-        WHERE name = ?
-      `).run(
-        parsed.type, parsed.schedule || null, parsed.runAt || null, parsed.intervalMs || null,
-        prompt, targetChannel, deleteAfterRun, nextRunAt, sessionId, 'routine', name
+      const nextRunAt = calculateNextRun(
+        parsed.type,
+        parsed.schedule || null,
+        parsed.runAt || null,
+        parsed.intervalMs || null
       );
-    } else {
-      db.prepare(`
-        INSERT INTO cron_jobs (
-          name, schedule_type, schedule, run_at, interval_ms,
-          prompt, channel, enabled, delete_after_run, next_run_at, session_id, job_type
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
-      `).run(
-        name, parsed.type, parsed.schedule || null, parsed.runAt || null, parsed.intervalMs || null,
-        prompt, targetChannel, deleteAfterRun, nextRunAt, sessionId, 'routine'
-      );
+
+      // Check if exists - update or insert
+      const existing = db.prepare('SELECT id FROM cron_jobs WHERE name = ?').get(name);
+
+      if (existing) {
+        db.prepare(`
+          UPDATE cron_jobs SET
+            schedule_type = ?, schedule = ?, run_at = ?, interval_ms = ?,
+            prompt = ?, channel = ?, enabled = 1,
+            delete_after_run = ?, next_run_at = ?, session_id = ?, job_type = ?,
+            updated_at = datetime('now')
+          WHERE name = ?
+        `).run(
+          parsed.type, parsed.schedule || null, parsed.runAt || null, parsed.intervalMs || null,
+          prompt, targetChannel, deleteAfterRun, nextRunAt, sessionId, 'routine', name
+        );
+      } else {
+        db.prepare(`
+          INSERT INTO cron_jobs (
+            name, schedule_type, schedule, run_at, interval_ms,
+            prompt, channel, enabled, delete_after_run, next_run_at, session_id, job_type
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+        `).run(
+          name, parsed.type, parsed.schedule || null, parsed.runAt || null, parsed.intervalMs || null,
+          prompt, targetChannel, deleteAfterRun, nextRunAt, sessionId, 'routine'
+        );
+      }
+
+      // Build user-friendly schedule description
+      let scheduleDesc: string;
+      if (parsed.type === 'at') {
+        scheduleDesc = `one-time at ${formatDateTime(parsed.runAt!)}`;
+      } else if (parsed.type === 'every') {
+        scheduleDesc = `every ${formatDuration(parsed.intervalMs!)}`;
+      } else {
+        scheduleDesc = `cron: ${parsed.schedule}`;
+      }
+
+      console.log(`[Scheduler] Routine created: ${name} (${parsed.type})`);
+      return JSON.stringify({
+        success: true,
+        message: `Routine "${name}" created`,
+        name,
+        type: parsed.type,
+        schedule: scheduleDesc,
+        next_run: formatDateTime(nextRunAt),
+        one_time: deleteAfterRun === 1,
+        channel: targetChannel,
+        session_id: sessionId,
+      });
+    } finally {
+      db.close();
     }
-
-    db.close();
-
-    // Build user-friendly schedule description
-    let scheduleDesc: string;
-    if (parsed.type === 'at') {
-      scheduleDesc = `one-time at ${formatDateTime(parsed.runAt!)}`;
-    } else if (parsed.type === 'every') {
-      scheduleDesc = `every ${formatDuration(parsed.intervalMs!)}`;
-    } else {
-      scheduleDesc = `cron: ${parsed.schedule}`;
-    }
-
-    console.log(`[Scheduler] Routine created: ${name} (${parsed.type})`);
-    return JSON.stringify({
-      success: true,
-      message: `Routine "${name}" created`,
-      name,
-      type: parsed.type,
-      schedule: scheduleDesc,
-      next_run: formatDateTime(nextRunAt),
-      one_time: deleteAfterRun === 1,
-      channel: targetChannel,
-      session_id: sessionId,
-    });
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : 'Unknown error';
     console.error(`[Scheduler] Failed to create routine: ${errorMsg}`);
@@ -442,97 +444,99 @@ export async function handleCreateReminderTool(input: unknown): Promise<string> 
     }
 
     const db = new Database(dbPath);
-    db.pragma('journal_mode = WAL');
-
-    // Ensure table has the new columns (including job_type)
     try {
-      db.exec(`ALTER TABLE cron_jobs ADD COLUMN schedule_type TEXT DEFAULT 'cron'`);
-    } catch { /* column exists */ }
-    try {
-      db.exec(`ALTER TABLE cron_jobs ADD COLUMN run_at TEXT`);
-    } catch { /* column exists */ }
-    try {
-      db.exec(`ALTER TABLE cron_jobs ADD COLUMN interval_ms INTEGER`);
-    } catch { /* column exists */ }
-    try {
-      db.exec(`ALTER TABLE cron_jobs ADD COLUMN delete_after_run INTEGER DEFAULT 0`);
-    } catch { /* column exists */ }
-    try {
-      db.exec(`ALTER TABLE cron_jobs ADD COLUMN next_run_at TEXT`);
-    } catch { /* column exists */ }
-    try {
-      db.exec(`ALTER TABLE cron_jobs ADD COLUMN session_id TEXT`);
-    } catch { /* column exists */ }
-    try {
-      db.exec(`ALTER TABLE cron_jobs ADD COLUMN job_type TEXT DEFAULT 'routine'`);
-    } catch { /* column exists */ }
+      db.pragma('journal_mode = WAL');
 
-    const sessionId = getCurrentSessionId();
+      // Ensure table has the new columns (including job_type)
+      try {
+        db.exec(`ALTER TABLE cron_jobs ADD COLUMN schedule_type TEXT DEFAULT 'cron'`);
+      } catch { /* column exists */ }
+      try {
+        db.exec(`ALTER TABLE cron_jobs ADD COLUMN run_at TEXT`);
+      } catch { /* column exists */ }
+      try {
+        db.exec(`ALTER TABLE cron_jobs ADD COLUMN interval_ms INTEGER`);
+      } catch { /* column exists */ }
+      try {
+        db.exec(`ALTER TABLE cron_jobs ADD COLUMN delete_after_run INTEGER DEFAULT 0`);
+      } catch { /* column exists */ }
+      try {
+        db.exec(`ALTER TABLE cron_jobs ADD COLUMN next_run_at TEXT`);
+      } catch { /* column exists */ }
+      try {
+        db.exec(`ALTER TABLE cron_jobs ADD COLUMN session_id TEXT`);
+      } catch { /* column exists */ }
+      try {
+        db.exec(`ALTER TABLE cron_jobs ADD COLUMN job_type TEXT DEFAULT 'routine'`);
+      } catch { /* column exists */ }
 
-    // Auto-enable delete-after for one-time "at" jobs
-    const deleteAfterRun = parsed.type === 'at' ? 1 : 0;
+      const sessionId = getCurrentSessionId();
 
-    // Channel is always 'desktop' - routing broadcasts to all configured channels
-    const targetChannel = 'desktop';
+      // Auto-enable delete-after for one-time "at" jobs
+      const deleteAfterRun = parsed.type === 'at' ? 1 : 0;
 
-    const nextRunAt = calculateNextRun(
-      parsed.type,
-      parsed.schedule || null,
-      parsed.runAt || null,
-      parsed.intervalMs || null
-    );
+      // Channel is always 'desktop' - routing broadcasts to all configured channels
+      const targetChannel = 'desktop';
 
-    // Check if exists - update or insert
-    const existing = db.prepare('SELECT id FROM cron_jobs WHERE name = ?').get(name);
-
-    if (existing) {
-      db.prepare(`
-        UPDATE cron_jobs SET
-          schedule_type = ?, schedule = ?, run_at = ?, interval_ms = ?,
-          prompt = ?, channel = ?, enabled = 1,
-          delete_after_run = ?, next_run_at = ?, session_id = ?, job_type = ?,
-          updated_at = datetime('now')
-        WHERE name = ?
-      `).run(
-        parsed.type, parsed.schedule || null, parsed.runAt || null, parsed.intervalMs || null,
-        reminder, targetChannel, deleteAfterRun, nextRunAt, sessionId, 'reminder', name
+      const nextRunAt = calculateNextRun(
+        parsed.type,
+        parsed.schedule || null,
+        parsed.runAt || null,
+        parsed.intervalMs || null
       );
-    } else {
-      db.prepare(`
-        INSERT INTO cron_jobs (
-          name, schedule_type, schedule, run_at, interval_ms,
-          prompt, channel, enabled, delete_after_run, next_run_at, session_id, job_type
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
-      `).run(
-        name, parsed.type, parsed.schedule || null, parsed.runAt || null, parsed.intervalMs || null,
-        reminder, targetChannel, deleteAfterRun, nextRunAt, sessionId, 'reminder'
-      );
+
+      // Check if exists - update or insert
+      const existing = db.prepare('SELECT id FROM cron_jobs WHERE name = ?').get(name);
+
+      if (existing) {
+        db.prepare(`
+          UPDATE cron_jobs SET
+            schedule_type = ?, schedule = ?, run_at = ?, interval_ms = ?,
+            prompt = ?, channel = ?, enabled = 1,
+            delete_after_run = ?, next_run_at = ?, session_id = ?, job_type = ?,
+            updated_at = datetime('now')
+          WHERE name = ?
+        `).run(
+          parsed.type, parsed.schedule || null, parsed.runAt || null, parsed.intervalMs || null,
+          reminder, targetChannel, deleteAfterRun, nextRunAt, sessionId, 'reminder', name
+        );
+      } else {
+        db.prepare(`
+          INSERT INTO cron_jobs (
+            name, schedule_type, schedule, run_at, interval_ms,
+            prompt, channel, enabled, delete_after_run, next_run_at, session_id, job_type
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+        `).run(
+          name, parsed.type, parsed.schedule || null, parsed.runAt || null, parsed.intervalMs || null,
+          reminder, targetChannel, deleteAfterRun, nextRunAt, sessionId, 'reminder'
+        );
+      }
+
+      // Build user-friendly schedule description
+      let scheduleDesc: string;
+      if (parsed.type === 'at') {
+        scheduleDesc = `one-time at ${formatDateTime(parsed.runAt!)}`;
+      } else if (parsed.type === 'every') {
+        scheduleDesc = `every ${formatDuration(parsed.intervalMs!)}`;
+      } else {
+        scheduleDesc = `cron: ${parsed.schedule}`;
+      }
+
+      console.log(`[Scheduler] Reminder created: ${name} (${parsed.type})`);
+      return JSON.stringify({
+        success: true,
+        message: `Reminder "${name}" created`,
+        name,
+        type: 'reminder',
+        schedule: scheduleDesc,
+        next_run: formatDateTime(nextRunAt),
+        one_time: deleteAfterRun === 1,
+        channel: targetChannel,
+        session_id: sessionId,
+      });
+    } finally {
+      db.close();
     }
-
-    db.close();
-
-    // Build user-friendly schedule description
-    let scheduleDesc: string;
-    if (parsed.type === 'at') {
-      scheduleDesc = `one-time at ${formatDateTime(parsed.runAt!)}`;
-    } else if (parsed.type === 'every') {
-      scheduleDesc = `every ${formatDuration(parsed.intervalMs!)}`;
-    } else {
-      scheduleDesc = `cron: ${parsed.schedule}`;
-    }
-
-    console.log(`[Scheduler] Reminder created: ${name} (${parsed.type})`);
-    return JSON.stringify({
-      success: true,
-      message: `Reminder "${name}" created`,
-      name,
-      type: 'reminder',
-      schedule: scheduleDesc,
-      next_run: formatDateTime(nextRunAt),
-      one_time: deleteAfterRun === 1,
-      channel: targetChannel,
-      session_id: sessionId,
-    });
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : 'Unknown error';
     console.error(`[Scheduler] Failed to create reminder: ${errorMsg}`);

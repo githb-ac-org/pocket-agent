@@ -88,7 +88,7 @@ export class ChatEngine {
           max_tokens: 1024,
           messages: [{ role: 'user', content: `Summarize this conversation concisely, preserving key facts, decisions, and context:\n\n${prompt}` }],
         });
-        return result.content[0].type === 'text' ? result.content[0].text : '';
+        return result.content.length > 0 && result.content[0].type === 'text' ? result.content[0].text : '';
       } catch (err) {
         console.error('[ChatEngine] Summarizer failed, falling back to current model:', err);
         // Fallback to current model if haiku fails
@@ -99,7 +99,7 @@ export class ChatEngine {
           max_tokens: 1024,
           messages: [{ role: 'user', content: `Summarize this conversation concisely, preserving key facts, decisions, and context:\n\n${prompt}` }],
         });
-        return result.content[0].type === 'text' ? result.content[0].text : '';
+        return result.content.length > 0 && result.content[0].type === 'text' ? result.content[0].text : '';
       }
     });
     console.log('[ChatEngine] Summarizer wired up');

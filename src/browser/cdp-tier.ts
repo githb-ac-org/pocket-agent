@@ -699,6 +699,8 @@ export class CdpTier {
           tier: 'cdp',
           error: e instanceof Error ? e.message : 'Download failed',
         };
+      } finally {
+        await client.detach().catch(() => {});
       }
     } catch (error) {
       return {

@@ -125,27 +125,6 @@ describe('BrowserManager', () => {
     });
   });
 
-  describe('getStatus', () => {
-    it('returns status for all tiers', async () => {
-      // Trigger lazy init by executing something
-      await manager.execute({ action: 'navigate', url: 'https://example.com' });
-
-      const status = manager.getStatus();
-
-      expect(status).toHaveProperty('electron');
-      expect(status).toHaveProperty('cdp');
-      expect(status).toHaveProperty('lastTier');
-      expect(status.lastTier).toBe('electron');
-    });
-
-    it('returns inactive state when tiers not initialized', () => {
-      const status = manager.getStatus();
-
-      expect(status.electron).toEqual({ active: false });
-      expect(status.cdp).toEqual({ connected: false });
-    });
-  });
-
   describe('close', () => {
     it('calls close on both tiers when initialized', async () => {
       // Initialize both tiers

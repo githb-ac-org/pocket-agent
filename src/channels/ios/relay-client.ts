@@ -342,12 +342,14 @@ export class iOSRelayClient {
       const url = `${this.relayUrl}/room/${this.instanceId}?role=host`;
       console.log(`[iOS Relay] Connecting to ${url}`);
 
+      let settled = false;
       this.ws = new WebSocket(url);
 
       this.ws.on('open', () => {
         console.log('[iOS Relay] Connected to relay');
         this.reconnectAttempts = 0;
         this.startPing();
+        settled = true;
         resolve();
       });
 
@@ -365,7 +367,8 @@ export class iOSRelayClient {
 
       this.ws.on('error', (error) => {
         console.error('[iOS Relay] Connection error:', error.message);
-        if (!this._isRunning) {
+        if (!settled) {
+          settled = true;
           reject(error);
         }
       });
@@ -865,7 +868,7 @@ export class iOSRelayClient {
       }
       case 'chat:info': {
         const info = this.onChatInfo?.() || { username: '', adminKey: '' };
-        // Never send adminKey to clients — only send the username
+        // Never send adminKey to clients
         this.sendToRelay(client.relayClientId, { type: 'chat:info', username: info.username });
         break;
       }

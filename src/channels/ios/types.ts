@@ -40,10 +40,6 @@ export interface ClientPairMessage extends ClientMessage {
   deviceName: string;
 }
 
-export interface ClientPushTokenMessage extends ClientMessage {
-  type: 'push_token';
-  pushToken: string;
-}
 
 // === Messages from Desktop → iOS ===
 
@@ -90,35 +86,6 @@ export interface ServerSessionsMessage {
   activeSessionId: string;
 }
 
-export interface ServerHistoryMessage {
-  type: 'history';
-  sessionId: string;
-  messages: Array<{
-    role: string;
-    content: string;
-    timestamp: string;
-    metadata?: Record<string, unknown>;
-  }>;
-}
-
-export interface ServerSyncMessage {
-  type: 'sync';
-  userMessage: string;
-  response: string;
-  sessionId: string;
-  tokensUsed?: number;
-  media?: Array<{ type: string; filePath: string; mimeType: string }>;
-  timestamp: string;
-}
-
-export interface ServerSchedulerMessage {
-  type: 'scheduler';
-  jobName: string;
-  prompt: string;
-  response: string;
-  sessionId: string;
-  timestamp: string;
-}
 
 export interface ServerErrorMessage {
   type: 'error';
@@ -262,8 +229,3 @@ export type iOSTasksDueHandler = (hours?: number) => Promise<TaskItem[]>;
 
 export type iOSChatInfoHandler = () => { username: string; adminKey: string };
 
-export interface ServerModeMessage {
-  type: 'mode';
-  mode: 'general' | 'coder';
-  locked: boolean;
-}

@@ -74,7 +74,7 @@ export class CronScheduler {
   private maxHistorySize: number = 100;
   private reloadInterval: ReturnType<typeof setInterval> | null = null;
   private reminderInterval: ReturnType<typeof setInterval> | null = null;
-  private lastJobCount: number = 0;
+  private lastJobHash: string = '';
   private dbPath: string | null = null;
   private db: Database.Database | null = null; // Persistent DB connection for reminders
   private isCheckingReminders: boolean = false; // Mutex to prevent overlapping checks
@@ -96,8 +96,8 @@ export class CronScheduler {
     }
 
     await this.loadJobsFromDatabase();
-    // Use DB count (includes timer-based jobs) not this.jobs.size (cron only)
-    this.lastJobCount = this.memory.getCronJobs(false).length;
+    // Hash all jobs to detect any changes (not just count changes)
+    this.lastJobHash = this.hashJobs(this.memory.getCronJobs(false));
     console.log(`[Scheduler] Initialized with ${this.jobs.size} jobs`);
 
     // Start periodic check for new jobs (every 60 seconds)
@@ -119,19 +119,26 @@ export class CronScheduler {
   }
 
   /**
-   * Check if new jobs have been added to the database
+   * Create a hash of all jobs to detect any changes (additions, deletions, or modifications)
+   */
+  private hashJobs(jobs: CronJob[]): string {
+    return jobs.map(j => `${j.id}:${j.name}:${j.enabled}:${j.schedule}:${j.schedule_type}:${j.prompt}`).join('|');
+  }
+
+  /**
+   * Check if jobs have been added, removed, or modified in the database
    */
   private async checkForNewJobs(): Promise<void> {
     if (!this.memory) return;
 
     const dbJobs = this.memory.getCronJobs(false); // Get all jobs
-    const currentCount = dbJobs.length;
+    const currentHash = this.hashJobs(dbJobs);
 
-    // If job count changed, reload
-    if (currentCount !== this.lastJobCount) {
-      console.log(`[Scheduler] Job count changed (${this.lastJobCount} -> ${currentCount}), reloading...`);
+    // If jobs changed in any way, reload
+    if (currentHash !== this.lastJobHash) {
+      console.log(`[Scheduler] Jobs changed, reloading...`);
       await this.loadJobsFromDatabase();
-      this.lastJobCount = currentCount;
+      this.lastJobHash = currentHash;
     }
   }
 

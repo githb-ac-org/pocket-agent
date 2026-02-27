@@ -61,21 +61,6 @@ export interface BrowserResult {
   tabId?: string;
 }
 
-export interface ExtractedData {
-  text?: string;
-  html?: string;
-  links?: Array<{ href: string; text: string }>;
-  tables?: Array<Array<Array<string>>>;
-  structured?: Record<string, unknown>;
-}
-
-export interface BrowserState {
-  currentUrl?: string;
-  currentTier?: BrowserTier;
-  electronWindowId?: number;
-  cdpConnected?: boolean;
-}
-
 export interface BrowserToolInput {
   action: string;
   url?: string;

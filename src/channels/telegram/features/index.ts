@@ -5,7 +5,5 @@
 export {
   createReactionHandler,
   registerReactionHandler,
-  sendReaction,
-  AgentReactions,
   ReactionHandler,
 } from './reactions';

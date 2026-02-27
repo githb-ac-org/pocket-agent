@@ -41,8 +41,6 @@ import { registerCallbackHandler, CallbackHandlerDeps } from './handlers/callbac
 import {
   createReactionHandler,
   registerReactionHandler,
-  sendReaction,
-  AgentReactions,
 } from './features/reactions';
 
 // Re-export types
@@ -356,13 +354,6 @@ export class TelegramBot extends BaseChannel {
    */
   getActiveChatIds(): number[] {
     return this.chatTracker.getAll();
-  }
-
-  /**
-   * Send a reaction to a user's message (agent acknowledgment)
-   */
-  async reactToMessage(chatId: number, messageId: number, emoji: keyof typeof AgentReactions = 'acknowledge'): Promise<boolean> {
-    return sendReaction(this.bot.api, chatId, messageId, AgentReactions[emoji]);
   }
 
   async start(): Promise<void> {

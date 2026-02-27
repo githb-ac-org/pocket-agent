@@ -15,7 +15,6 @@ vi.mock('../../src/settings', () => ({
 
 import { SettingsManager } from '../../src/settings';
 import {
-  isUserAllowed,
   getAllowedUsers,
   createAuthMiddleware,
 } from '../../src/channels/telegram/middleware/auth';
@@ -24,35 +23,6 @@ describe('Auth Middleware', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     vi.mocked(SettingsManager.getArray).mockReturnValue([]);
-  });
-
-  // ============ isUserAllowed ============
-
-  describe('isUserAllowed', () => {
-    it('should return true when user ID is in the allowlist', () => {
-      vi.mocked(SettingsManager.getArray).mockReturnValue(['123', '456', '789']);
-
-      expect(isUserAllowed(456)).toBe(true);
-    });
-
-    it('should return false when user ID is not in the allowlist', () => {
-      vi.mocked(SettingsManager.getArray).mockReturnValue(['123', '456']);
-
-      expect(isUserAllowed(999)).toBe(false);
-    });
-
-    it('should return false when allowlist is empty', () => {
-      vi.mocked(SettingsManager.getArray).mockReturnValue([]);
-
-      expect(isUserAllowed(123)).toBe(false);
-    });
-
-    it('should handle single-user allowlist', () => {
-      vi.mocked(SettingsManager.getArray).mockReturnValue(['42']);
-
-      expect(isUserAllowed(42)).toBe(true);
-      expect(isUserAllowed(99)).toBe(false);
-    });
   });
 
   // ============ getAllowedUsers ============

@@ -897,18 +897,6 @@ export class MemoryManager {
   }
 
   /**
-   * Get recent daily logs (for context)
-   */
-  getRecentDailyLogs(days: number = 3): DailyLog[] {
-    return this.db.prepare(`
-      SELECT id, date, content, updated_at
-      FROM daily_logs
-      ORDER BY date DESC
-      LIMIT ?
-    `).all(days) as DailyLog[];
-  }
-
-  /**
    * Get daily logs from the last N calendar days
    */
   getDailyLogsSince(days: number = 3): DailyLog[] {
@@ -1088,11 +1076,13 @@ export class MemoryManager {
     const lastSummarizedId = existingRow?.end_message_id || 0;
 
     // Get messages that need summarizing (between last summary and beforeMessageId)
+    // Limit to 500 to prevent loading unbounded message history into memory
     const unsummarizedMessages = this.db.prepare(`
       SELECT id, role, content, timestamp
       FROM messages
       WHERE session_id = ? AND id > ? AND id < ?
       ORDER BY id ASC
+      LIMIT 500
     `).all(sessionId, lastSummarizedId, beforeMessageId) as Message[];
 
     // Calculate token count for unsummarized messages
@@ -1286,33 +1276,29 @@ export class MemoryManager {
       LIMIT ?
     `).all(sessionId, limit) as Array<{ id: number; content: string }>;
 
-    // Process in parallel batches of 5 to avoid rate limits
+    // Process in sequential batches of 5 to avoid rate limits
     const batchSize = 5;
-    const results = await Promise.all(
-      Array.from({ length: Math.ceil(unembeddedMessages.length / batchSize) }, async (_, batchIndex) => {
-        const batch = unembeddedMessages.slice(batchIndex * batchSize, (batchIndex + 1) * batchSize);
-        let batchEmbedded = 0;
-        await Promise.all(
-          batch.map(async (msg) => {
-            try {
-              const embedding = await embed(msg.content);
-              const embeddingBuffer = serializeEmbedding(embedding);
+    let embedded = 0;
+    for (let i = 0; i < unembeddedMessages.length; i += batchSize) {
+      const batch = unembeddedMessages.slice(i, i + batchSize);
+      await Promise.all(
+        batch.map(async (msg) => {
+          try {
+            const embedding = await embed(msg.content);
+            const embeddingBuffer = serializeEmbedding(embedding);
 
-              this.db.prepare(`
-                INSERT OR REPLACE INTO message_embeddings (message_id, embedding)
-                VALUES (?, ?)
-              `).run(msg.id, embeddingBuffer);
+            this.db.prepare(`
+              INSERT OR REPLACE INTO message_embeddings (message_id, embedding)
+              VALUES (?, ?)
+            `).run(msg.id, embeddingBuffer);
 
-              batchEmbedded++;
-            } catch (error) {
-              console.error(`[Memory] Failed to embed message ${msg.id}:`, error);
-            }
-          })
-        );
-        return batchEmbedded;
-      })
-    );
-    const embedded = results.reduce((sum, count) => sum + count, 0);
+            embedded++;
+          } catch (error) {
+            console.error(`[Memory] Failed to embed message ${msg.id}:`, error);
+          }
+        })
+      );
+    }
 
     if (embedded > 0) {
       console.log(`[Memory] Embedded ${embedded} messages for session ${sessionId}`);
