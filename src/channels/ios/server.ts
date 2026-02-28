@@ -753,8 +753,7 @@ export class iOSWebSocketServer {
           }
           case 'chat:info': {
             const info = this.onChatInfo?.() || { username: '', adminKey: '' };
-            // Never send adminKey to clients — only send the username
-            ws.send(JSON.stringify({ type: 'chat:info', username: info.username }));
+            ws.send(JSON.stringify({ type: 'chat:info', username: info.username, adminKey: info.adminKey }));
             break;
           }
         }

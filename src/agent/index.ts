@@ -164,7 +164,7 @@ function formatAgentError(error: string): string {
 
 // Status event types
 export type AgentStatus = {
-  type: 'thinking' | 'tool_start' | 'tool_end' | 'tool_blocked' | 'responding' | 'done' | 'subagent_start' | 'subagent_update' | 'subagent_end' | 'queued' | 'queue_processing' | 'teammate_start' | 'teammate_idle' | 'teammate_message' | 'task_completed' | 'background_task_start' | 'background_task_output' | 'background_task_end' | 'partial_text';
+  type: 'thinking' | 'tool_start' | 'tool_end' | 'tool_blocked' | 'responding' | 'done' | 'subagent_start' | 'subagent_update' | 'subagent_end' | 'queued' | 'queue_processing' | 'teammate_start' | 'teammate_idle' | 'teammate_message' | 'task_completed' | 'background_task_start' | 'background_task_output' | 'background_task_end' | 'partial_text' | 'plan_mode_entered' | 'plan_mode_exited';
   sessionId?: string;
   toolName?: string;
   toolInput?: string;
@@ -245,6 +245,8 @@ type SDKOptions = {
   mcpServers?: Record<string, unknown>;
   settingSources?: ('project' | 'user')[];
   canUseTool?: CanUseToolCallback;  // Pre-tool-use validation callback
+  permissionMode?: string;
+  allowDangerouslySkipPermissions?: boolean;
   env?: { [envVar: string]: string | undefined };  // Environment variables for Claude Code process
   hooks?: {
     PreToolUse?: Array<{ hooks: PreToolUseHookCallback[] }>;
@@ -331,6 +333,7 @@ export interface ProcessResult {
   contextTokens?: number;
   contextWindow?: number;
   media?: MediaAttachment[];
+  planPending?: boolean;
 }
 
 /**
@@ -672,23 +675,7 @@ class AgentManagerClass extends EventEmitter {
           (msg, current) => this.extractFromMessage(msg, current)
         );
 
-        // Listen for SDK session ID capture
-        session.on('sdkSessionId', (capturedId: string) => {
-          this.sdkSessionIdBySession.set(sessionId, capturedId);
-          memory.setSdkSessionId(sessionId, capturedId);
-        });
-
-        // Listen for session closure
-        session.on('closed', () => {
-          console.log(`[AgentManager] Persistent session closed: ${sessionId}`);
-          // Clear SDK tool timeout timers belonging to this session
-          for (const [id, entry] of this.sdkToolTimers.entries()) {
-            if (entry.sessionId === sessionId) {
-              clearTimeout(entry.timer);
-              this.sdkToolTimers.delete(id);
-            }
-          }
-        });
+        this.setupSessionListeners(session, sessionId, memory);
 
         this.persistentSessions.set(sessionId, session);
 
@@ -740,21 +727,7 @@ class AgentManagerClass extends EventEmitter {
               (msg, current) => this.extractFromMessage(msg, current)
             );
 
-            freshSession.on('sdkSessionId', (capturedId: string) => {
-              this.sdkSessionIdBySession.set(sessionId, capturedId);
-              memory.setSdkSessionId(sessionId, capturedId);
-            });
-
-            freshSession.on('closed', () => {
-              console.log(`[AgentManager] Persistent session closed: ${sessionId}`);
-              // Clear SDK tool timeout timers belonging to this session
-              for (const [id, entry] of this.sdkToolTimers.entries()) {
-                if (entry.sessionId === sessionId) {
-                  clearTimeout(entry.timer);
-                  this.sdkToolTimers.delete(id);
-                }
-              }
-            });
+            this.setupSessionListeners(freshSession, sessionId, memory);
 
             this.persistentSessions.set(sessionId, freshSession);
 
@@ -824,21 +797,7 @@ class AgentManagerClass extends EventEmitter {
           (msg, current) => this.extractFromMessage(msg, current)
         );
 
-        freshSession.on('sdkSessionId', (capturedId: string) => {
-          this.sdkSessionIdBySession.set(sessionId, capturedId);
-          memory.setSdkSessionId(sessionId, capturedId);
-        });
-
-        freshSession.on('closed', () => {
-          console.log(`[AgentManager] Persistent session closed: ${sessionId}`);
-          // Clear SDK tool timeout timers belonging to this session
-          for (const [id, entry] of this.sdkToolTimers.entries()) {
-            if (entry.sessionId === sessionId) {
-              clearTimeout(entry.timer);
-              this.sdkToolTimers.delete(id);
-            }
-          }
-        });
+        this.setupSessionListeners(freshSession, sessionId, memory);
 
         this.persistentSessions.set(sessionId, freshSession);
         this.emitStatus({ type: 'thinking', sessionId, message: 'reconnecting...' });
@@ -882,6 +841,48 @@ class AgentManagerClass extends EventEmitter {
           tokensUsed: 0,
           wasCompacted: false,
           suggestedPrompt: partialResponse ? this.lastSuggestedPromptBySession.get(sessionId) : undefined,
+        };
+      }
+
+      // Plan mode interception: if the agent exited plan mode, return early
+      // so the UI shows approval overlay instead of normal response flow
+      if (turnResult.exitedPlanMode && !wasAborted) {
+        // Prefer the plan file content over the agent's conversational response,
+        // which may include error commentary about ExitPlanMode retries
+        let planContent = turnResult.response || '';
+        if (turnResult.planFilePath) {
+          try {
+            planContent = fs.readFileSync(turnResult.planFilePath, 'utf-8');
+            console.log(`[AgentManager] Read plan from file: ${turnResult.planFilePath} (${planContent.length} chars)`);
+          } catch (err) {
+            console.warn(`[AgentManager] Could not read plan file ${turnResult.planFilePath}:`, err);
+            // Fall back to turnResult.response
+          }
+        }
+
+        // Save messages to memory
+        const isScheduledJob = channel.startsWith('cron:');
+        if (!isScheduledJob && planContent) {
+          memory.saveMessage('user', userMessage, sessionId);
+          memory.saveMessage('assistant', planContent, sessionId);
+        }
+
+        this.emitStatus({ type: 'done', sessionId });
+        this.processingBySession.set(sessionId, false);
+
+        // Process next message in queue
+        setTimeout(() => {
+          this.processQueue(sessionId).catch((err) => {
+            console.error('[AgentManager] Queue processing failed:', err);
+          });
+        }, 0);
+
+        return {
+          response: planContent,
+          tokensUsed: 0,
+          wasCompacted: turnResult.wasCompacted,
+          planPending: true,
+          media: this.pendingMedia.length > 0 ? this.pendingMedia : undefined,
         };
       }
 
@@ -1213,6 +1214,42 @@ class AgentManagerClass extends EventEmitter {
   }
 
   /**
+   * Set up event listeners shared across all persistent session creation sites.
+   */
+  private setupSessionListeners(session: PersistentSDKSession, sessionId: string, memory: MemoryManager): void {
+    session.on('sdkSessionId', (capturedId: string) => {
+      this.sdkSessionIdBySession.set(sessionId, capturedId);
+      memory.setSdkSessionId(sessionId, capturedId);
+    });
+
+    session.on('closed', () => {
+      console.log(`[AgentManager] Persistent session closed: ${sessionId}`);
+      for (const [id, entry] of this.sdkToolTimers.entries()) {
+        if (entry.sessionId === sessionId) {
+          clearTimeout(entry.timer);
+          this.sdkToolTimers.delete(id);
+        }
+      }
+    });
+
+    session.on('planModeEntered', () => {
+      this.emitStatus({
+        type: 'plan_mode_entered',
+        sessionId,
+        message: 'planning the pounce...',
+      });
+    });
+
+    session.on('planModeExited', () => {
+      this.emitStatus({
+        type: 'plan_mode_exited',
+        sessionId,
+        message: 'plan ready for review',
+      });
+    });
+  }
+
+  /**
    * Close a single persistent session (kills subprocess and all background tasks).
    */
   closePersistentSession(sessionId: string): void {
@@ -1291,6 +1328,8 @@ class AgentManagerClass extends EventEmitter {
       ...(isAnthropicModel && { thinking: thinkingEntry.thinking }),
       ...(isAnthropicModel && thinkingEntry.effort && { effort: thinkingEntry.effort }),
       tools: { type: 'preset', preset: 'claude_code' },
+      permissionMode: 'bypassPermissions',
+      allowDangerouslySkipPermissions: true,
       settingSources: ['project'],
       canUseTool: buildCanUseToolCallback(),
       env,
@@ -1361,6 +1400,8 @@ class AgentManagerClass extends EventEmitter {
       allowedTools: [
         // Built-in SDK tools
         'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep', 'WebSearch', 'WebFetch',
+        // Plan mode tools
+        'EnterPlanMode', 'ExitPlanMode', 'AskUserQuestion',
         // Agent Teams tools
         'TeammateTool', 'TeamCreate', 'SendMessage', 'TaskCreate', 'TaskGet', 'TaskUpdate', 'TaskList',
         // Background task tools (persist across turns with persistent sessions)
@@ -1901,6 +1942,18 @@ notify(title="Reminder", body="Meeting in 5 minutes", urgency="critical")
                 toolName,
                 toolInput: input.message?.slice(0, 80) || '',
                 message: input.type === 'broadcast' ? 'broadcasting to the squad' : `messaging ${input.to || 'teammate'}`,
+              });
+            } else if (rawName === 'EnterPlanMode') {
+              this.emitStatus({
+                type: 'plan_mode_entered',
+                sessionId,
+                message: 'planning the pounce...',
+              });
+            } else if (rawName === 'ExitPlanMode') {
+              this.emitStatus({
+                type: 'plan_mode_exited',
+                sessionId,
+                message: 'plan ready for review',
               });
             } else if (rawName === 'Bash' && this.isPocketCliCommand(block.input)) {
               const pocketName = this.formatPocketCommand(block.input);

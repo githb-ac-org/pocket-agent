@@ -1223,6 +1223,7 @@ function setupIPC(): void {
         suggestedPrompt: result.suggestedPrompt,
         wasCompacted: result.wasCompacted,
         media: result.media,
+        planPending: result.planPending,
       };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';

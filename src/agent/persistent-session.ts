@@ -22,6 +22,8 @@ export interface TurnResult {
   contextTokens?: number;
   contextWindow?: number;
   errors?: string[];
+  exitedPlanMode?: boolean;
+  planFilePath?: string;
 }
 
 // Typed references to SDK objects (loaded dynamically)
@@ -30,6 +32,7 @@ interface SDKQuery extends AsyncGenerator<unknown, void> {
   interrupt(): Promise<void>;
   close(): void;
   setModel(model?: string): Promise<void>;
+  setPermissionMode(mode: string): Promise<void>;
 }
 
 interface SDKUserMessage {
@@ -128,6 +131,11 @@ export class PersistentSDKSession extends EventEmitter {
   private contextTokens?: number;
   private contextWindow?: number;
   private turnErrors?: string[];
+
+  // Plan mode tracking
+  private inPlanMode = false;
+  private exitedPlanModeThisTurn = false;
+  private planFilePath: string | null = null;
 
   constructor(
     sessionId: string,
@@ -281,7 +289,54 @@ export class PersistentSDKSession extends EventEmitter {
     }
   }
 
+  async setPermissionMode(mode: string): Promise<void> {
+    if (!this.query || !this.alive) return;
+    try {
+      await this.query.setPermissionMode(mode);
+      console.log(`[PersistentSession:${this.sessionId}] Permission mode set to: ${mode}`);
+    } catch (err) {
+      console.error(`[PersistentSession:${this.sessionId}] setPermissionMode error:`, err);
+    }
+  }
+
+  isInPlanMode(): boolean {
+    return this.inPlanMode;
+  }
+
   // ---- Internal mechanics ----
+
+  /**
+   * Detect EnterPlanMode/ExitPlanMode tool calls in assistant messages
+   * and update plan mode tracking state.
+   */
+  private trackPlanMode(message: unknown): void {
+    const msg = message as { type?: string; message?: { content?: unknown[] } };
+    if (msg.type !== 'assistant') return;
+
+    const content = msg.message?.content;
+    if (!Array.isArray(content)) return;
+
+    for (const block of content) {
+      const b = block as { type?: string; name?: string; input?: Record<string, unknown> };
+      if (b.type !== 'tool_use') continue;
+
+      if (b.name === 'EnterPlanMode') {
+        this.inPlanMode = true;
+        this.planFilePath = null;
+        console.log(`[PersistentSession:${this.sessionId}] Entered plan mode`);
+        this.emit('planModeEntered');
+      } else if (b.name === 'ExitPlanMode') {
+        this.inPlanMode = false;
+        this.exitedPlanModeThisTurn = true;
+        console.log(`[PersistentSession:${this.sessionId}] Exited plan mode (plan file: ${this.planFilePath || 'none'})`);
+        this.emit('planModeExited');
+      } else if (b.name === 'Write' && this.inPlanMode && b.input?.file_path) {
+        // Capture the plan file path written during plan mode
+        this.planFilePath = b.input.file_path as string;
+        console.log(`[PersistentSession:${this.sessionId}] Plan file written: ${this.planFilePath}`);
+      }
+    }
+  }
 
   /**
    * The output loop runs for the lifetime of the session.
@@ -298,6 +353,9 @@ export class PersistentSDKSession extends EventEmitter {
         for await (const message of this.query!) {
           // Process status updates (tool_start, tool_end, etc.)
           this.processStatus(message);
+
+          // Track plan mode state from assistant tool calls
+          this.trackPlanMode(message);
 
           // Extract text response
           this.turnResponse = this.extractText(message, this.turnResponse);
@@ -414,6 +472,7 @@ export class PersistentSDKSession extends EventEmitter {
    */
   private waitForTurn(): Promise<TurnResult> {
     this.turnResponse = '';
+    this.exitedPlanModeThisTurn = false;
 
     return new Promise<TurnResult>((resolve, reject) => {
       this.turnResolve = resolve;
@@ -448,7 +507,11 @@ export class PersistentSDKSession extends EventEmitter {
         contextTokens: this.contextTokens,
         contextWindow: this.contextWindow,
         errors: this.turnErrors,
+        exitedPlanMode: this.exitedPlanModeThisTurn || undefined,
+        planFilePath: this.exitedPlanModeThisTurn ? (this.planFilePath ?? undefined) : undefined,
       };
+      this.exitedPlanModeThisTurn = false;
+      this.planFilePath = null;
       this.turnResolve(result);
       this.turnResolve = null;
       this.turnReject = null;

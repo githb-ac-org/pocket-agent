@@ -3665,6 +3665,127 @@
       border-radius: 8px;
       cursor: pointer;
     }
+
+    /* Plan mode status indicator */
+    .status-indicator.plan-mode-active {
+      border-color: #a855f7;
+      background: linear-gradient(135deg, rgba(168, 85, 247, 0.12) 0%, rgba(139, 92, 246, 0.08) 100%);
+    }
+
+    .status-indicator.plan-mode-active .status-action {
+      background: linear-gradient(
+        90deg,
+        #a855f7 0%,
+        #8b5cf6 50%,
+        #a855f7 100%
+      );
+      background-size: 200% 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: shimmer 2s ease-in-out infinite;
+    }
+
+    /* Plan approval overlay */
+    .plan-approval-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 1000;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 24px;
+      backdrop-filter: blur(4px);
+    }
+    .plan-approval-overlay.show {
+      display: flex;
+    }
+    .plan-approval-panel {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      width: 100%;
+      max-width: 640px;
+      max-height: 70vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      animation: modalIn 0.2s ease;
+    }
+    .plan-approval-header {
+      padding: 16px 20px;
+      font-family: 'Pixelify Sans', sans-serif;
+      font-size: 16px;
+      color: var(--accent);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .plan-approval-body {
+      padding: 16px 20px;
+      overflow-y: auto;
+      flex: 1;
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--text-primary);
+    }
+    .plan-approval-body pre {
+      background: var(--bg-tertiary);
+      border-radius: 8px;
+      padding: 12px;
+      overflow-x: auto;
+      font-size: 12px;
+    }
+    .plan-approval-body code {
+      background: var(--bg-tertiary);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    .plan-approval-body pre code {
+      background: none;
+      padding: 0;
+    }
+    .plan-approval-actions {
+      padding: 12px 20px;
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .plan-feedback-input {
+      display: none;
+      width: 100%;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-primary);
+      font-family: 'Sora', sans-serif;
+      font-size: 13px;
+      padding: 10px 12px;
+      resize: vertical;
+      outline: none;
+    }
+    .plan-feedback-input:focus {
+      border-color: var(--accent);
+    }
+    .plan-btn {
+      padding: 8px 20px;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-family: 'Pixelify Sans', sans-serif;
+      font-size: 14px;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .plan-btn:hover { opacity: 0.85; }
+    .plan-btn-approve {
+      background: var(--accent);
+      color: white;
+    }
+    .plan-btn-reject {
+      background: var(--bg-tertiary);
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+    }
   </style>
   <script>
     (function(){function _apply(p){var r=document.documentElement;if(!p){['bg-primary','bg-secondary','bg-tertiary','border','text-primary','text-secondary','text-muted','accent','accent-secondary','accent-hover','error','success','warning','orange','user-bubble','user-bubble-solid','assistant-bubble'].forEach(function(k){r.style.removeProperty('--'+k)});return}Object.keys(p).forEach(function(k){r.style.setProperty('--'+k,p[k])})}window.addEventListener('DOMContentLoaded',function(){if(!window.pocketAgent)return;Promise.all([window.pocketAgent.getThemes(),window.pocketAgent.getSkin()]).then(function(res){var themes=res[0],skinId=res[1],t=themes[skinId];if(t)_apply(t.palette);window.pocketAgent.onSkinChanged(function(id){var th=themes[id];if(th)_apply(th.palette)})}).catch(function(){})})})();
@@ -3811,6 +3932,21 @@
             <span>skool.com/kenkai</span>
             <small>Learn AI Dev</small>
           </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Plan Approval Overlay -->
+  <div class="plan-approval-overlay" id="plan-approval-overlay">
+    <div class="plan-approval-panel">
+      <div class="plan-approval-header">plan ready for review</div>
+      <div class="plan-approval-body" id="plan-approval-body"></div>
+      <div class="plan-approval-actions">
+        <textarea class="plan-feedback-input" id="plan-feedback-input" placeholder="feedback..." rows="2"></textarea>
+        <div style="display:flex;gap:8px;margin-top:8px;justify-content:flex-end">
+          <button class="plan-btn plan-btn-reject" id="plan-reject-btn" onclick="rejectPlan()">revise</button>
+          <button class="plan-btn plan-btn-approve" id="plan-approve-btn" onclick="approvePlan()">approve</button>
         </div>
       </div>
     </div>
@@ -5260,6 +5396,10 @@
         if (currentSessionId === sessionId) {
           if (result.stopped) {
             // Query was stopped — nothing to display
+          } else if (result.success && result.planPending) {
+            // Plan mode: show response AND trigger approval overlay
+            addMessage('assistant', result.response, true, [], null, true, result.media);
+            showPlanApproval(result.response, sessionId);
           } else if (result.success) {
             addMessage('assistant', result.response, true, [], null, true, result.media);
 
@@ -5771,6 +5911,7 @@
           statusEl.classList.remove('subagent-active');
           statusEl.classList.remove('pocket-cli-active');
           statusEl.classList.remove('team-active');
+          statusEl.classList.remove('plan-mode-active');
         }
       } else if (status.type === 'tool_start') {
         // Increment tool call counter
@@ -5792,6 +5933,7 @@
         }
         statusEl.classList.remove('subagent-active');
         statusEl.classList.remove('team-active');
+        statusEl.classList.remove('plan-mode-active');
         if (status.isPocketCli) {
           statusEl.classList.add('pocket-cli-active');
         } else {
@@ -5806,6 +5948,7 @@
           statusEl.classList.remove('subagent-active');
           statusEl.classList.remove('pocket-cli-active');
           statusEl.classList.remove('team-active');
+          statusEl.classList.remove('plan-mode-active');
         }
       } else if (status.type === 'tool_blocked') {
         // Safety hook blocked a dangerous command
@@ -5905,6 +6048,19 @@
           detailEl.textContent = '';
           detailEl.style.display = 'none';
         }
+      } else if (status.type === 'plan_mode_entered') {
+        statusEl.classList.add('plan-mode-active');
+        statusEl.classList.remove('subagent-active');
+        statusEl.classList.remove('pocket-cli-active');
+        statusEl.classList.remove('team-active');
+        actionEl.textContent = status.message || 'planning the pounce...';
+        detailEl.textContent = '';
+        detailEl.style.display = 'none';
+      } else if (status.type === 'plan_mode_exited') {
+        statusEl.classList.remove('plan-mode-active');
+        actionEl.textContent = status.message || 'plan ready for review';
+        detailEl.textContent = '';
+        detailEl.style.display = 'none';
       } else if (status.type === 'partial_text') {
         // Show live-updating assistant bubble with composed text
         if (status.partialText && status.sessionId) {
@@ -8304,6 +8460,142 @@
 
     function closeAbout() {
       document.getElementById('about-modal').classList.remove('show');
+    }
+
+    // ---- Plan Mode Approval ----
+    let planApprovalSessionId = null;
+    let planRejectState = 'initial'; // 'initial' | 'feedback'
+
+    function showPlanApproval(content, sessionId) {
+      planApprovalSessionId = sessionId;
+      planRejectState = 'initial';
+
+      const overlay = document.getElementById('plan-approval-overlay');
+      const body = document.getElementById('plan-approval-body');
+      const feedbackInput = document.getElementById('plan-feedback-input');
+
+      // Render plan content as markdown
+      if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
+        body.innerHTML = DOMPurify.sanitize(marked.parse(content));
+      } else {
+        body.textContent = content;
+      }
+
+      feedbackInput.style.display = 'none';
+      feedbackInput.value = '';
+      overlay.classList.add('show');
+    }
+
+    function hidePlanApproval() {
+      document.getElementById('plan-approval-overlay').classList.remove('show');
+      planApprovalSessionId = null;
+      planRejectState = 'initial';
+    }
+
+    async function approvePlan() {
+      if (!planApprovalSessionId) return;
+      const sessionId = planApprovalSessionId;
+      hidePlanApproval();
+
+      // Send approval as a regular follow-up message
+      await sendPlanResponse('Approved. Proceed with implementation.', sessionId);
+    }
+
+    function rejectPlan() {
+      if (planRejectState === 'initial') {
+        // First click: show feedback textarea
+        planRejectState = 'feedback';
+        const feedbackInput = document.getElementById('plan-feedback-input');
+        feedbackInput.style.display = 'block';
+        feedbackInput.focus();
+        document.getElementById('plan-reject-btn').textContent = 'send revision';
+        return;
+      }
+
+      // Second click: send rejection with feedback
+      if (!planApprovalSessionId) return;
+      const sessionId = planApprovalSessionId;
+      const feedback = document.getElementById('plan-feedback-input').value.trim();
+      hidePlanApproval();
+
+      const message = feedback
+        ? `Rejected. Please revise the plan with this feedback:\n${feedback}`
+        : 'Rejected. Please revise the plan.';
+      sendPlanResponse(message, sessionId);
+    }
+
+    async function sendPlanResponse(message, sessionId) {
+      // Show the user message in chat
+      addMessage('user', message, true);
+
+      // Set loading state
+      isLoadingBySession.set(sessionId, true);
+      renderTabs();
+      if (currentSessionId === sessionId) {
+        setButtonState(true);
+      }
+      const statusEl = addStatusIndicator('*stretches paws* thinking...');
+      statusElBySession.set(sessionId, statusEl);
+      ensureStatusListener(sessionId);
+      scrollToBottom();
+
+      try {
+        const result = await window.pocketAgent.send(message, sessionId);
+
+        // Clean up
+        const currentStatusEl = statusElBySession.get(sessionId);
+        if (currentStatusEl) {
+          currentStatusEl.remove();
+          statusElBySession.delete(sessionId);
+        }
+        toolCountBySession.delete(sessionId);
+        isLoadingBySession.set(sessionId, false);
+        renderTabs();
+        if (currentSessionId === sessionId) {
+          setButtonState(false);
+        }
+
+        // Remove streaming bubble if present
+        const streamBubble = streamingBubbleBySession.get(sessionId);
+        if (streamBubble) {
+          streamBubble.remove();
+          streamingBubbleBySession.delete(sessionId);
+        }
+
+        if (currentSessionId === sessionId) {
+          if (result.success && result.planPending) {
+            // Another plan revision — show approval again
+            addMessage('assistant', result.response, true, [], null, true, result.media);
+            showPlanApproval(result.response, sessionId);
+          } else if (result.success) {
+            addMessage('assistant', result.response, true, [], null, true, result.media);
+            if (result.suggestedPrompt) {
+              setSuggestion(result.suggestedPrompt);
+            }
+          } else if (result.error) {
+            const errorMsg = result.error || '';
+            if (!errorMsg.includes('stopped') && !errorMsg.includes('aborted')) {
+              addMessage('error', errorMsg);
+            }
+          }
+          updateStats();
+          scrollToBottom();
+        }
+      } catch (err) {
+        console.error('Plan response failed:', err);
+        const currentStatusEl = statusElBySession.get(sessionId);
+        if (currentStatusEl) {
+          currentStatusEl.remove();
+          statusElBySession.delete(sessionId);
+        }
+        isLoadingBySession.set(sessionId, false);
+        renderTabs();
+        if (currentSessionId === sessionId) {
+          setButtonState(false);
+          addMessage('error', err.message || 'Failed to send plan response');
+          scrollToBottom();
+        }
+      }
     }
   </script>
 </body>
