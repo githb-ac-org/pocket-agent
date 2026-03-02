@@ -1462,6 +1462,10 @@ class AgentManagerClass extends EventEmitter {
         'mcp__pocket-agent__set_project',
         'mcp__pocket-agent__get_project',
         'mcp__pocket-agent__clear_project',
+        // Coder-only tools
+        ...(isCoder ? [
+          'mcp__grep__searchGitHub',
+        ] : []),
         // Personal assistant tools — only in general mode
         ...(isCoder ? [] : [
           // Memory
@@ -1513,10 +1517,12 @@ class AgentManagerClass extends EventEmitter {
       // Coder mode only registers coding-relevant tools (browser, notify, project)
       const sdkMcpServers = await buildSdkMcpServers(this.toolsConfig, sessionMode);
 
-      // Merge both types
-      const allServers = {
+      // Merge both types + remote MCP servers (coder only)
+      const allServers: Record<string, unknown> = {
         ...mcpServers,
         ...(sdkMcpServers || {}),
+        // Grep MCP — remote code search across 1M+ public GitHub repos (coder only)
+        ...(isCoder ? { grep: { type: 'http', url: 'https://mcp.grep.app' } } : {}),
       };
 
       if (Object.keys(allServers).length > 0) {
