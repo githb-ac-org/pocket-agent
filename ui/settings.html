@@ -2086,6 +2086,13 @@
       }
     }
 
+    function escapeHtml(text) {
+      if (!text) return '';
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
     async function refreshConnectedDevices() {
       try {
         const devices = await window.pocketAgent.getIOSDevices();
@@ -2093,8 +2100,8 @@
         if (devices && devices.length > 0) {
           container.innerHTML = devices.map(d =>
             '<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border);">' +
-            '<span style="color: var(--text-primary); font-size: 13px;">' + (d.deviceName || 'Unknown Device') + '</span>' +
-            '<span style="color: var(--text-muted); font-size: 12px;">' + (d.sessionId || 'default') + '</span>' +
+            '<span style="color: var(--text-primary); font-size: 13px;">' + escapeHtml(d.deviceName || 'Unknown Device') + '</span>' +
+            '<span style="color: var(--text-muted); font-size: 12px;">' + escapeHtml(d.sessionId || 'default') + '</span>' +
             '</div>'
           ).join('');
         } else {
