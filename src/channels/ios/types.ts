@@ -70,6 +70,7 @@ export interface ServerResponseMessage {
   tokensUsed?: number;
   media?: Array<{ type: string; filePath: string; mimeType: string }>;
   timestamp: string;
+  planPending?: boolean;
 }
 
 export interface ServerPairResultMessage {
@@ -121,7 +122,7 @@ export interface ConnectedDevice {
 export type iOSMessageHandler = (
   client: { device: ConnectedDevice },
   message: ClientChatMessage
-) => Promise<{ response: string; tokensUsed?: number; media?: Array<{ type: string; filePath: string; mimeType: string }> }>;
+) => Promise<{ response: string; tokensUsed?: number; media?: Array<{ type: string; filePath: string; mimeType: string }>; planPending?: boolean }>;
 
 export type iOSSessionsHandler = () => Array<{ id: string; name: string; updatedAt: string }>;
 
@@ -190,6 +191,8 @@ export type iOSRoutinesRunHandler = (name: string) => Promise<{ success: boolean
 export type iOSAppInfoHandler = () => { version: string; name: string };
 
 export type iOSModeGetHandler = (sessionId: string) => { mode: string; locked: boolean };
+
+export type iOSWorkflowsHandler = (sessionId: string) => Array<{ name: string; description: string; content: string }>;
 
 export type iOSModeSwitchHandler = (sessionId: string, mode: string) => { mode: string; locked: boolean; error?: string };
 

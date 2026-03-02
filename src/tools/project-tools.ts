@@ -1,15 +1,19 @@
 /**
  * Project management tools for the agent
  *
- * - set_project: Lock working directory to a specific project path
- * - get_project: Get the currently active project directory
- * - clear_project: Clear the active project (return to default workspace)
+ * - set_project: Set the current session's working directory
+ * - get_project: Get the current session's working directory
+ * - clear_project: Reset the current session's working directory to default
+ *
+ * These tools operate per-session via the working_directory column in the DB,
+ * rather than changing the global AgentManager workspace.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 import Database from 'better-sqlite3';
 import { AgentManager } from '../agent/index.js';
+import { getCurrentSessionId } from './session-context';
 
 // Get database path
 function getDbPath(): string {
@@ -44,19 +48,6 @@ function getDb(): Database.Database | null {
   } catch {
     return null;
   }
-}
-
-/**
- * Ensure the settings table exists
- */
-function ensureSettingsTable(db: Database.Database): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS settings (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
 }
 
 /**
@@ -96,7 +87,7 @@ function validatePath(inputPath: string): { valid: boolean; normalized?: string;
 export function getSetProjectToolDefinition() {
   return {
     name: 'set_project',
-    description: 'Set and lock the working directory to a project path. Persisted to database. Takes effect on next message.',
+    description: 'Set the working directory for this session to a project path. Takes effect on next message.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -111,7 +102,7 @@ export function getSetProjectToolDefinition() {
 }
 
 /**
- * Set project tool handler
+ * Set project tool handler — updates the current session's working_directory
  */
 export async function handleSetProjectTool(input: unknown): Promise<string> {
   const { path: inputPath } = input as { path: string };
@@ -132,26 +123,25 @@ export async function handleSetProjectTool(input: unknown): Promise<string> {
   }
 
   try {
-    ensureSettingsTable(db);
+    const sessionId = getCurrentSessionId();
+    console.log(`[ProjectTools] set_project: session=${sessionId} path=${validation.normalized}`);
 
-    // Save to settings
-    const stmt = db.prepare(`
-      INSERT INTO settings (key, value, updated_at)
-      VALUES ('active_project', ?, datetime('now'))
-      ON CONFLICT(key) DO UPDATE SET
-        value = excluded.value,
-        updated_at = excluded.updated_at
-    `);
-    stmt.run(validation.normalized);
+    // Update the session's working_directory in the DB
+    db.prepare(`
+      UPDATE sessions SET working_directory = ?, updated_at = (strftime('%Y-%m-%dT%H:%M:%fZ'))
+      WHERE id = ?
+    `).run(validation.normalized, sessionId);
 
-    // Update AgentManager's workspace so the next SDK query uses the new cwd
-    AgentManager.setWorkspace(validation.normalized!);
+    // Flag the session for restart after the current turn completes.
+    // Can't close the session mid-turn (causes "Session closed" errors),
+    // so AgentManager will close it after the turn finishes.
+    AgentManager.flagProjectSwitch(sessionId);
 
     return JSON.stringify({
       success: true,
       message: `Project switched to: ${validation.normalized}`,
       path: validation.normalized,
-      note: 'All file and bash operations will use this directory starting from the next message.',
+      note: 'Working directory updated. It will take effect on the next message.',
     });
   } catch (error) {
     return JSON.stringify({
@@ -168,7 +158,7 @@ export async function handleSetProjectTool(input: unknown): Promise<string> {
 export function getGetProjectToolDefinition() {
   return {
     name: 'get_project',
-    description: 'Get the currently active project directory, if any. Returns the path and whether it exists.',
+    description: 'Get the currently active project directory for this session.',
     input_schema: {
       type: 'object' as const,
       properties: {},
@@ -177,11 +167,9 @@ export function getGetProjectToolDefinition() {
 }
 
 /**
- * Get project tool handler
+ * Get project tool handler — returns the current session's working directory
  */
 export async function handleGetProjectTool(): Promise<string> {
-  // Get current runtime workspace from AgentManager
-  const currentWorkspace = AgentManager.getWorkspace();
   const defaultWorkspace = AgentManager.getProjectRoot();
 
   const db = getDb();
@@ -189,36 +177,37 @@ export async function handleGetProjectTool(): Promise<string> {
     return JSON.stringify({
       success: true,
       hasProject: false,
-      message: 'Database not found, using runtime workspace',
-      currentWorkspace,
+      message: 'Database not found, using default workspace',
+      currentWorkspace: defaultWorkspace,
       defaultWorkspace,
     });
   }
 
   try {
-    const row = db
-      .prepare("SELECT value FROM settings WHERE key = 'active_project'")
-      .get() as { value: string } | undefined;
+    const sessionId = getCurrentSessionId();
+    const row = db.prepare('SELECT working_directory FROM sessions WHERE id = ?').get(sessionId) as { working_directory: string | null } | undefined;
 
-    if (!row) {
+    const workingDir = row?.working_directory;
+    console.log(`[ProjectTools] get_project: session=${sessionId} working_directory=${workingDir || 'null'}`);
+
+    if (!workingDir) {
       return JSON.stringify({
         success: true,
         hasProject: false,
-        message: 'No active project set',
-        currentWorkspace,
+        message: 'No active project set — using default workspace',
+        currentWorkspace: defaultWorkspace,
         defaultWorkspace,
       });
     }
 
     // Verify path still exists
-    if (!fs.existsSync(row.value)) {
+    if (!fs.existsSync(workingDir)) {
       return JSON.stringify({
         success: true,
         hasProject: true,
-        path: row.value,
+        path: workingDir,
         warning: 'Project path no longer exists',
         exists: false,
-        currentWorkspace,
         defaultWorkspace,
       });
     }
@@ -226,9 +215,8 @@ export async function handleGetProjectTool(): Promise<string> {
     return JSON.stringify({
       success: true,
       hasProject: true,
-      path: row.value,
+      path: workingDir,
       exists: true,
-      currentWorkspace,
       defaultWorkspace,
     });
   } catch (error) {
@@ -246,7 +234,7 @@ export async function handleGetProjectTool(): Promise<string> {
 export function getClearProjectToolDefinition() {
   return {
     name: 'clear_project',
-    description: 'Clear the active project and return to the default workspace.',
+    description: 'Clear the active project and return to the default workspace for this session.',
     input_schema: {
       type: 'object' as const,
       properties: {},
@@ -255,7 +243,7 @@ export function getClearProjectToolDefinition() {
 }
 
 /**
- * Clear project tool handler
+ * Clear project tool handler — resets the current session's working directory to null
  */
 export async function handleClearProjectTool(): Promise<string> {
   const db = getDb();
@@ -264,24 +252,28 @@ export async function handleClearProjectTool(): Promise<string> {
   }
 
   try {
-    ensureSettingsTable(db);
-
-    const result = db.prepare("DELETE FROM settings WHERE key = 'active_project'").run();
-
-    // Reset AgentManager's workspace to default
-    AgentManager.resetWorkspace();
+    const sessionId = getCurrentSessionId();
     const defaultPath = AgentManager.getProjectRoot();
+    console.log(`[ProjectTools] clear_project: session=${sessionId} resetting to default=${defaultPath}`);
+
+    const result = db.prepare(`
+      UPDATE sessions SET working_directory = NULL, updated_at = (strftime('%Y-%m-%dT%H:%M:%fZ'))
+      WHERE id = ?
+    `).run(sessionId);
+
+    // Flag the session for restart after the current turn completes.
+    AgentManager.flagProjectSwitch(sessionId);
 
     if (result.changes > 0) {
       return JSON.stringify({
         success: true,
-        message: `Active project cleared. Workspace reset to: ${defaultPath}`,
+        message: `Active project cleared. Workspace will reset to: ${defaultPath} on next message.`,
         path: defaultPath,
       });
     } else {
       return JSON.stringify({
         success: true,
-        message: `No active project was set. Current workspace: ${defaultPath}`,
+        message: `No session found. Current workspace: ${defaultPath}`,
         path: defaultPath,
       });
     }

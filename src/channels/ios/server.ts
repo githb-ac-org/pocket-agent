@@ -45,6 +45,7 @@ import {
   iOSAppInfoHandler,
   iOSModeGetHandler,
   iOSModeSwitchHandler,
+  iOSWorkflowsHandler,
   iOSCalendarListHandler, iOSCalendarAddHandler, iOSCalendarDeleteHandler, iOSCalendarUpcomingHandler,
   iOSTasksListHandler, iOSTasksAddHandler, iOSTasksCompleteHandler, iOSTasksDeleteHandler, iOSTasksDueHandler,
   iOSChatInfoHandler,
@@ -94,6 +95,7 @@ export class iOSWebSocketServer {
   private onSkinSet: ((skinId: string) => void) | null = null;
   private onGetMode: iOSModeGetHandler | null = null;
   private onSwitchMode: iOSModeSwitchHandler | null = null;
+  private onGetWorkflows: iOSWorkflowsHandler | null = null;
   private onCalendarList: iOSCalendarListHandler | null = null;
   private onCalendarAdd: iOSCalendarAddHandler | null = null;
   private onCalendarDelete: iOSCalendarDeleteHandler | null = null;
@@ -197,6 +199,7 @@ export class iOSWebSocketServer {
   setSkinHandler(handler: (skinId: string) => void): void { this.onSkinSet = handler; }
   setModeGetHandler(handler: iOSModeGetHandler): void { this.onGetMode = handler; }
   setModeSwitchHandler(handler: iOSModeSwitchHandler): void { this.onSwitchMode = handler; }
+  setWorkflowsHandler(handler: iOSWorkflowsHandler): void { this.onGetWorkflows = handler; }
   setCalendarListHandler(handler: iOSCalendarListHandler): void { this.onCalendarList = handler; }
   setCalendarAddHandler(handler: iOSCalendarAddHandler): void { this.onCalendarAdd = handler; }
   setCalendarDeleteHandler(handler: iOSCalendarDeleteHandler): void { this.onCalendarDelete = handler; }
@@ -519,8 +522,10 @@ export class iOSWebSocketServer {
           }
 
           case 'workflows:list': {
-            const commands = loadWorkflowCommands();
-            const workflows = commands.map(c => ({ name: c.name, description: c.description, content: c.content }));
+            const wfSessionId = client.device.sessionId || 'default';
+            const workflows = this.onGetWorkflows
+              ? this.onGetWorkflows(wfSessionId)
+              : loadWorkflowCommands().map(c => ({ name: c.name, description: c.description, content: c.content }));
             ws.send(JSON.stringify({ type: 'workflows', workflows }));
             break;
           }
@@ -813,6 +818,7 @@ export class iOSWebSocketServer {
         tokensUsed: result.tokensUsed,
         media: result.media,
         timestamp: new Date().toISOString(),
+        planPending: result.planPending,
       };
       client.ws.send(JSON.stringify(response));
     } catch (error) {

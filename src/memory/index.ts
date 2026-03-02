@@ -13,6 +13,7 @@ export interface Session {
   id: string;
   name: string;
   mode?: 'general' | 'coder';
+  working_directory?: string | null;
   created_at: string;
   updated_at: string;
   telegram_linked?: boolean;
@@ -418,6 +419,13 @@ export class MemoryManager {
       this.db.exec("ALTER TABLE sessions ADD COLUMN mode TEXT DEFAULT 'coder'");
       console.log('[Memory] Migrated sessions table: added mode column');
     }
+
+    // Migration: add working_directory column to sessions for per-session workspace
+    const sessColumnsForWd = this.db.pragma('table_info(sessions)') as Array<{ name: string }>;
+    if (!sessColumnsForWd.some(c => c.name === 'working_directory')) {
+      this.db.exec('ALTER TABLE sessions ADD COLUMN working_directory TEXT');
+      console.log('[Memory] Migrated sessions table: added working_directory column');
+    }
   }
 
   /**
@@ -616,7 +624,7 @@ export class MemoryManager {
    * Create a new session
    * @throws Error if session name already exists
    */
-  createSession(name: string, mode: 'general' | 'coder' = 'coder'): Session {
+  createSession(name: string, mode: 'general' | 'coder' = 'coder', workingDirectory?: string | null): Session {
     // Check for duplicate name
     const existing = this.getSessionByName(name);
     if (existing) {
@@ -625,9 +633,9 @@ export class MemoryManager {
 
     const id = `session-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     this.db.prepare(`
-      INSERT INTO sessions (id, name, mode, created_at, updated_at)
-      VALUES (?, ?, ?, (strftime('%Y-%m-%dT%H:%M:%fZ')), (strftime('%Y-%m-%dT%H:%M:%fZ')))
-    `).run(id, name, mode);
+      INSERT INTO sessions (id, name, mode, working_directory, created_at, updated_at)
+      VALUES (?, ?, ?, ?, (strftime('%Y-%m-%dT%H:%M:%fZ')), (strftime('%Y-%m-%dT%H:%M:%fZ')))
+    `).run(id, name, mode, workingDirectory ?? null);
 
     return this.getSession(id)!;
   }
@@ -637,7 +645,7 @@ export class MemoryManager {
    */
   getSessionByName(name: string): Session | null {
     const row = this.db.prepare(`
-      SELECT id, name, mode, created_at, updated_at
+      SELECT id, name, mode, working_directory, created_at, updated_at
       FROM sessions
       WHERE name = ?
     `).get(name) as Session | undefined;
@@ -650,7 +658,7 @@ export class MemoryManager {
    */
   getSession(id: string): Session | null {
     const row = this.db.prepare(`
-      SELECT id, name, mode, created_at, updated_at
+      SELECT id, name, mode, working_directory, created_at, updated_at
       FROM sessions
       WHERE id = ?
     `).get(id) as Session | undefined;
@@ -667,6 +675,7 @@ export class MemoryManager {
       id: string;
       name: string;
       mode: string | null;
+      working_directory: string | null;
       created_at: string;
       updated_at: string;
       telegram_linked: number;
@@ -677,6 +686,7 @@ export class MemoryManager {
         s.id,
         s.name,
         s.mode,
+        s.working_directory,
         s.created_at,
         s.updated_at,
         CASE WHEN t.chat_id IS NOT NULL THEN 1 ELSE 0 END as telegram_linked,
@@ -690,6 +700,7 @@ export class MemoryManager {
       id: row.id,
       name: row.name,
       mode: (row.mode as 'general' | 'coder') || 'coder',
+      working_directory: row.working_directory,
       created_at: row.created_at,
       updated_at: row.updated_at,
       telegram_linked: !!row.telegram_linked,
@@ -698,14 +709,40 @@ export class MemoryManager {
   }
 
   /**
-   * Rename a session
+   * Get the working directory for a session (null means use root workspace)
+   */
+  getSessionWorkingDirectory(sessionId: string): string | null {
+    const row = this.db.prepare('SELECT working_directory FROM sessions WHERE id = ?').get(sessionId) as { working_directory: string | null } | undefined;
+    return row?.working_directory ?? null;
+  }
+
+  /**
+   * Set the working directory for a session
+   */
+  setSessionWorkingDirectory(sessionId: string, workingDirectory: string | null): void {
+    this.db.prepare(`
+      UPDATE sessions SET working_directory = ?, updated_at = (strftime('%Y-%m-%dT%H:%M:%fZ'))
+      WHERE id = ?
+    `).run(workingDirectory, sessionId);
+  }
+
+  /**
+   * Rename a session, optionally updating the working directory
    * @throws Error if new name already exists
    */
-  renameSession(id: string, name: string): boolean {
+  renameSession(id: string, name: string, workingDirectory?: string): boolean {
     // Check for duplicate name (excluding self)
     const existing = this.getSessionByName(name);
     if (existing && existing.id !== id) {
       throw new Error(`Session name "${name}" already exists`);
+    }
+
+    if (workingDirectory !== undefined) {
+      const result = this.db.prepare(`
+        UPDATE sessions SET name = ?, working_directory = ?, updated_at = (strftime('%Y-%m-%dT%H:%M:%fZ'))
+        WHERE id = ?
+      `).run(name, workingDirectory, id);
+      return result.changes > 0;
     }
 
     const result = this.db.prepare(`

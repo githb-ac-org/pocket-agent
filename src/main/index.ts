@@ -15,7 +15,7 @@ import { THEMES } from '../settings/themes';
 import { loadIdentity, saveIdentity, getIdentityPath, DEFAULT_IDENTITY } from '../config/identity';
 import { loadInstructions, saveInstructions, getInstructionsPath, DEFAULT_INSTRUCTIONS } from '../config/instructions';
 import { DEFAULT_COMMANDS } from '../config/commands';
-import { loadWorkflowCommands } from '../config/commands-loader';
+import { loadWorkflowCommands, loadWorkflowCommandsFromDir } from '../config/commands-loader';
 import { closeTaskDb } from '../tools';
 import { handleCalendarListTool, handleCalendarAddTool, handleCalendarDeleteTool, handleCalendarUpcomingTool } from '../tools/calendar-tools';
 import { handleTaskListTool, handleTaskAddTool, handleTaskCompleteTool, handleTaskDeleteTool, handleTaskDueTool } from '../tools/task-tools';
@@ -308,6 +308,89 @@ let splashWindow: BrowserWindow | null = null;
 function getAgentWorkspace(): string {
   const documentsPath = app.getPath('documents');
   return path.join(documentsPath, 'Pocket-agent');
+}
+
+/**
+ * Create a per-session working directory for Coder mode.
+ * Creates ~/Documents/Pocket-agent/<sessionName>/ and populates
+ * .claude/commands/ with coder-specific commands from bundled assets.
+ * Does NOT copy CLAUDE.md — coder mode uses the project's own CLAUDE.md
+ * via the SDK's settingSources: ['project'] + cwd.
+ */
+function createSessionDirectory(sessionName: string): string {
+  const workspace = getAgentWorkspace();
+  const sessionDir = path.join(workspace, sessionName);
+
+  if (!fs.existsSync(sessionDir)) {
+    fs.mkdirSync(sessionDir, { recursive: true });
+    console.log(`[Main] Created session directory: ${sessionDir}`);
+  }
+
+  // Always sync coder commands from bundled assets (overwrites stale commands from older versions)
+  const coderCommandsSource = path.join(__dirname, '../../assets/coder-commands');
+  const sessionCommandsDir = path.join(sessionDir, '.claude', 'commands');
+  if (fs.existsSync(coderCommandsSource)) {
+    fs.mkdirSync(sessionCommandsDir, { recursive: true });
+    // Remove old commands that aren't in the bundled set
+    const bundledFiles = new Set(fs.readdirSync(coderCommandsSource).filter(f => f.endsWith('.md')));
+    if (fs.existsSync(sessionCommandsDir)) {
+      for (const file of fs.readdirSync(sessionCommandsDir).filter(f => f.endsWith('.md'))) {
+        if (!bundledFiles.has(file)) {
+          fs.unlinkSync(path.join(sessionCommandsDir, file));
+        }
+      }
+    }
+    // Copy all bundled coder commands
+    for (const file of bundledFiles) {
+      fs.copyFileSync(path.join(coderCommandsSource, file), path.join(sessionCommandsDir, file));
+    }
+    console.log(`[Main] Synced ${bundledFiles.size} coder commands to session directory`);
+  }
+
+  return sessionDir;
+}
+
+/**
+ * Rename a session directory on disk.
+ * Returns the new absolute path, or null if the target already exists.
+ */
+function renameSessionDirectory(oldPath: string, newName: string): string | null {
+  const parentDir = path.dirname(oldPath);
+  const newPath = path.join(parentDir, newName);
+
+  if (fs.existsSync(newPath)) {
+    console.warn(`[Main] Cannot rename session directory: target exists: ${newPath}`);
+    return null;
+  }
+
+  if (fs.existsSync(oldPath)) {
+    fs.renameSync(oldPath, newPath);
+    console.log(`[Main] Renamed session directory: ${oldPath} -> ${newPath}`);
+  } else {
+    // Old directory doesn't exist — create the new one fresh
+    return createSessionDirectory(newName);
+  }
+
+  return newPath;
+}
+
+/**
+ * Ensure a coder session has a working directory.
+ * Called lazily on first message so directories aren't created for sessions
+ * where the user switches to general before sending anything.
+ */
+function ensureCoderWorkingDirectory(sessionId: string): void {
+  if (!memory) return;
+  const sessionMode = memory.getSessionMode(sessionId);
+  const sessionWorkDir = memory.getSessionWorkingDirectory(sessionId);
+  if (sessionMode === 'coder' && !sessionWorkDir) {
+    const session = memory.getSession(sessionId);
+    if (session) {
+      const workingDirectory = createSessionDirectory(session.name);
+      memory.setSessionWorkingDirectory(sessionId, workingDirectory);
+      console.log(`[Sessions] Lazy-created working directory for coder session: ${workingDirectory}`);
+    }
+  }
 }
 
 /**
@@ -1193,6 +1276,9 @@ function setupIPC(): void {
     AgentManager.on('status', statusHandler);
 
     try {
+      // Lazy working directory creation: only create when first message is sent in coder mode
+      ensureCoderWorkingDirectory(effectiveSessionId);
+
       const result = await AgentManager.processMessage(message, 'desktop', sessionId || 'default');
       updateTrayMenu();
 
@@ -1265,8 +1351,11 @@ function setupIPC(): void {
   ipcMain.handle('sessions:create', async (_, name: string) => {
     try {
       // Use the current global mode as default for new sessions
+      // Don't create working directory yet — it's created lazily on first message
+      // so users can switch modes before committing
       const mode = AgentManager.getMode();
-      const session = memory?.createSession(name, mode);
+      console.log(`[Sessions] Creating session "${name}" mode=${mode} workingDirectory=null (deferred)`);
+      const session = memory?.createSession(name, mode, null);
       // Notify iOS of updated session list
       if (iosChannel) {
         iosChannel.broadcast({ type: 'sessions', sessions: memory?.getSessions() || [], activeSessionId: '' });
@@ -1279,7 +1368,24 @@ function setupIPC(): void {
 
   ipcMain.handle('sessions:rename', async (_, id: string, name: string) => {
     try {
-      const success = memory?.renameSession(id, name) ?? false;
+      // Check if session has a working directory that needs renaming
+      const session = memory?.getSession(id);
+      let newWorkingDirectory: string | undefined;
+      console.log(`[Sessions] Renaming session ${id} to "${name}" | current working_directory=${session?.working_directory || 'null'}`);
+
+      if (session?.working_directory) {
+        const newPath = renameSessionDirectory(session.working_directory, name);
+        if (!newPath) {
+          console.log(`[Sessions] Rename blocked: directory "${name}" already exists`);
+          return { success: false, error: `Cannot rename: directory "${name}" already exists` };
+        }
+        newWorkingDirectory = newPath;
+        console.log(`[Sessions] Directory renamed: ${session.working_directory} -> ${newPath} | closing SDK session`);
+        // Close persistent SDK session since cwd changed
+        AgentManager.clearSdkSessionMapping(id);
+      }
+
+      const success = memory?.renameSession(id, name, newWorkingDirectory) ?? false;
       // Notify iOS of updated session list
       if (success && iosChannel) {
         iosChannel.broadcast({ type: 'sessions', sessions: memory?.getSessions() || [], activeSessionId: '' });
@@ -1343,6 +1449,20 @@ function setupIPC(): void {
     if (msgCount > 0) {
       return { success: false, error: 'Cannot change mode after messages have been sent' };
     }
+
+    const session = memory?.getSession(sessionId);
+    console.log(`[Sessions] Mode switch: session=${sessionId} "${session?.name}" ${session?.mode}->${mode} | current working_directory=${session?.working_directory || 'null'}`);
+
+    // Don't create working directory on mode switch — it's created lazily on first message.
+    // When switching to general: clear working directory (keep directory on disk)
+    if (mode === 'general' && session?.working_directory) {
+      console.log(`[Sessions] Clearing working directory (kept on disk): ${session.working_directory}`);
+      memory?.setSessionWorkingDirectory(sessionId, null);
+    }
+
+    // Close persistent SDK session in both cases (cwd may have changed)
+    AgentManager.clearSdkSessionMapping(sessionId);
+
     const success = memory?.setSessionMode(sessionId, mode) ?? false;
     return { success };
   });
@@ -1403,6 +1523,7 @@ function setupIPC(): void {
               }
             };
             AgentManager.on('status', desktopStatusHandler);
+            ensureCoderWorkingDirectory(message.sessionId);
             let result;
             try {
               result = await AgentManager.processMessage(messageText, 'ios', message.sessionId);
@@ -1419,7 +1540,7 @@ function setupIPC(): void {
             if (telegramBot && linkedChatId) {
               telegramBot.syncToChat(messageText, result.response, linkedChatId, result.media).catch(() => {});
             }
-            return { response: result.response, tokensUsed: result.tokensUsed, media: result.media };
+            return { response: result.response, tokensUsed: result.tokensUsed, media: result.media, planPending: result.planPending };
           });
           iosChannel.setSessionsHandler(() => {
             const sessions = memory?.getSessions() || [];
@@ -1568,6 +1689,17 @@ function setupIPC(): void {
               chatWindow.webContents.send('agent:modeChanged', mode);
             }
             return { mode, locked: false };
+          });
+          iosChannel.setWorkflowsHandler((sessionId: string) => {
+            const sessionMode = memory?.getSessionMode(sessionId) || 'coder';
+            const sessionWorkDir = memory?.getSessionWorkingDirectory(sessionId);
+            if (sessionMode === 'coder' && sessionWorkDir) {
+              const sessionCommandsDir = path.join(sessionWorkDir, '.claude', 'commands');
+              if (fs.existsSync(sessionCommandsDir)) {
+                return loadWorkflowCommandsFromDir(sessionCommandsDir).map(c => ({ name: c.name, description: c.description, content: c.content }));
+              }
+            }
+            return loadWorkflowCommands().map(c => ({ name: c.name, description: c.description, content: c.content }));
           });
           // Calendar & Tasks handlers
           iosChannel.setCalendarListHandler(async () => {
@@ -2151,7 +2283,19 @@ function setupIPC(): void {
   });
 
   // Commands (Workflows)
-  ipcMain.handle('commands:list', async () => {
+  ipcMain.handle('commands:list', async (_, sessionId?: string) => {
+    // For coder sessions with a working directory, load commands from the session's
+    // .claude/commands/ directory instead of the root workspace
+    if (sessionId && memory) {
+      const sessionMode = memory.getSessionMode(sessionId);
+      const sessionWorkDir = memory.getSessionWorkingDirectory(sessionId);
+      if (sessionMode === 'coder' && sessionWorkDir) {
+        const sessionCommandsDir = path.join(sessionWorkDir, '.claude', 'commands');
+        if (fs.existsSync(sessionCommandsDir)) {
+          return loadWorkflowCommandsFromDir(sessionCommandsDir);
+        }
+      }
+    }
     return loadWorkflowCommands();
   });
 
@@ -2374,6 +2518,7 @@ async function initializeAgent(): Promise<void> {
             }
           };
           AgentManager.on('status', desktopStatusHandler);
+          ensureCoderWorkingDirectory(message.sessionId);
           let result;
           try {
             result = await AgentManager.processMessage(
@@ -2407,6 +2552,7 @@ async function initializeAgent(): Promise<void> {
             response: result.response,
             tokensUsed: result.tokensUsed,
             media: result.media,
+            planPending: result.planPending,
           };
         });
 
@@ -2570,6 +2716,17 @@ async function initializeAgent(): Promise<void> {
             chatWindow.webContents.send('agent:modeChanged', mode);
           }
           return { mode, locked: false };
+        });
+        iosChannel.setWorkflowsHandler((sessionId: string) => {
+          const sessionMode = memory?.getSessionMode(sessionId) || 'coder';
+          const sessionWorkDir = memory?.getSessionWorkingDirectory(sessionId);
+          if (sessionMode === 'coder' && sessionWorkDir) {
+            const sessionCommandsDir = path.join(sessionWorkDir, '.claude', 'commands');
+            if (fs.existsSync(sessionCommandsDir)) {
+              return loadWorkflowCommandsFromDir(sessionCommandsDir).map(c => ({ name: c.name, description: c.description, content: c.content }));
+            }
+          }
+          return loadWorkflowCommands().map(c => ({ name: c.name, description: c.description, content: c.content }));
         });
         // Calendar & Tasks handlers
         iosChannel.setCalendarListHandler(async () => {

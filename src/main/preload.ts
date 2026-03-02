@@ -154,7 +154,7 @@ contextBridge.exposeInMainWorld('pocketAgent', {
   validateOAuth: () => ipcRenderer.invoke('auth:validateOAuth'),
 
   // Commands (Workflows)
-  getCommands: () => ipcRenderer.invoke('commands:list'),
+  getCommands: (sessionId?: string) => ipcRenderer.invoke('commands:list', sessionId),
 
   // Updates
   checkForUpdates: () => ipcRenderer.invoke('updater:checkForUpdates'),
@@ -202,6 +202,7 @@ interface Session {
   id: string;
   name: string;
   mode?: 'general' | 'coder';
+  working_directory?: string | null;
   created_at: string;
   updated_at: string;
   telegram_linked?: boolean;
@@ -308,7 +309,7 @@ declare global {
       cancelOAuth: () => Promise<{ success: boolean }>;
       isOAuthPending: () => Promise<boolean>;
       // Commands (Workflows)
-      getCommands: () => Promise<Array<{ name: string; description: string; filename: string; content: string }>>;
+      getCommands: (sessionId?: string) => Promise<Array<{ name: string; description: string; filename: string; content: string }>>;
       // Updates
       checkForUpdates: () => Promise<{ status: string; info?: { version: string }; error?: string }>;
       downloadUpdate: () => Promise<{ success: boolean; error?: string }>;

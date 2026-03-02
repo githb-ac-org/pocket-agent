@@ -361,6 +361,7 @@ class AgentManagerClass extends EventEmitter {
   private pendingMedia: MediaAttachment[] = [];
   private stoppedByUserSession: Set<string> = new Set();
   private sdkToolTimers: Map<string, { timer: ReturnType<typeof setTimeout>; sessionId: string }> = new Map();
+  private pendingProjectSwitch: Set<string> = new Set();
 
   // Per-tool timeouts for SDK built-in tools (MCP tools have their own via wrapToolHandler)
   private static readonly SDK_TOOL_TIMEOUTS: Record<string, number> = {
@@ -993,6 +994,20 @@ class AgentManagerClass extends EventEmitter {
 
       this.extractAndStoreFacts(userMessage);
 
+      // If set_project was called during this turn, close the persistent session
+      // so the next message creates a new one with the updated cwd.
+      if (this.pendingProjectSwitch.has(sessionId)) {
+        this.pendingProjectSwitch.delete(sessionId);
+        const switchedSession = this.persistentSessions.get(sessionId);
+        if (switchedSession) {
+          console.log(`[AgentManager] Closing session ${sessionId} after project switch — new cwd takes effect next message`);
+          switchedSession.close();
+          this.persistentSessions.delete(sessionId);
+          this.sdkSessionIdBySession.delete(sessionId);
+          memory.clearSdkSessionId(sessionId);
+        }
+      }
+
       const statsAfter = memory.getStats();
       const contextUsage = this.contextUsageBySession.get(sessionId);
 
@@ -1180,6 +1195,16 @@ class AgentManagerClass extends EventEmitter {
   }
 
   /**
+   * Flag that a project switch occurred for a session.
+   * After the current turn completes, the persistent session will be closed
+   * so the next message picks up the new cwd.
+   */
+  flagProjectSwitch(sessionId: string): void {
+    this.pendingProjectSwitch.add(sessionId);
+    console.log(`[AgentManager] Project switch flagged for session ${sessionId}`);
+  }
+
+  /**
    * Set the workspace directory for agent file operations.
    * This takes effect on the next SDK query (cwd option).
    * Closes all persistent sessions and clears SDK session mappings since sessions are tied to cwd.
@@ -1282,26 +1307,40 @@ class AgentManagerClass extends EventEmitter {
    * the UserPromptSubmit hook's additionalContext, so it's fresh for each turn.
    */
   private async buildPersistentOptions(memory: MemoryManager, sessionId: string, sdkSessionId?: string): Promise<SDKOptions> {
+    // Determine session mode — coder mode gets lean context (SDK preset + CLAUDE.md only)
+    const sessionMode = memory.getSessionMode(sessionId);
+    const isCoder = sessionMode === 'coder';
+
     // === Static context (set once at session creation) ===
     // NOTE: CLAUDE.md (this.instructions) is NOT included here because the SDK
     // already reads it from the workspace via cwd + settingSources: ['project'].
     // Including it here would inject it twice.
     const staticParts: string[] = [];
 
-    if (this.identity) {
-      staticParts.push(this.identity);
+    // Identity, profile, and capabilities are only needed for general (personal assistant) mode
+    if (!isCoder) {
+      if (this.identity) {
+        staticParts.push(this.identity);
+      }
+
+      // Add user profile from settings
+      const userProfile = SettingsManager.getFormattedProfile();
+      if (userProfile) {
+        staticParts.push(userProfile);
+      }
     }
 
-    // Add user profile from settings
-    const userProfile = SettingsManager.getFormattedProfile();
-    if (userProfile) {
-      staticParts.push(userProfile);
-    }
+    // Look up per-session working directory (falls back to global workspace)
+    const sessionWorkingDir = memory.getSessionWorkingDirectory(sessionId);
+    const effectiveCwd = sessionWorkingDir || this.workspace;
+    console.log(`[AgentManager] buildPersistentOptions session=${sessionId} mode=${sessionMode} | sessionWorkingDir=${sessionWorkingDir || 'null'} | effectiveCwd=${effectiveCwd}`);
 
-    // Add capabilities information
-    const capabilities = this.buildCapabilitiesPrompt();
-    if (capabilities) {
-      staticParts.push(capabilities);
+    // Capabilities prompt only for general mode
+    if (!isCoder) {
+      const capabilities = this.buildCapabilitiesPrompt(effectiveCwd);
+      if (capabilities) {
+        staticParts.push(capabilities);
+      }
     }
 
     // Get thinking level config — only Anthropic models support thinking/effort.
@@ -1323,7 +1362,7 @@ class AgentManagerClass extends EventEmitter {
 
     const options: SDKOptions = {
       model: this.model,
-      cwd: this.workspace,
+      cwd: effectiveCwd,
       maxTurns: 100,
       ...(isAnthropicModel && { thinking: thinkingEntry.thinking }),
       ...(isAnthropicModel && thinkingEntry.effort && { effort: thinkingEntry.effort }),
@@ -1336,8 +1375,18 @@ class AgentManagerClass extends EventEmitter {
       hooks: {
         PreToolUse: [buildPreToolUseHook()],
         // Dynamic context injection: fresh facts/soul/temporal for each message
+        // Coder mode skips all personal assistant context for lean coding sessions
         UserPromptSubmit: [{
           hooks: [async () => {
+            if (isCoder) {
+              return {
+                hookSpecificOutput: {
+                  hookEventName: 'UserPromptSubmit' as const,
+                  additionalContext: '',
+                },
+              };
+            }
+
             const dynamicParts: string[] = [];
 
             // Temporal context (current time)
@@ -1409,37 +1458,40 @@ class AgentManagerClass extends EventEmitter {
         // Custom MCP tools - browser & system
         'mcp__pocket-agent__browser',
         'mcp__pocket-agent__notify',
-        // Custom MCP tools - memory
-        'mcp__pocket-agent__remember',
-        'mcp__pocket-agent__forget',
-        'mcp__pocket-agent__list_facts',
-        'mcp__pocket-agent__memory_search',
-        'mcp__pocket-agent__daily_log',
-        // Custom MCP tools - soul
-        'mcp__pocket-agent__soul_set',
-        'mcp__pocket-agent__soul_get',
-        'mcp__pocket-agent__soul_list',
-        'mcp__pocket-agent__soul_delete',
-        // Custom MCP tools - scheduler
-        'mcp__pocket-agent__schedule_task',
-        'mcp__pocket-agent__create_reminder',
-        'mcp__pocket-agent__list_scheduled_tasks',
-        'mcp__pocket-agent__delete_scheduled_task',
-        // Custom MCP tools - calendar
-        'mcp__pocket-agent__calendar_add',
-        'mcp__pocket-agent__calendar_list',
-        'mcp__pocket-agent__calendar_upcoming',
-        'mcp__pocket-agent__calendar_delete',
-        // Custom MCP tools - tasks
-        'mcp__pocket-agent__task_add',
-        'mcp__pocket-agent__task_list',
-        'mcp__pocket-agent__task_complete',
-        'mcp__pocket-agent__task_delete',
-        'mcp__pocket-agent__task_due',
         // Custom MCP tools - project
         'mcp__pocket-agent__set_project',
         'mcp__pocket-agent__get_project',
         'mcp__pocket-agent__clear_project',
+        // Personal assistant tools — only in general mode
+        ...(isCoder ? [] : [
+          // Memory
+          'mcp__pocket-agent__remember',
+          'mcp__pocket-agent__forget',
+          'mcp__pocket-agent__list_facts',
+          'mcp__pocket-agent__memory_search',
+          'mcp__pocket-agent__daily_log',
+          // Soul
+          'mcp__pocket-agent__soul_set',
+          'mcp__pocket-agent__soul_get',
+          'mcp__pocket-agent__soul_list',
+          'mcp__pocket-agent__soul_delete',
+          // Scheduler
+          'mcp__pocket-agent__schedule_task',
+          'mcp__pocket-agent__create_reminder',
+          'mcp__pocket-agent__list_scheduled_tasks',
+          'mcp__pocket-agent__delete_scheduled_task',
+          // Calendar
+          'mcp__pocket-agent__calendar_add',
+          'mcp__pocket-agent__calendar_list',
+          'mcp__pocket-agent__calendar_upcoming',
+          'mcp__pocket-agent__calendar_delete',
+          // Tasks
+          'mcp__pocket-agent__task_add',
+          'mcp__pocket-agent__task_list',
+          'mcp__pocket-agent__task_complete',
+          'mcp__pocket-agent__task_delete',
+          'mcp__pocket-agent__task_due',
+        ]),
       ],
       persistSession: true,
       ...(sdkSessionId && { resume: sdkSessionId }),
@@ -1458,7 +1510,8 @@ class AgentManagerClass extends EventEmitter {
       const mcpServers = buildMCPServers(this.toolsConfig);
 
       // Build SDK MCP servers (in-process tools like browser, notify, memory)
-      const sdkMcpServers = await buildSdkMcpServers(this.toolsConfig);
+      // Coder mode only registers coding-relevant tools (browser, notify, project)
+      const sdkMcpServers = await buildSdkMcpServers(this.toolsConfig, sessionMode);
 
       // Merge both types
       const allServers = {
@@ -1475,13 +1528,14 @@ class AgentManagerClass extends EventEmitter {
     return options;
   }
 
-  private buildCapabilitiesPrompt(): string {
+  private buildCapabilitiesPrompt(workspaceOverride?: string): string {
+    const effectiveWorkspace = workspaceOverride || this.workspace;
     return `## Your Capabilities as Pocket Agent
 
 You are a persistent personal AI assistant with special capabilities.
 
 ### Your Workspace
-Your working directory is: ${this.workspace}
+Your working directory is: ${effectiveWorkspace}
 This is an isolated environment separate from the application code.
 All file operations (reading, writing, creating projects) happen here by default.
 Feel free to create subdirectories, projects, and files as needed.

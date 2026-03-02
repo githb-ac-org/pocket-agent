@@ -114,7 +114,8 @@ export function buildMCPServers(config: ToolsConfig): Record<string, MCPServerCo
  * These run in the same process as the agent, so they can access Electron APIs
  */
 export async function buildSdkMcpServers(
-  config: ToolsConfig
+  config: ToolsConfig,
+  mode: 'general' | 'coder' = 'general'
 ): Promise<Record<string, unknown> | null> {
   // Dynamically import SDK to avoid CommonJS issues
   // Using Function constructor for dynamic ESM imports in CommonJS context
@@ -197,121 +198,124 @@ export async function buildSdkMcpServers(
     );
     tools.push(notifyTool);
 
-    // Memory tools (with diagnostics wrapper)
-    const memoryTools = getMemoryTools();
-    for (const memTool of memoryTools) {
-      const wrappedHandler = wrapToolHandler(memTool.name, memTool.handler, getToolTimeout(memTool.name));
-      const sdkTool = tool(
-        memTool.name,
-        memTool.description,
-        // Convert JSON schema to Zod (simplified - assumes string fields)
-        Object.fromEntries(
-          Object.entries(memTool.input_schema.properties || {}).map(([key, value]: [string, unknown]) => {
-            const prop = value as { type?: string };
-            if (prop.type === 'string') return [key, z.string().optional()];
-            if (prop.type === 'number') return [key, z.number().optional()];
-            return [key, z.any().optional()];
-          })
-        ),
-        async (args) => {
-          const result = await wrappedHandler(args);
-          return { content: [{ type: 'text', text: result }] };
-        }
-      );
-      tools.push(sdkTool);
-    }
+    // Personal assistant tools — only registered in general mode
+    if (mode === 'general') {
+      // Memory tools (with diagnostics wrapper)
+      const memoryTools = getMemoryTools();
+      for (const memTool of memoryTools) {
+        const wrappedHandler = wrapToolHandler(memTool.name, memTool.handler, getToolTimeout(memTool.name));
+        const sdkTool = tool(
+          memTool.name,
+          memTool.description,
+          // Convert JSON schema to Zod (simplified - assumes string fields)
+          Object.fromEntries(
+            Object.entries(memTool.input_schema.properties || {}).map(([key, value]: [string, unknown]) => {
+              const prop = value as { type?: string };
+              if (prop.type === 'string') return [key, z.string().optional()];
+              if (prop.type === 'number') return [key, z.number().optional()];
+              return [key, z.any().optional()];
+            })
+          ),
+          async (args) => {
+            const result = await wrappedHandler(args);
+            return { content: [{ type: 'text', text: result }] };
+          }
+        );
+        tools.push(sdkTool);
+      }
 
-    // Soul tools (with diagnostics wrapper)
-    const soulTools = getSoulTools();
-    for (const soulTool of soulTools) {
-      const wrappedHandler = wrapToolHandler(soulTool.name, soulTool.handler, getToolTimeout(soulTool.name));
-      const sdkTool = tool(
-        soulTool.name,
-        soulTool.description,
-        Object.fromEntries(
-          Object.entries(soulTool.input_schema.properties || {}).map(([key, value]: [string, unknown]) => {
-            const prop = value as { type?: string };
-            if (prop.type === 'string') return [key, z.string().optional()];
-            if (prop.type === 'number') return [key, z.number().optional()];
-            return [key, z.any().optional()];
-          })
-        ),
-        async (args) => {
-          const result = await wrappedHandler(args);
-          return { content: [{ type: 'text', text: result }] };
-        }
-      );
-      tools.push(sdkTool);
-    }
+      // Soul tools (with diagnostics wrapper)
+      const soulTools = getSoulTools();
+      for (const soulTool of soulTools) {
+        const wrappedHandler = wrapToolHandler(soulTool.name, soulTool.handler, getToolTimeout(soulTool.name));
+        const sdkTool = tool(
+          soulTool.name,
+          soulTool.description,
+          Object.fromEntries(
+            Object.entries(soulTool.input_schema.properties || {}).map(([key, value]: [string, unknown]) => {
+              const prop = value as { type?: string };
+              if (prop.type === 'string') return [key, z.string().optional()];
+              if (prop.type === 'number') return [key, z.number().optional()];
+              return [key, z.any().optional()];
+            })
+          ),
+          async (args) => {
+            const result = await wrappedHandler(args);
+            return { content: [{ type: 'text', text: result }] };
+          }
+        );
+        tools.push(sdkTool);
+      }
 
-    // Scheduler tools (with diagnostics wrapper)
-    const schedulerTools = getSchedulerTools();
-    for (const schedTool of schedulerTools) {
-      const wrappedHandler = wrapToolHandler(schedTool.name, schedTool.handler, getToolTimeout(schedTool.name));
-      const sdkTool = tool(
-        schedTool.name,
-        schedTool.description,
-        Object.fromEntries(
-          Object.entries(schedTool.input_schema.properties || {}).map(([key, value]: [string, unknown]) => {
-            const prop = value as { type?: string };
-            if (prop.type === 'string') return [key, z.string().optional()];
-            if (prop.type === 'number') return [key, z.number().optional()];
-            if (prop.type === 'boolean') return [key, z.boolean().optional()];
-            return [key, z.any().optional()];
-          })
-        ),
-        async (args) => {
-          const result = await wrappedHandler(args);
-          return { content: [{ type: 'text', text: result }] };
-        }
-      );
-      tools.push(sdkTool);
-    }
+      // Scheduler tools (with diagnostics wrapper)
+      const schedulerTools = getSchedulerTools();
+      for (const schedTool of schedulerTools) {
+        const wrappedHandler = wrapToolHandler(schedTool.name, schedTool.handler, getToolTimeout(schedTool.name));
+        const sdkTool = tool(
+          schedTool.name,
+          schedTool.description,
+          Object.fromEntries(
+            Object.entries(schedTool.input_schema.properties || {}).map(([key, value]: [string, unknown]) => {
+              const prop = value as { type?: string };
+              if (prop.type === 'string') return [key, z.string().optional()];
+              if (prop.type === 'number') return [key, z.number().optional()];
+              if (prop.type === 'boolean') return [key, z.boolean().optional()];
+              return [key, z.any().optional()];
+            })
+          ),
+          async (args) => {
+            const result = await wrappedHandler(args);
+            return { content: [{ type: 'text', text: result }] };
+          }
+        );
+        tools.push(sdkTool);
+      }
 
-    // Calendar tools (with diagnostics wrapper)
-    const calendarTools = getCalendarTools();
-    for (const calTool of calendarTools) {
-      const wrappedHandler = wrapToolHandler(calTool.name, calTool.handler, getToolTimeout(calTool.name));
-      const sdkTool = tool(
-        calTool.name,
-        calTool.description,
-        Object.fromEntries(
-          Object.entries(calTool.input_schema.properties || {}).map(([key, value]: [string, unknown]) => {
-            const prop = value as { type?: string };
-            if (prop.type === 'string') return [key, z.string().optional()];
-            if (prop.type === 'number') return [key, z.number().optional()];
-            return [key, z.any().optional()];
-          })
-        ),
-        async (args) => {
-          const result = await wrappedHandler(args);
-          return { content: [{ type: 'text', text: result }] };
-        }
-      );
-      tools.push(sdkTool);
-    }
+      // Calendar tools (with diagnostics wrapper)
+      const calendarTools = getCalendarTools();
+      for (const calTool of calendarTools) {
+        const wrappedHandler = wrapToolHandler(calTool.name, calTool.handler, getToolTimeout(calTool.name));
+        const sdkTool = tool(
+          calTool.name,
+          calTool.description,
+          Object.fromEntries(
+            Object.entries(calTool.input_schema.properties || {}).map(([key, value]: [string, unknown]) => {
+              const prop = value as { type?: string };
+              if (prop.type === 'string') return [key, z.string().optional()];
+              if (prop.type === 'number') return [key, z.number().optional()];
+              return [key, z.any().optional()];
+            })
+          ),
+          async (args) => {
+            const result = await wrappedHandler(args);
+            return { content: [{ type: 'text', text: result }] };
+          }
+        );
+        tools.push(sdkTool);
+      }
 
-    // Task tools (with diagnostics wrapper)
-    const taskTools = getTaskTools();
-    for (const taskTool of taskTools) {
-      const wrappedHandler = wrapToolHandler(taskTool.name, taskTool.handler, getToolTimeout(taskTool.name));
-      const sdkTool = tool(
-        taskTool.name,
-        taskTool.description,
-        Object.fromEntries(
-          Object.entries(taskTool.input_schema.properties || {}).map(([key, value]: [string, unknown]) => {
-            const prop = value as { type?: string };
-            if (prop.type === 'string') return [key, z.string().optional()];
-            if (prop.type === 'number') return [key, z.number().optional()];
-            return [key, z.any().optional()];
-          })
-        ),
-        async (args) => {
-          const result = await wrappedHandler(args);
-          return { content: [{ type: 'text', text: result }] };
-        }
-      );
-      tools.push(sdkTool);
+      // Task tools (with diagnostics wrapper)
+      const taskTools = getTaskTools();
+      for (const taskTool of taskTools) {
+        const wrappedHandler = wrapToolHandler(taskTool.name, taskTool.handler, getToolTimeout(taskTool.name));
+        const sdkTool = tool(
+          taskTool.name,
+          taskTool.description,
+          Object.fromEntries(
+            Object.entries(taskTool.input_schema.properties || {}).map(([key, value]: [string, unknown]) => {
+              const prop = value as { type?: string };
+              if (prop.type === 'string') return [key, z.string().optional()];
+              if (prop.type === 'number') return [key, z.number().optional()];
+              return [key, z.any().optional()];
+            })
+          ),
+          async (args) => {
+            const result = await wrappedHandler(args);
+            return { content: [{ type: 'text', text: result }] };
+          }
+        );
+        tools.push(sdkTool);
+      }
     }
 
     // Project tools (with diagnostics wrapper)

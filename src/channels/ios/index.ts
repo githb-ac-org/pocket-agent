@@ -19,6 +19,7 @@ import {
   iOSAppInfoHandler,
   iOSModeGetHandler,
   iOSModeSwitchHandler,
+  iOSWorkflowsHandler,
   iOSCalendarListHandler, iOSCalendarAddHandler, iOSCalendarDeleteHandler, iOSCalendarUpcomingHandler,
   iOSTasksListHandler, iOSTasksAddHandler, iOSTasksCompleteHandler, iOSTasksDeleteHandler, iOSTasksDueHandler,
   iOSChatInfoHandler,
@@ -115,6 +116,7 @@ export class iOSChannel extends BaseChannel {
   setSkinHandler(handler: (skinId: string) => void): void { this.backend.setSkinHandler(handler); }
   setModeGetHandler(handler: iOSModeGetHandler): void { this.backend.setModeGetHandler(handler); }
   setModeSwitchHandler(handler: iOSModeSwitchHandler): void { this.backend.setModeSwitchHandler(handler); }
+  setWorkflowsHandler(handler: iOSWorkflowsHandler): void { this.backend.setWorkflowsHandler(handler); }
   setCalendarListHandler(handler: iOSCalendarListHandler): void { this.backend.setCalendarListHandler(handler); }
   setCalendarAddHandler(handler: iOSCalendarAddHandler): void { this.backend.setCalendarAddHandler(handler); }
   setCalendarDeleteHandler(handler: iOSCalendarDeleteHandler): void { this.backend.setCalendarDeleteHandler(handler); }

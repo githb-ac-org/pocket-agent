@@ -21,11 +21,9 @@ function getCommandsDir(): string {
 }
 
 /**
- * Load all workflow commands from the commands directory
+ * Load all workflow commands from a specific directory
  */
-export function loadWorkflowCommands(): WorkflowCommand[] {
-  const commandsDir = getCommandsDir();
-
+export function loadWorkflowCommandsFromDir(commandsDir: string): WorkflowCommand[] {
   try {
     if (!fs.existsSync(commandsDir)) return [];
 
@@ -55,6 +53,13 @@ export function loadWorkflowCommands(): WorkflowCommand[] {
     console.error('[Commands] Failed to list commands:', err);
     return [];
   }
+}
+
+/**
+ * Load all workflow commands from the default commands directory
+ */
+export function loadWorkflowCommands(): WorkflowCommand[] {
+  return loadWorkflowCommandsFromDir(getCommandsDir());
 }
 
 /**

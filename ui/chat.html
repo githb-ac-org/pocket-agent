@@ -1780,6 +1780,10 @@
       min-height: 30px;
     }
 
+    #workflows-area.active {
+      width: 100%;
+    }
+
     .workflows-toggle {
       display: flex;
       align-items: center;
@@ -2990,9 +2994,10 @@
 
     #workflows-expanded {
       display: none;
-      align-items: center;
+      align-items: flex-start;
       gap: 8px;
-      flex-wrap: wrap;
+      width: 100%;
+      overflow: hidden;
     }
 
     #workflows-area.active #workflows-expanded {
@@ -3001,8 +3006,17 @@
 
     #workflows-grid {
       display: flex;
-      gap: 6px;
       flex-wrap: wrap;
+      gap: 6px;
+      flex: 1;
+      min-width: 0;
+      max-height: 200px;
+      overflow-y: auto;
+      scrollbar-width: none;
+    }
+
+    #workflows-grid::-webkit-scrollbar {
+      display: none;
     }
 
     .workflow-btn {
@@ -3016,13 +3030,15 @@
       cursor: pointer;
       transition: all 0.15s ease;
       font-family: inherit;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .workflow-btn:hover {
       background: rgba(168, 85, 247, 0.25);
       border-color: var(--accent);
       color: white;
-      transform: translateY(-1px);
     }
 
     .workflows-close-btn {
@@ -5854,8 +5870,8 @@
     }
 
     function updateStatusIndicator(status, sessionId) {
-      // Use sessionId if provided, otherwise fall back to current session
-      const targetSession = sessionId || currentSessionId;
+      // Use status.sessionId (from the event) as authoritative source, fall back to listener's sessionId, then currentSessionId
+      const targetSession = status.sessionId || sessionId || currentSessionId;
 
       // Allow notification sound for any session completing (even non-active)
       if (status.type === 'done' && targetSession !== currentSessionId) {
@@ -5864,8 +5880,8 @@
       }
 
       // GUARD: Never render status/streaming UI for a session that isn't currently displayed.
-      // Without this, partial_text bubbles and status updates from session A would be
-      // appended to session B's visible messagesDiv when the user switches mid-query.
+      // This prevents events from session A leaking into session B's UI when both are active
+      // (e.g. general mode still processing while user switched to coder session).
       if (targetSession !== currentSessionId) return;
 
       // Handle background tasks before status element check — they use a separate UI area
@@ -6192,7 +6208,7 @@
         document.getElementById('chat-area').style.display = 'none';
         area.classList.add('active');
         try {
-          const commands = await window.pocketAgent.getCommands();
+          const commands = await window.pocketAgent.getCommands(currentSessionId);
           const grid = document.getElementById('workflows-grid');
           grid.innerHTML = '';
           commands.forEach(cmd => {
